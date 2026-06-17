@@ -707,5 +707,5 @@ export const calculateSweepRewards = (dungeon: Dungeon): Resource => {
 };
 
 export const canSweep = (dungeon: Dungeon): boolean => {
-  return dungeon.sweepUnlocked && dungeon.bestStars >= 3;
+  return dungeon.firstCleared && dungeon.bestStars >= 3;
 };

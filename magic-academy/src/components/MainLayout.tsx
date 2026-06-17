@@ -644,7 +644,7 @@ function DungeonModule() {
                   onClick={() => setSelectedDungeon(dungeon.id)}
                   disabled={!canChallenge}
                 >
-                  {hasBestTeam ? '挑战 (使用最佳)' : '挑战'}
+                  挑战
                 </button>
                 {sweepable && (
                   <>
@@ -663,14 +663,6 @@ function DungeonModule() {
                       </button>
                     )}
                   </>
-                )}
-                {dungeon.bestStars >= 3 && !dungeon.sweepUnlocked && (
-                  <button
-                    className="dungeon-btn unlock-btn"
-                    onClick={() => dispatch({ type: 'UNLOCK_SWEEP', dungeonId: dungeon.id })}
-                  >
-                    🔓 解锁扫荡
-                  </button>
                 )}
               </div>
 
@@ -740,7 +732,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
   const { calculateBattleStars, calculateDungeonRewards } = useGame();
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const [battleStarted, setBattleStarted] = React.useState(false);
-  const [selectedTeam, setSelectedTeam] = React.useState<string[]>(dungeon.bestTeam || []);
+  const [selectedTeam, setSelectedTeam] = React.useState<string[]>([]);
   const [battleResult, setBattleResult] = React.useState<BattleResultData | null>(null);
   
   const battleRef = React.useRef<{
@@ -769,16 +761,29 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
     teamIds: [],
   });
 
-  const eligibleStudents = students.filter(s => s.level >= dungeon.requiredLevel);
+  const onCompleteRef = React.useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
-  React.useEffect(() => {
-    if (dungeon.bestTeam && dungeon.bestTeam.length > 0) {
-      const validTeam = dungeon.bestTeam.filter(id => 
-        eligibleStudents.some(s => s.id === id && s.status === 'idle')
-      );
-      setSelectedTeam(validTeam);
+  const eligibleStudents = React.useMemo(
+    () => students.filter(s => s.level >= dungeon.requiredLevel),
+    [students, dungeon.requiredLevel]
+  );
+
+  const idleEligibleStudents = React.useMemo(
+    () => eligibleStudents.filter(s => s.status === 'idle'),
+    [eligibleStudents]
+  );
+
+  const availableBestTeamIds = React.useMemo(
+    () => dungeon.bestTeam.filter(id => idleEligibleStudents.some(s => s.id === id)),
+    [dungeon.bestTeam, idleEligibleStudents]
+  );
+
+  const handleFillBestTeam = React.useCallback(() => {
+    if (availableBestTeamIds.length > 0) {
+      setSelectedTeam(availableBestTeamIds);
     }
-  }, [dungeon.bestTeam, eligibleStudents]);
+  }, [availableBestTeamIds]);
 
   const generateEnemies = (wave: number): Enemy[] => {
     const count = Math.min(1 + Math.floor(wave / 2), 3);
@@ -799,7 +804,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
     });
   };
 
-  const calculateBattleResult = (victory: boolean): BattleResultData => {
+  const calculateBattleResult = React.useCallback((victory: boolean): BattleResultData => {
     const { playerTeam, turnCount, teamIds } = battleRef.current;
     const totalMembers = teamIds.length;
     const survivingMembers = playerTeam.filter(p => p.hp > 0).length;
@@ -823,7 +828,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
       isFirstClear,
       team: teamIds,
     };
-  };
+  }, [dungeon, calculateBattleStars, calculateDungeonRewards]);
 
   const startBattle = () => {
     if (selectedTeam.length === 0) return;
@@ -849,23 +854,26 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
     setBattleResult(null);
   };
 
-  const handleBattleEnd = (victory: boolean) => {
+  const handleBattleEnd = React.useCallback((victory: boolean) => {
+    if (battleRef.current.battleEnded) return;
     const result = calculateBattleResult(victory);
     setBattleResult(result);
-    
-    if (victory) {
-      setTimeout(() => {
-        onComplete({
-          stars: result.stars,
-          survivingMembers: result.survivingMembers,
-          totalMembers: result.totalMembers,
-          averageHpPercent: result.averageHpPercent,
-          totalTurns: result.totalTurns,
-          team: result.team,
-        });
-      }, 3000);
-    }
-  };
+  }, [calculateBattleResult]);
+
+  const handleConfirmResult = React.useCallback(() => {
+    if (!battleResult) return;
+    onCompleteRef.current({
+      stars: battleResult.stars,
+      survivingMembers: battleResult.survivingMembers,
+      totalMembers: battleResult.totalMembers,
+      averageHpPercent: battleResult.averageHpPercent,
+      totalTurns: battleResult.totalTurns,
+      team: battleResult.team,
+    });
+  }, [battleResult]);
+
+  const handleBattleEndRef = React.useRef(handleBattleEnd);
+  handleBattleEndRef.current = handleBattleEnd;
 
   React.useEffect(() => {
     if (!battleStarted || !canvasRef.current) return;
@@ -875,9 +883,10 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
     if (!ctx) return;
 
     let lastTime = 0;
+    let ended = false;
 
     const gameLoop = (timestamp: number) => {
-      if (battleRef.current.battleEnded) return;
+      if (ended || battleRef.current.battleEnded) return;
 
       const deltaTime = timestamp - lastTime;
       lastTime = timestamp;
@@ -981,10 +990,11 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
 
       if (playerTeam.length === 0) {
         battleRef.current.battleEnded = true;
+        ended = true;
         ctx.fillStyle = '#f44336';
         ctx.font = 'bold 32px Arial';
         ctx.fillText('战斗失败！', canvas.width / 2 - 80, canvas.height / 2);
-        handleBattleEnd(false);
+        handleBattleEndRef.current(false);
       } else if (enemyTeam.length === 0) {
         if (battleRef.current.currentWave < battleRef.current.totalWaves) {
           battleRef.current.currentWave++;
@@ -992,24 +1002,29 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
           battleRef.current.attackLog.push(`进入第 ${battleRef.current.currentWave} 波！`);
         } else {
           battleRef.current.battleEnded = true;
+          ended = true;
           ctx.fillStyle = '#4CAF50';
           ctx.font = 'bold 32px Arial';
           ctx.fillText('战斗胜利！', canvas.width / 2 - 80, canvas.height / 2);
-          handleBattleEnd(true);
+          handleBattleEndRef.current(true);
         }
       }
 
-      battleRef.current.animationId = requestAnimationFrame(gameLoop);
+      if (!ended) {
+        battleRef.current.animationId = requestAnimationFrame(gameLoop);
+      }
     };
 
     battleRef.current.animationId = requestAnimationFrame(gameLoop);
 
     return () => {
+      ended = true;
+      battleRef.current.battleEnded = true;
       if (battleRef.current.animationId) {
         cancelAnimationFrame(battleRef.current.animationId);
       }
     };
-  }, [battleStarted, dungeon, calculateBattleStars, calculateDungeonRewards, onComplete]);
+  }, [battleStarted, dungeon.waves]);
 
   const renderStars = (stars: number, maxStars: number = 3) => {
     return (
@@ -1029,20 +1044,28 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
           <div className="team-selection">
             <p>选择参战学员 (至少1人，推荐2-3人):</p>
             {dungeon.bestTeam.length > 0 && (
-              <div className="best-team-hint">
-                💡 已保存最佳阵容，已自动选中
+              <div className="best-team-actions">
+                <div className="best-team-hint">
+                  💡 已保存最佳阵容 ({availableBestTeamIds.length}/{dungeon.bestTeam.length} 人可用)
+                </div>
+                {availableBestTeamIds.length > 0 && (
+                  <button className="fill-best-team-btn" onClick={handleFillBestTeam}>
+                    📋 一键填入最佳阵容
+                  </button>
+                )}
               </div>
             )}
             <div className="team-select-grid">
               {eligibleStudents.map(student => {
                 const course = student.assignedCourse ? courses.find(c => c.id === student.assignedCourse) : null;
                 const isInBestTeam = dungeon.bestTeam.includes(student.id);
+                const isIdle = student.status === 'idle';
                 return (
-                  <label key={student.id} className={`team-member-option ${student.status !== 'idle' ? 'disabled' : ''} ${isInBestTeam ? 'best-team' : ''}`}>
+                  <label key={student.id} className={`team-member-option ${!isIdle ? 'disabled' : ''} ${isInBestTeam ? 'best-team' : ''}`}>
                     <input
                       type="checkbox"
                       checked={selectedTeam.includes(student.id)}
-                      disabled={student.status !== 'idle'}
+                      disabled={!isIdle}
                       onChange={(e) => {
                         if (e.target.checked) {
                           setSelectedTeam([...selectedTeam, student.id]);
@@ -1054,7 +1077,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
                     <span>
                       {student.name} (Lv.{student.level})
                       {student.skills.length > 0 && ` [${student.skills.length}技能]`}
-                      {student.status !== 'idle' && course && ` - 正在${course.name}`}
+                      {!isIdle && course && ` - 正在${course.name}`}
                       {isInBestTeam && ' ⭐最佳阵容'}
                     </span>
                   </label>
@@ -1109,9 +1132,9 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
                   </div>
                 </div>
 
-                {battleResult.stars >= 3 && !dungeon.sweepUnlocked && (
+                {battleResult.stars >= 3 && (
                   <div className="sweep-unlock-hint">
-                    🔓 达成3星！可在副本详情中解锁扫荡功能
+                    🔓 达成3星！扫荡功能已自动解锁
                   </div>
                 )}
               </>
@@ -1124,9 +1147,9 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
               </div>
             )}
             
-            {!battleResult.victory && (
-              <button onClick={onClose}>返回</button>
-            )}
+            <button className="confirm-result-btn" onClick={handleConfirmResult}>
+              {battleResult.victory ? '确认领取奖励' : '返回'}
+            </button>
           </div>
         ) : (
           <div className="battle-arena">

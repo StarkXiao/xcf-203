@@ -202,11 +202,24 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case 'COMPLETE_DUNGEON': {
       const dungeon = state.dungeons.find(d => d.id === action.dungeonId);
       if (!dungeon) return state;
+
+      if (action.stars <= 0) {
+        return {
+          ...state,
+          dungeons: state.dungeons.map(d =>
+            d.id === action.dungeonId ? {
+              ...d,
+              clearedCount: d.clearedCount + 1,
+            } : d
+          ),
+        };
+      }
       
       const isFirstClear = !dungeon.firstCleared;
       const rewards = calculateDungeonRewards(dungeon, action.stars, isFirstClear);
       const newBestStars = Math.max(dungeon.bestStars, action.stars);
-      const sweepUnlocked = newBestStars >= 3;
+      const shouldUpdateTeam = action.stars > dungeon.bestStars;
+      const newSweepUnlocked = newBestStars >= 3;
       
       return {
         ...state,
@@ -223,8 +236,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             bestStars: newBestStars,
             firstCleared: true,
             clearedCount: d.clearedCount + 1,
-            bestTeam: action.stars >= d.bestStars ? action.team : d.bestTeam,
-            sweepUnlocked: sweepUnlocked || d.sweepUnlocked,
+            bestTeam: shouldUpdateTeam ? action.team : d.bestTeam,
+            sweepUnlocked: newSweepUnlocked,
           } : d
         ),
       };
@@ -248,6 +261,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           d.id === action.dungeonId ? {
             ...d,
             clearedCount: d.clearedCount + 1,
+            firstCleared: true,
+            bestStars: d.bestStars,
+            sweepUnlocked: d.bestStars >= 3,
           } : d
         ),
       };
@@ -369,8 +385,33 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
-    case 'LOAD_GAME':
-      return action.state;
+    case 'LOAD_GAME': {
+      const saved = action.state;
+      const defaultDungeons = INITIAL_DUNGEONS;
+      const migratedDungeons = saved.dungeons.map((d: any) => {
+        const template = defaultDungeons.find(t => t.id === d.id);
+        return {
+          ...d,
+          firstClearRewards: d.firstClearRewards ?? template?.firstClearRewards ?? { gold: 0, mana: 0, food: 0, reputation: 0 },
+          staminaCost: d.staminaCost ?? template?.staminaCost ?? 10,
+          stars: d.stars ?? 0,
+          bestStars: d.bestStars ?? 0,
+          firstCleared: d.firstCleared ?? (d.completed ?? false),
+          clearedCount: d.clearedCount ?? 0,
+          bestTeam: d.bestTeam ?? [],
+          sweepUnlocked: d.sweepUnlocked ?? false,
+          starRequirements: d.starRequirements ?? template?.starRequirements ?? {
+            threeStar: '全员存活',
+            twoStar: '至少2人存活',
+            oneStar: '至少1人存活',
+          },
+        };
+      });
+      return {
+        ...saved,
+        dungeons: migratedDungeons,
+      };
+    }
 
     case 'RESET_GAME':
       return { ...initialState, gameStarted: true };
