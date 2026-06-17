@@ -1,4 +1,4 @@
-import type { GameState, Resource, Dungeon, Student, Building, Course } from '../types/game';
+import type { GameState, Resource, Dungeon, Student, Building, Course, DailyEvent } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import {
   INITIAL_RESOURCES,
@@ -60,7 +60,7 @@ function ensureDungeon(d: Partial<Dungeon> & Record<string, unknown>, template: 
     staminaCost: ensureNumber(d.staminaCost, fallback.staminaCost),
     stars: ensureNumber(d.stars, 0),
     bestStars: ensureNumber(d.bestStars, 0),
-    firstCleared: ensureBoolean(d.firstCleared, d.completed ?? false),
+    firstCleared: ensureBoolean(d.firstCleared, typeof d.completed === 'boolean' ? d.completed : false),
     clearedCount: ensureNumber(d.clearedCount, 0),
     bestTeam: ensureArray<string>(d.bestTeam, []),
     sweepUnlocked: ensureBoolean(d.sweepUnlocked, false),
@@ -75,6 +75,24 @@ function ensureDungeon(d: Partial<Dungeon> & Record<string, unknown>, template: 
 }
 
 function ensureStudent(s: Partial<Student> & Record<string, unknown>): Student {
+  const recruitmentInfo = s.recruitmentInfo && typeof s.recruitmentInfo === 'object'
+    ? {
+        recruitedAt: ensureNumber((s.recruitmentInfo as unknown as Record<string, unknown>).recruitedAt, 1),
+        recruitmentQuality: (['common', 'rare', 'epic', 'legendary'].includes(
+          (s.recruitmentInfo as unknown as Record<string, unknown>).recruitmentQuality as string
+        )
+          ? (s.recruitmentInfo as unknown as Record<string, unknown>).recruitmentQuality
+          : 'common') as Student['recruitmentInfo']['recruitmentQuality'],
+        initialLevel: ensureNumber((s.recruitmentInfo as unknown as Record<string, unknown>).initialLevel, 1),
+        initialPotential: ensureNumber((s.recruitmentInfo as unknown as Record<string, unknown>).initialPotential, 1),
+      }
+    : {
+        recruitedAt: 1,
+        recruitmentQuality: 'common' as const,
+        initialLevel: 1,
+        initialPotential: 1,
+      };
+
   return {
     id: ensureString(s.id, `student_recovered_${Math.random().toString(36).slice(2, 8)}`),
     name: ensureString(s.name, '未知学员'),
@@ -96,6 +114,10 @@ function ensureStudent(s: Partial<Student> & Record<string, unknown>): Student {
     traits: ensureArray(s.traits, []),
     morale: clampNumber(s.morale, 0, 100, INITIAL_STUDENT_MORALE),
     stamina: clampNumber(s.stamina, 0, 100, INITIAL_STUDENT_STAMINA),
+    recruitmentInfo,
+    growthRecords: ensureArray(s.growthRecords, []),
+    courseHistory: ensureArray(s.courseHistory, []),
+    dungeonHistory: ensureArray(s.dungeonHistory, []),
   };
 }
 
@@ -109,8 +131,8 @@ function ensureBuilding(b: Partial<Building> & Record<string, unknown>, template
     cost: ensureResource(b.cost as Partial<Resource> | undefined, fallback.cost),
     effect: b.effect && typeof b.effect === 'object'
       ? {
-          type: ensureString((b.effect as Record<string, unknown>).type, fallback.effect.type) as Building['effect']['type'],
-          value: ensureNumber((b.effect as Record<string, unknown>).value, fallback.effect.value),
+          type: ensureString((b.effect as unknown as Record<string, unknown>).type, fallback.effect.type) as Building['effect']['type'],
+          value: ensureNumber((b.effect as unknown as Record<string, unknown>).value, fallback.effect.value),
         }
       : { ...fallback.effect },
     description: ensureString(b.description, fallback.description),
@@ -129,13 +151,15 @@ function ensureCourse(c: Partial<Course> & Record<string, unknown>, template: Co
     cost: ensureResource(c.cost as Partial<Resource> | undefined, fallback.cost),
     effect: c.effect && typeof c.effect === 'object'
       ? {
-          type: ensureString((c.effect as Record<string, unknown>).type, fallback.effect.type) as Course['effect']['type'],
-          value: ensureNumber((c.effect as Record<string, unknown>).value, fallback.effect.value),
-          stat: (c.effect as Record<string, unknown>).stat as string | undefined,
+          type: ensureString((c.effect as unknown as Record<string, unknown>).type, fallback.effect.type) as Course['effect']['type'],
+          value: ensureNumber((c.effect as unknown as Record<string, unknown>).value, fallback.effect.value),
+          stat: (c.effect as unknown as Record<string, unknown>).stat as string | undefined,
         }
       : { ...fallback.effect },
     requiredLevel: ensureNumber(c.requiredLevel, fallback.requiredLevel),
-    magicType: (c.magicType as string | undefined) ?? fallback.magicType,
+    magicType: (['fire', 'water', 'earth', 'wind', 'light', 'dark'].includes(c.magicType as string)
+      ? c.magicType
+      : fallback.magicType) as Course['magicType'],
   };
 }
 
@@ -292,7 +316,7 @@ function normalizeToGameState(data: SaveData): GameState {
       day: ensureNumber(log.day, 1),
       events: ensureArray<Record<string, unknown>>(log.events, []).map(
         (evt: Record<string, unknown>) => ({
-          type: ensureString(evt.type, 'warning'),
+          type: ensureString(evt.type, 'warning') as DailyEvent['type'],
           message: ensureString(evt.message, ''),
           value: typeof evt.value === 'number' ? evt.value : undefined,
           studentId: typeof evt.studentId === 'string' ? evt.studentId : undefined,

@@ -31,6 +31,7 @@ interface Enemy {
 
 export default function MainLayout() {
   const { state, activeTab, setActiveTab } = useGame();
+  const [selectedStudentId, setSelectedStudentId] = React.useState<string | null>(null);
 
   const getCapacity = () => {
     const baseCapacity = 10;
@@ -43,6 +44,8 @@ export default function MainLayout() {
     const synergyBonus = calculateSynergyBonus(state.buildings, 'capacity');
     return baseCapacity + buildingBonus + synergyBonus;
   };
+
+  const selectedStudent = state.students.find(s => s.id === selectedStudentId) || null;
 
   return (
     <div className="game-container">
@@ -74,18 +77,25 @@ export default function MainLayout() {
       </nav>
 
       <main className="game-content">
-        {activeTab === 'academy' && <AcademyModule />}
-        {activeTab === 'recruit' && <RecruitModule />}
-        {activeTab === 'course' && <CourseModule />}
-        {activeTab === 'dungeon' && <DungeonModule />}
-        {activeTab === 'settlement' && <SettlementModule />}
+        {activeTab === 'academy' && <AcademyModule onStudentClick={setSelectedStudentId} />}
+        {activeTab === 'recruit' && <RecruitModule onStudentClick={setSelectedStudentId} />}
+        {activeTab === 'course' && <CourseModule onStudentClick={setSelectedStudentId} />}
+        {activeTab === 'dungeon' && <DungeonModule onStudentClick={setSelectedStudentId} />}
+        {activeTab === 'settlement' && <SettlementModule onStudentClick={setSelectedStudentId} />}
         {activeTab === 'settings' && <SettingsModule />}
       </main>
+
+      {selectedStudent && (
+        <StudentDetailModal
+          student={selectedStudent}
+          onClose={() => setSelectedStudentId(null)}
+        />
+      )}
     </div>
   );
 }
 
-function AcademyModule() {
+function AcademyModule({ onStudentClick: _onStudentClick }: ModuleProps) {
   const { state, dispatch, canAfford, checkPrerequisites, getActiveSynergies } = useGame();
   const activeSynergies = getActiveSynergies(state.buildings);
 
@@ -214,7 +224,11 @@ function AcademyModule() {
   );
 }
 
-function RecruitModule() {
+interface ModuleProps {
+  onStudentClick?: (studentId: string) => void;
+}
+
+function RecruitModule({ onStudentClick }: ModuleProps) {
   const { state, dispatch, canAfford, recruitStudent, assignStudentToRest, getMoraleLabel, getStaminaLabel } = useGame();
   const getCapacity = () => {
     const baseCapacity = 10;
@@ -290,7 +304,7 @@ function RecruitModule() {
               const moraleInfo = getMoraleLabel(student.morale);
               const staminaInfo = getStaminaLabel(student.stamina);
               return (
-                <div key={student.id} className="student-card" style={{ borderColor: qualityColors[student.quality] || '#9e9e9e' }}>
+                <div key={student.id} className="student-card clickable" style={{ borderColor: qualityColors[student.quality] || '#9e9e9e' }} onClick={() => onStudentClick?.(student.id)} title="点击查看详情">
                   <div className="student-header">
                     <div className="student-name">{student.name}</div>
                     <span className="student-quality" style={{ color: qualityColors[student.quality] }}>
@@ -354,7 +368,7 @@ function RecruitModule() {
                       技能: {student.skills.map(s => `${s.name}(${s.damage}伤害)`).join(', ')}
                     </div>
                   )}
-                  <div className="student-actions">
+                  <div className="student-actions" onClick={(e) => e.stopPropagation()}>
                     {student.status === 'idle' && (
                       <button 
                         className="rest-btn"
@@ -426,7 +440,7 @@ function RecruitModule() {
   );
 }
 
-function CourseModule() {
+function CourseModule({ onStudentClick: _onStudentClick }: ModuleProps) {
   const { state, assignStudentToCourse, queueCourse, removeFromQueue, reorderQueue, checkCourseConflict, canAfford } = useGame();
   const [selectedStudentForQueue, setSelectedStudentForQueue] = React.useState<string | null>(null);
   const [conflictMessage, setConflictMessage] = React.useState<string | null>(null);
@@ -772,7 +786,7 @@ function CourseModule() {
   );
 }
 
-function DungeonModule() {
+function DungeonModule({ onStudentClick: _onStudentClick }: ModuleProps) {
   const { state, dispatch, calculateSweepRewards, canSweep } = useGame();
   const [selectedDungeon, setSelectedDungeon] = React.useState<string | null>(null);
   const [showSweepConfirm, setShowSweepConfirm] = React.useState<string | null>(null);
@@ -1503,7 +1517,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
   );
 }
 
-function SettlementModule() {
+function SettlementModule({ onStudentClick: _onStudentClick }: ModuleProps) {
   const { state, dispatch, getActiveSynergies, calculateSynergyBonus, calculateDailyIncome, calculateFoodConsumption, getMoraleLabel } = useGame();
   const [daysToAdvance, setDaysToAdvance] = React.useState(1);
 
@@ -2002,4 +2016,409 @@ function SettingsModule() {
   );
 }
 
-export { AcademyModule, RecruitModule, CourseModule, DungeonModule, SettlementModule, SettingsModule };
+interface StudentDetailModalProps {
+  student: StudentType;
+  onClose: () => void;
+}
+
+type DetailTab = 'overview' | 'skills' | 'growth' | 'history';
+
+function StudentDetailModal({ student, onClose }: StudentDetailModalProps) {
+  const [activeTab, setActiveTab] = React.useState<DetailTab>('overview');
+  const { getMoraleLabel, getStaminaLabel } = useGame();
+
+  const qualityColors: Record<string, string> = {
+    common: '#9e9e9e',
+    rare: '#2196f3',
+    epic: '#9c27b0',
+    legendary: '#ff9800',
+  };
+  const qualityNames: Record<string, string> = {
+    common: '普通',
+    rare: '稀有',
+    epic: '史诗',
+    legendary: '传说',
+  };
+  const stats = getStudentStatsSummary(student);
+  const moraleInfo = getMoraleLabel(student.morale);
+  const staminaInfo = getStaminaLabel(student.stamina);
+
+  const magicTypeNames: Record<string, string> = {
+    fire: '火系',
+    water: '水系',
+    earth: '土系',
+    wind: '风系',
+    light: '光系',
+    dark: '暗系',
+  };
+  const magicTypeEmojis: Record<string, string> = {
+    fire: '🔥',
+    water: '💧',
+    earth: '🪨',
+    wind: '💨',
+    light: '✨',
+    dark: '🌑',
+  };
+
+  const tabs = [
+    { id: 'overview' as const, label: '概览', icon: '📊' },
+    { id: 'skills' as const, label: '技能', icon: '⚡' },
+    { id: 'growth' as const, label: '成长', icon: '📈' },
+    { id: 'history' as const, label: '历史', icon: '📜' },
+  ];
+
+  const sortedGrowthRecords = [...student.growthRecords].sort((a, b) => b.day - a.day);
+  const sortedCourseHistory = [...student.courseHistory].sort((a, b) => b.completedAt - a.completedAt);
+  const sortedDungeonHistory = [...student.dungeonHistory].sort((a, b) => b.challengedAt - a.challengedAt);
+
+  const renderStars = (stars: number, maxStars: number = 3) => (
+    <span>
+      {Array.from({ length: maxStars }, (_, i) => (
+        <span key={i} className={i < stars ? 'star filled' : 'star empty'}>★</span>
+      ))}
+    </span>
+  );
+
+  const totalDungeonRuns = student.dungeonHistory.length;
+  const victoryCount = student.dungeonHistory.filter(d => d.victory).length;
+  const totalStars = student.dungeonHistory.reduce((acc, d) => acc + d.stars, 0);
+
+  return (
+    <div className="student-detail-overlay" onClick={onClose}>
+      <div className="student-detail-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="detail-header" style={{ borderColor: qualityColors[student.quality] }}>
+          <div className="detail-header-info">
+            <div className="detail-name-section">
+              <h2 className="detail-student-name">{student.name}</h2>
+              <span className="detail-student-quality" style={{ color: qualityColors[student.quality] }}>
+                {qualityNames[student.quality]}
+              </span>
+            </div>
+            <div className="detail-basic-info">
+              <span className="magic-type-badge" data-type={student.magicType}>
+                {magicTypeEmojis[student.magicType]} {magicTypeNames[student.magicType]}魔法
+              </span>
+              <span className="detail-level">Lv.{student.level}</span>
+            </div>
+          </div>
+          <button className="detail-close-btn" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="detail-stats-bar">
+          <div className="detail-stat-item">
+            <span className="detail-stat-label">经验</span>
+            <div className="detail-exp-bar">
+              <div className="detail-exp-fill" style={{ width: `${(student.exp / (student.level * 100)) * 100}%` }}></div>
+            </div>
+            <span className="detail-stat-value">{student.exp}/{student.level * 100}</span>
+          </div>
+          <div className="detail-stat-item">
+            <span className="detail-stat-label">潜力</span>
+            <span className="detail-stat-value highlight">{student.potential.toFixed(2)}</span>
+          </div>
+          <div className="detail-stat-item">
+            <span className="detail-stat-label">经验倍率</span>
+            <span className="detail-stat-value">x{(stats.expMultiplier / 100).toFixed(2)}</span>
+          </div>
+          <div className="detail-stat-item">
+            <span className="detail-stat-label">学习速度</span>
+            <span className="detail-stat-value">x{(stats.courseSpeedMultiplier / 100).toFixed(2)}</span>
+          </div>
+        </div>
+
+        <div className="detail-status-bars">
+          <div className="status-bar-item">
+            <div className="status-bar-label" style={{ color: moraleInfo.color }}>😊 士气 {student.morale}%</div>
+            <div className="bar-bg">
+              <div className="bar-fill morale-fill" style={{ width: `${student.morale}%`, background: moraleInfo.color }}></div>
+            </div>
+          </div>
+          <div className="status-bar-item">
+            <div className="status-bar-label" style={{ color: staminaInfo.color }}>⚡ 体力 {student.stamina}%</div>
+            <div className="bar-bg">
+              <div className="bar-fill stamina-fill" style={{ width: `${student.stamina}%`, background: staminaInfo.color }}></div>
+            </div>
+          </div>
+        </div>
+
+        <div className="detail-tabs">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              className={`detail-tab-btn ${activeTab === tab.id ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              <span className="tab-icon">{tab.icon}</span>
+              <span className="tab-label">{tab.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="detail-content">
+          {activeTab === 'overview' && (
+            <div className="overview-tab">
+              <div className="detail-section">
+                <h4>🌟 特质</h4>
+                <div className="detail-traits">
+                  {student.traits.length > 0 ? (
+                    student.traits.map(trait => (
+                      <div key={trait.id} className={`detail-trait-card trait-${trait.rarity}`}>
+                        <div className="trait-name">{trait.name}</div>
+                        <div className="trait-desc">{trait.description}</div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="empty-text">暂无特质</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="detail-section">
+                <h4>📋 当前状态</h4>
+                <div className="status-info-grid">
+                  <div className="status-info-item">
+                    <span className="status-info-label">当前状态</span>
+                    <span className="status-info-value">
+                      {student.status === 'idle' && '🟢 空闲'}
+                      {student.status === 'studying' && '📚 学习中'}
+                      {student.status === 'training' && '⚔️ 训练中'}
+                      {student.status === 'resting' && '😴 休息中'}
+                    </span>
+                  </div>
+                  {student.assignedCourse && (
+                    <div className="status-info-item">
+                      <span className="status-info-label">当前课程</span>
+                      <span className="status-info-value highlight">
+                        {student.assignedCourse}
+                      </span>
+                    </div>
+                  )}
+                  {student.courseQueue.length > 0 && (
+                    <div className="status-info-item">
+                      <span className="status-info-label">队列课程</span>
+                      <span className="status-info-value">{student.courseQueue.length} 门</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="detail-section">
+                <h4>🏆 统计概览</h4>
+                <div className="stats-summary-grid">
+                  <div className="stats-summary-item">
+                    <span className="stats-summary-icon">📚</span>
+                    <div className="stats-summary-info">
+                      <span className="stats-summary-value">{student.courseHistory.length}</span>
+                      <span className="stats-summary-label">已完成课程</span>
+                    </div>
+                  </div>
+                  <div className="stats-summary-item">
+                    <span className="stats-summary-icon">⚡</span>
+                    <div className="stats-summary-info">
+                      <span className="stats-summary-value">{student.skills.length}</span>
+                      <span className="stats-summary-label">已学技能</span>
+                    </div>
+                  </div>
+                  <div className="stats-summary-item">
+                    <span className="stats-summary-icon">⚔️</span>
+                    <div className="stats-summary-info">
+                      <span className="stats-summary-value">{totalDungeonRuns}</span>
+                      <span className="stats-summary-label">副本挑战</span>
+                    </div>
+                  </div>
+                  <div className="stats-summary-item">
+                    <span className="stats-summary-icon">⭐</span>
+                    <div className="stats-summary-info">
+                      <span className="stats-summary-value">{victoryCount}/{totalDungeonRuns}</span>
+                      <span className="stats-summary-label">胜利次数</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="detail-section">
+                <h4>🎯 招募信息</h4>
+                <div className="recruitment-info-card">
+                  <div className="recruitment-info-row">
+                    <span>招募天数</span>
+                    <span className="highlight">第 {student.recruitmentInfo?.recruitedAt || '未知'} 天</span>
+                  </div>
+                  <div className="recruitment-info-row">
+                    <span>招募品质</span>
+                    <span style={{ color: qualityColors[student.recruitmentInfo?.recruitmentQuality || 'common'] }}>
+                      {qualityNames[student.recruitmentInfo?.recruitmentQuality || 'common']}
+                    </span>
+                  </div>
+                  <div className="recruitment-info-row">
+                    <span>初始等级</span>
+                    <span>Lv.{student.recruitmentInfo?.initialLevel || '-'}</span>
+                  </div>
+                  <div className="recruitment-info-row">
+                    <span>初始潜力</span>
+                    <span>{student.recruitmentInfo?.initialPotential?.toFixed(2) || '-'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'skills' && (
+            <div className="skills-tab">
+              {student.skills.length > 0 ? (
+                <div className="skills-grid">
+                  {student.skills.map(skill => (
+                    <div key={skill.id} className={`skill-card skill-${skill.type}`}>
+                      <div className="skill-header">
+                        <span className="skill-icon">{magicTypeEmojis[skill.type]}</span>
+                        <span className="skill-name">{skill.name}</span>
+                      </div>
+                      <div className="skill-stats">
+                        <div className="skill-stat">
+                          <span className="skill-stat-label">伤害</span>
+                          <span className="skill-stat-value damage">{skill.damage}</span>
+                        </div>
+                        <div className="skill-stat">
+                          <span className="skill-stat-label">消耗</span>
+                          <span className="skill-stat-value cost">{skill.cost}</span>
+                        </div>
+                      </div>
+                      <p className="skill-desc">{skill.description}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <div className="empty-icon">📖</div>
+                  <p className="empty-title">暂无技能</p>
+                  <p className="empty-desc">安排学员学习魔法课程来解锁技能</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'growth' && (
+            <div className="growth-tab">
+              {sortedGrowthRecords.length > 0 ? (
+                <div className="growth-timeline">
+                  {sortedGrowthRecords.map(record => (
+                    <div key={record.id} className="timeline-item">
+                      <div className={`timeline-dot ${record.type}`}>
+                        {record.type === 'level_up' && '⬆️'}
+                        {record.type === 'skill_unlock' && '⚡'}
+                        {record.type === 'trait_gain' && '✨'}
+                        {record.type === 'potential_boost' && '📈'}
+                      </div>
+                      <div className="timeline-content">
+                        <div className="timeline-day">第 {record.day} 天</div>
+                        <div className="timeline-desc">{record.description}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <div className="empty-icon">📈</div>
+                  <p className="empty-title">暂无成长记录</p>
+                  <p className="empty-desc">随着学员学习和成长，记录会显示在这里</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'history' && (
+            <div className="history-tab">
+              <div className="history-section">
+                <h4>📚 课程历史</h4>
+                {sortedCourseHistory.length > 0 ? (
+                  <div className="history-list">
+                    {sortedCourseHistory.map(entry => (
+                      <div key={entry.id} className="history-item course-history">
+                        <div className="history-item-header">
+                          <span className="history-item-title">{entry.courseName}</span>
+                          <span className="history-item-day">第 {entry.completedAt} 天完成</span>
+                        </div>
+                        <div className="history-item-details">
+                          <span className="history-badge exp">+{entry.expGained} 经验</span>
+                          {entry.leveledUp && <span className="history-badge level">升级!</span>}
+                          {entry.skillUnlocked && <span className="history-badge skill">技能解锁</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="empty-text">暂无课程记录</p>
+                )}
+              </div>
+
+              <div className="history-section">
+                <h4>⚔️ 副本记录</h4>
+                {sortedDungeonHistory.length > 0 ? (
+                  <div className="history-list">
+                    {sortedDungeonHistory.map(entry => (
+                      <div key={entry.id} className={`history-item dungeon-history ${entry.victory ? 'victory' : 'defeat'}`}>
+                        <div className="history-item-header">
+                          <span className="history-item-title">{entry.dungeonName}</span>
+                          <span className="history-item-day">第 {entry.challengedAt} 天</span>
+                        </div>
+                        <div className="history-item-details">
+                          <span className="dungeon-stars">
+                            {renderStars(entry.stars)}
+                          </span>
+                          <span className="history-badge">
+                            {entry.survivingMembers}/{entry.totalMembers} 存活
+                          </span>
+                          <span className="history-badge">
+                            {entry.turns} 回合
+                          </span>
+                          {entry.isFirstClear && (
+                            <span className="history-badge first-clear">首通!</span>
+                          )}
+                        </div>
+                        {entry.victory && entry.rewards && (
+                          <div className="dungeon-rewards-small">
+                            {entry.rewards.gold && <span>💰{entry.rewards.gold}</span>}
+                            {entry.rewards.mana && <span>🔮{entry.rewards.mana}</span>}
+                            {entry.rewards.food && <span>🍖{entry.rewards.food}</span>}
+                            {entry.rewards.reputation && <span>⭐{entry.rewards.reputation}</span>}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="empty-text">暂无副本记录</p>
+                )}
+              </div>
+
+              <div className="history-section">
+                <h4>📊 副本统计</h4>
+                <div className="dungeon-stats-grid">
+                  <div className="dungeon-stat-card">
+                    <span className="dungeon-stat-value">{totalDungeonRuns}</span>
+                    <span className="dungeon-stat-label">总挑战次数</span>
+                  </div>
+                  <div className="dungeon-stat-card">
+                    <span className="dungeon-stat-value success">{victoryCount}</span>
+                    <span className="dungeon-stat-label">胜利次数</span>
+                  </div>
+                  <div className="dungeon-stat-card">
+                    <span className="dungeon-stat-value star">{totalStars}</span>
+                    <span className="dungeon-stat-label">累计星级</span>
+                  </div>
+                  <div className="dungeon-stat-card">
+                    <span className="dungeon-stat-value">
+                      {totalDungeonRuns > 0 ? Math.round((victoryCount / totalDungeonRuns) * 100) : 0}%
+                    </span>
+                    <span className="dungeon-stat-label">胜率</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export { AcademyModule, RecruitModule, CourseModule, DungeonModule, SettlementModule, SettingsModule, StudentDetailModal };

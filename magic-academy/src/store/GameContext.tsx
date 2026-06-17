@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, CURRENT_SAVE_VERSION } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType } from '../types/game';
+import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
   INITIAL_BUILDINGS, 
@@ -198,29 +199,63 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             let newExp = s.exp;
             let newLevel = s.level;
             let newSkills = s.skills;
+            let leveledUp = false;
+            let skillUnlocked = false;
+            const newGrowthRecords = [...s.growthRecords];
+            const expGained = course.effect.type === 'exp_gain' ? calculateExpGain(course.effect.value, s) : 0;
             
             if (course.effect.type === 'exp_gain') {
-              const expGain = calculateExpGain(course.effect.value, s);
-              newExp += expGain;
+              newExp += expGained;
+              const oldLevel = s.level;
               while (newExp >= newLevel * 100) {
                 newExp -= newLevel * 100;
                 newLevel++;
+                leveledUp = true;
+              }
+              if (leveledUp) {
+                newGrowthRecords.push({
+                  id: `growth_${s.id}_level_${Date.now()}`,
+                  type: 'level_up',
+                  day: state.day,
+                  description: `等级提升: Lv.${oldLevel} → Lv.${newLevel}`,
+                  details: { oldLevel, newLevel },
+                });
               }
             } else if (course.effect.type === 'skill_unlock' && course.magicType) {
               const skillId = `skill_${s.id}_${course.magicType}`;
               if (!newSkills.find(sk => sk.id === skillId)) {
                 const baseDamage = 20 + s.level * 5;
                 const finalDamage = calculateSkillDamage(baseDamage, s, { type: course.magicType });
-                newSkills = [...newSkills, {
+                const newSkill = {
                   id: skillId,
                   name: `${course.magicType}魔法`,
                   type: course.magicType,
                   damage: finalDamage,
                   cost: 10,
                   description: `${course.magicType}系基础魔法`,
-                }];
+                };
+                newSkills = [...newSkills, newSkill];
+                skillUnlocked = true;
+                newGrowthRecords.push({
+                  id: `growth_${s.id}_skill_${Date.now()}`,
+                  type: 'skill_unlock',
+                  day: state.day,
+                  description: `解锁新技能: ${newSkill.name}`,
+                  details: { skillName: newSkill.name, damage: finalDamage },
+                });
               }
             }
+
+            const courseHistoryEntry = {
+              id: `course_hist_${s.id}_${Date.now()}`,
+              courseId: course.id,
+              courseName: course.name,
+              startedAt: state.day - course.duration,
+              completedAt: state.day,
+              expGained,
+              leveledUp,
+              skillUnlocked,
+            };
             
             return {
               ...s,
@@ -231,6 +266,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               exp: newExp,
               level: newLevel,
               skills: newSkills,
+              growthRecords: newGrowthRecords,
+              courseHistory: [...s.courseHistory, courseHistoryEntry],
             };
           }
           return s;
@@ -549,6 +586,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const dungeon = state.dungeons.find(d => d.id === action.dungeonId);
       if (!dungeon) return state;
 
+      const isFirstClear = !dungeon.firstCleared;
+      const rewards = action.stars > 0 ? calculateDungeonRewards(dungeon, action.stars, isFirstClear) : { gold: 0, mana: 0, food: 0, reputation: 0 };
+      const victory = action.stars > 0;
+
       const updatedStudents = state.students.map(s => {
         if (!action.team.includes(s.id)) return s;
 
@@ -570,11 +611,26 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           staminaDelta -= 10;
         }
 
+        const dungeonEntry = {
+          id: `dungeon_hist_${s.id}_${Date.now()}`,
+          dungeonId: dungeon.id,
+          dungeonName: dungeon.name,
+          challengedAt: state.day,
+          victory,
+          stars: action.stars,
+          survivingMembers: action.survivingMembers,
+          totalMembers: action.totalMembers,
+          turns: action.totalTurns,
+          rewards: victory ? rewards : {},
+          isFirstClear,
+        };
+
         return {
           ...s,
           morale: clamp(s.morale + moraleDelta, 0, 100),
           stamina: clamp(s.stamina + staminaDelta, 0, 100),
           status: 'idle' as const,
+          dungeonHistory: [...s.dungeonHistory, dungeonEntry],
         };
       });
 
@@ -591,8 +647,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         };
       }
       
-      const isFirstClear = !dungeon.firstCleared;
-      const rewards = calculateDungeonRewards(dungeon, action.stars, isFirstClear);
       const newBestStars = Math.max(dungeon.bestStars, action.stars);
       const shouldUpdateTeam = action.stars > dungeon.bestStars;
       const newSweepUnlocked = newBestStars >= 3;
@@ -824,10 +878,25 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             let newStatus: StudentType['status'] = 'idle';
             let newCourseDaysRemaining = 0;
             const newCourseProgress = 0;
+            const newGrowthRecords = [...student.growthRecords];
+            let leveledUp = false;
+            let skillUnlocked = false;
+            const totalExpGained = finalExpGain;
 
+            const oldLevel = student.level;
             while (finalExp >= finalLevel * 100) {
               finalExp -= finalLevel * 100;
               finalLevel++;
+              leveledUp = true;
+            }
+            if (leveledUp) {
+              newGrowthRecords.push({
+                id: `growth_${student.id}_level_${Date.now()}`,
+                type: 'level_up',
+                day: state.day,
+                description: `等级提升: Lv.${oldLevel} → Lv.${finalLevel}`,
+                details: { oldLevel, newLevel: finalLevel },
+              });
             }
 
             if (course.effect.type === 'skill_unlock' && course.magicType) {
@@ -835,16 +904,36 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               if (!newSkills.find(sk => sk.id === skillId)) {
                 const baseDamage = 20 + finalLevel * 5;
                 const finalDamage = calculateSkillDamage(baseDamage, student, { type: course.magicType });
-                newSkills = [...newSkills, {
+                const newSkill = {
                   id: skillId,
                   name: `${course.magicType}魔法`,
                   type: course.magicType,
                   damage: finalDamage,
                   cost: 10,
                   description: `${course.magicType}系基础魔法`,
-                }];
+                };
+                newSkills = [...newSkills, newSkill];
+                skillUnlocked = true;
+                newGrowthRecords.push({
+                  id: `growth_${student.id}_skill_${Date.now()}`,
+                  type: 'skill_unlock',
+                  day: state.day,
+                  description: `解锁新技能: ${newSkill.name}`,
+                  details: { skillName: newSkill.name, damage: finalDamage },
+                });
               }
             }
+
+            const courseHistoryEntry = {
+              id: `course_hist_${student.id}_${Date.now()}`,
+              courseId: course.id,
+              courseName: course.name,
+              startedAt: state.day - course.duration,
+              completedAt: state.day,
+              expGained: totalExpGained,
+              leveledUp,
+              skillUnlocked,
+            };
 
             completedCourses.push({ studentId: student.id, studentName: student.name, courseName: course.name });
             todayEvents.push({
@@ -919,6 +1008,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               skills: newSkills,
               morale: newMorale,
               stamina: newStamina,
+              growthRecords: newGrowthRecords,
+              courseHistory: [...student.courseHistory, courseHistoryEntry],
             });
           } else {
             if (daysRemaining <= 1 && student.courseQueue.length > 0) {
@@ -1119,11 +1210,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const levelMap = { common: 1, rare: 2, epic: 3, legendary: 5 };
     const traits = generateTraits(quality);
     const potential = generatePotential(quality);
+    const initialLevel = levelMap[quality];
     
     const newStudent: StudentType = {
       id: `student_${state.currentStudentId}`,
       name: generateStudentName(),
-      level: levelMap[quality],
+      level: initialLevel,
       exp: 0,
       magicType: getRandomMagicType(),
       skills: [],
@@ -1138,6 +1230,23 @@ export function GameProvider({ children }: { children: ReactNode }) {
       traits: traits,
       morale: INITIAL_STUDENT_MORALE,
       stamina: INITIAL_STUDENT_STAMINA,
+      recruitmentInfo: {
+        recruitedAt: state.day,
+        recruitmentQuality: quality,
+        initialLevel: initialLevel,
+        initialPotential: potential,
+      },
+      growthRecords: [
+        {
+          id: `growth_${state.currentStudentId}_recruit`,
+          type: 'trait_gain',
+          day: state.day,
+          description: `加入学院，获得${traits.length}个初始特质`,
+          details: { traits: traits.map(t => t.name) },
+        },
+      ],
+      courseHistory: [],
+      dungeonHistory: [],
     };
     dispatch({ type: 'ADD_STUDENT', student: newStudent });
   };

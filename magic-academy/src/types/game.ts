@@ -58,6 +58,50 @@ export interface Student {
   traits: Trait[];
   morale: number;
   stamina: number;
+  recruitmentInfo: RecruitmentInfo;
+  growthRecords: GrowthRecord[];
+  courseHistory: CourseHistoryEntry[];
+  dungeonHistory: DungeonHistoryEntry[];
+}
+
+export interface RecruitmentInfo {
+  recruitedAt: number;
+  recruitmentQuality: StudentQuality;
+  initialLevel: number;
+  initialPotential: number;
+}
+
+export interface GrowthRecord {
+  id: string;
+  type: 'level_up' | 'skill_unlock' | 'trait_gain' | 'potential_boost';
+  day: number;
+  description: string;
+  details?: Record<string, unknown>;
+}
+
+export interface CourseHistoryEntry {
+  id: string;
+  courseId: string;
+  courseName: string;
+  startedAt: number;
+  completedAt: number;
+  expGained: number;
+  leveledUp: boolean;
+  skillUnlocked: boolean;
+}
+
+export interface DungeonHistoryEntry {
+  id: string;
+  dungeonId: string;
+  dungeonName: string;
+  challengedAt: number;
+  victory: boolean;
+  stars: number;
+  survivingMembers: number;
+  totalMembers: number;
+  turns: number;
+  rewards: Partial<Resource>;
+  isFirstClear: boolean;
 }
 
 export interface QueuedCourse {
