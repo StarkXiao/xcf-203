@@ -12,9 +12,7 @@ import {
   getRandomMagicType,
   generateTraits,
   generatePotential,
-  calculateExpGain,
   calculateCourseSpeed,
-  calculateSkillDamage,
   checkPrerequisites,
   getActiveSynergies,
   calculateSynergyBonus,
@@ -273,9 +271,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const student = state.students.find(s => s.id === action.studentId);
       const todayEvents: DailyEvent[] = [];
       
-      let benefitBreakdown: CourseBenefitBreakdown | null = null;
       if (student && course.effect.type === 'exp_gain') {
-        benefitBreakdown = calculateCourseBenefit(
+        const breakdown = calculateCourseBenefit(
           course.effect.value,
           student,
           course,
@@ -283,15 +280,15 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           state.teachers
         );
         
-        const benefitText = formatBenefitBreakdown(benefitBreakdown);
+        const benefitText = formatBenefitBreakdown(breakdown);
         todayEvents.push({
           type: 'course_complete',
-          message: `🎓 ${student.name} 完成了「${course.name}」！获得${benefitBreakdown.totalExp}经验。${benefitText}`,
+          message: `🎓 ${student.name} 完成了「${course.name}」！获得${breakdown.totalExp}经验。${benefitText}`,
           studentId: action.studentId,
           studentName: student.name,
           courseId: course.id,
           courseName: course.name,
-          value: benefitBreakdown.totalExp,
+          value: breakdown.totalExp,
         });
       } else if (student) {
         todayEvents.push({
@@ -1011,14 +1008,15 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             let finalBreakdown: CourseBenefitBreakdown | null = null;
             
             if (baseFinalExp > 0) {
-              finalBreakdown = calculateCourseBenefit(
+              const breakdown = calculateCourseBenefit(
                 baseFinalExp,
                 student,
                 course,
                 state.buildings,
                 state.teachers
               );
-              finalExpGain = finalBreakdown.totalExp;
+              finalBreakdown = breakdown;
+              finalExpGain = breakdown.totalExp;
             }
             
             let finalExp = newExp + finalExpGain;

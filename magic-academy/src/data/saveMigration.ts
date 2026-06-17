@@ -164,7 +164,11 @@ function ensureCourse(c: Partial<Course> & Record<string, unknown>, template: Co
     magicType: (['fire', 'water', 'earth', 'wind', 'light', 'dark'].includes(c.magicType as string)
       ? c.magicType
       : fallback.magicType) as Course['magicType'],
-    assignedTeacher: c.assignedTeacher === null ? null : ensureString(c.assignedTeacher, fallback.assignedTeacher ?? null) || null,
+    assignedTeacher: c.assignedTeacher === null
+      ? null
+      : typeof c.assignedTeacher === 'string'
+        ? c.assignedTeacher
+        : (fallback.assignedTeacher ?? null),
   };
 }
 
