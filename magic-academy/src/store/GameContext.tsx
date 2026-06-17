@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, Dungeon } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
   INITIAL_BUILDINGS, 
@@ -34,6 +34,7 @@ import {
   getStaminaLabel,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
+import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
 
 type GameAction =
   | { type: 'ADD_RESOURCE'; resource: Partial<Resource> }
@@ -62,6 +63,7 @@ type GameAction =
 const MAX_STUDENT_CAPACITY = 20;
 
 const initialState: GameState = {
+  saveVersion: CURRENT_SAVE_VERSION,
   resources: INITIAL_RESOURCES,
   buildings: INITIAL_BUILDINGS,
   students: [],
@@ -1040,42 +1042,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
-    case 'LOAD_GAME': {
-      const saved = action.state;
-      const defaultDungeons = INITIAL_DUNGEONS;
-      const migratedDungeons = saved.dungeons.map((d: Partial<Dungeon> & { completed?: boolean }) => {
-        const template = defaultDungeons.find(t => t.id === d.id);
-        return {
-          ...template,
-          ...d,
-          firstClearRewards: d.firstClearRewards ?? template?.firstClearRewards ?? { gold: 0, mana: 0, food: 0, reputation: 0 },
-          staminaCost: d.staminaCost ?? template?.staminaCost ?? 10,
-          stars: d.stars ?? 0,
-          bestStars: d.bestStars ?? 0,
-          firstCleared: d.firstCleared ?? (d.completed ?? false),
-          clearedCount: d.clearedCount ?? 0,
-          bestTeam: d.bestTeam ?? [],
-          sweepUnlocked: d.sweepUnlocked ?? false,
-          starRequirements: d.starRequirements ?? template?.starRequirements ?? {
-            threeStar: '全员存活',
-            twoStar: '至少2人存活',
-            oneStar: '至少1人存活',
-          },
-        } as Dungeon;
-      });
-      const migratedStudents = (saved.students || []).map((s: Partial<StudentType>) => ({
-        ...s,
-        morale: s.morale ?? INITIAL_STUDENT_MORALE,
-        stamina: s.stamina ?? INITIAL_STUDENT_STAMINA,
-        courseQueue: s.courseQueue ?? [],
-      } as StudentType));
+    case 'LOAD_GAME':
       return {
-        ...saved,
-        dungeons: migratedDungeons,
-        students: migratedStudents,
-        dailyLogs: saved.dailyLogs ?? [],
+        ...action.state,
+        gameStarted: true,
       };
-    }
 
     case 'RESET_GAME':
       return { ...initialState, gameStarted: true };
@@ -1100,6 +1071,11 @@ interface GameContextType {
   checkCourseConflict: (studentId: string, courseId: string) => { hasConflict: boolean; reason?: string };
   saveGame: () => void;
   loadGame: () => void;
+  exportSave: () => string;
+  importSave: (json: string) => boolean;
+  restoreFromBackup: () => boolean;
+  hasBackupAvailable: boolean;
+  backupTime: string | null;
   checkPrerequisites: typeof checkPrerequisites;
   getActiveSynergies: typeof getActiveSynergies;
   calculateSynergyBonus: typeof calculateSynergyBonus;
@@ -1122,14 +1098,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [activeTab, setActiveTab] = React.useState<TabType>('academy');
 
   useEffect(() => {
-    const saved = localStorage.getItem('magicAcademySave');
-    if (saved) {
-      try {
-        const parsedState = JSON.parse(saved);
-        dispatch({ type: 'LOAD_GAME', state: { ...parsedState, gameStarted: true } });
-      } catch {
-        dispatch({ type: 'RESET_GAME' });
-      }
+    const result = loadAndMigrateSave();
+    if (result) {
+      dispatch({ type: 'LOAD_GAME', state: result.state });
     } else {
       dispatch({ type: 'RESET_GAME' });
     }
@@ -1236,20 +1207,48 @@ export function GameProvider({ children }: { children: ReactNode }) {
   };
 
   const saveGame = () => {
-    localStorage.setItem('magicAcademySave', JSON.stringify(state));
+    createBackup();
+    const saveData = { ...state, saveVersion: CURRENT_SAVE_VERSION };
+    localStorage.setItem('magicAcademySave', JSON.stringify(saveData));
   };
 
   const loadGame = () => {
-    const saved = localStorage.getItem('magicAcademySave');
-    if (saved) {
-      try {
-        const parsedState = JSON.parse(saved);
-        dispatch({ type: 'LOAD_GAME', state: parsedState });
-      } catch {
-        console.error('Failed to load save');
-      }
+    const result = loadAndMigrateSave();
+    if (result) {
+      dispatch({ type: 'LOAD_GAME', state: result.state });
     }
   };
+
+  const exportSave = (): string => {
+    return exportSaveData({ ...state, saveVersion: CURRENT_SAVE_VERSION });
+  };
+
+  const importSave = (json: string): boolean => {
+    const result = importSaveData(json);
+    if (result) {
+      createBackup();
+      localStorage.setItem('magicAcademySave', JSON.stringify(result.state));
+      dispatch({ type: 'LOAD_GAME', state: result.state });
+      return true;
+    }
+    return false;
+  };
+
+  const restoreFromBackup = (): boolean => {
+    const backup = restoreBackup();
+    if (!backup) return false;
+    try {
+      const migrated = migrateSave(backup);
+      localStorage.setItem('magicAcademySave', JSON.stringify(migrated));
+      dispatch({ type: 'LOAD_GAME', state: migrated });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const hasBackupAvailable = hasBackup();
+  const backupTime = getBackupTime();
 
   return (
     <GameContext.Provider value={{ 
@@ -1267,6 +1266,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
       checkCourseConflict,
       saveGame, 
       loadGame,
+      exportSave,
+      importSave,
+      restoreFromBackup,
+      hasBackupAvailable,
+      backupTime,
       checkPrerequisites,
       getActiveSynergies,
       calculateSynergyBonus,

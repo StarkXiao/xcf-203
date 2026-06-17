@@ -1755,31 +1755,189 @@ function SettlementModule() {
 }
 
 function SettingsModule() {
-  const { state, saveGame, loadGame, dispatch } = useGame();
+  const { state, saveGame, loadGame, dispatch, exportSave, importSave, restoreFromBackup, hasBackupAvailable, backupTime } = useGame();
+  const [importText, setImportText] = React.useState('');
+  const [showImport, setShowImport] = React.useState(false);
+  const [message, setMessage] = React.useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const showMessage = (type: 'success' | 'error' | 'info', text: string) => {
+    setMessage({ type, text });
+    setTimeout(() => setMessage(null), 4000);
+  };
+
+  const handleExport = () => {
+    const data = exportSave();
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `magic-academy-save-day${state.day}-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showMessage('success', '存档已导出');
+  };
+
+  const handleImportText = () => {
+    if (!importText.trim()) {
+      showMessage('error', '请粘贴存档数据');
+      return;
+    }
+    const ok = importSave(importText.trim());
+    if (ok) {
+      showMessage('success', '存档导入成功');
+      setImportText('');
+      setShowImport(false);
+    } else {
+      showMessage('error', '存档数据无效或格式错误，导入失败');
+    }
+  };
+
+  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      const ok = importSave(text);
+      if (ok) {
+        showMessage('success', '存档文件导入成功');
+      } else {
+        showMessage('error', '存档文件无效或格式错误，导入失败');
+      }
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleRestoreBackup = () => {
+    if (!hasBackupAvailable) return;
+    if (!confirm('确定要从备份恢复吗？当前进度将被覆盖！')) return;
+    const ok = restoreFromBackup();
+    if (ok) {
+      showMessage('success', '已从备份恢复存档');
+    } else {
+      showMessage('error', '备份恢复失败');
+    }
+  };
 
   const totalSkills = state.students.reduce((acc, s) => acc + s.skills.length, 0);
+
+  const formatBackupTime = (iso: string | null) => {
+    if (!iso) return '未知';
+    try {
+      return new Date(iso).toLocaleString('zh-CN');
+    } catch {
+      return iso;
+    }
+  };
 
   return (
     <div className="module settings-module">
       <h2>⚙️ 设置存档</h2>
 
+      {message && (
+        <div className={`save-message ${message.type}`}>
+          {message.type === 'success' && '✅ '}
+          {message.type === 'error' && '❌ '}
+          {message.type === 'info' && 'ℹ️ '}
+          {message.text}
+        </div>
+      )}
+
       <div className="save-section">
         <h3>存档管理</h3>
         <div className="save-actions">
-          <button onClick={saveGame}>💾 保存游戏</button>
-          <button onClick={loadGame}>📂 加载存档</button>
+          <button onClick={() => { saveGame(); showMessage('success', '游戏已保存'); }}>💾 保存游戏</button>
+          <button onClick={() => { loadGame(); showMessage('info', '存档已重新加载'); }}>📂 加载存档</button>
           <button
             className="danger"
             onClick={() => {
               if (confirm('确定要重置游戏吗？所有进度将丢失！')) {
                 localStorage.removeItem('magicAcademySave');
                 dispatch({ type: 'RESET_GAME' });
+                showMessage('info', '游戏已重置');
               }
             }}
           >
             🗑️ 重置游戏
           </button>
         </div>
+      </div>
+
+      <div className="save-section">
+        <h3>导出 / 导入存档</h3>
+        <div className="save-actions">
+          <button onClick={handleExport}>📤 导出存档文件</button>
+          <button onClick={() => setShowImport(!showImport)}>
+            {showImport ? '📥 收起导入' : '📥 导入存档'}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            style={{ display: 'none' }}
+            onChange={handleImportFile}
+          />
+          <button onClick={() => fileInputRef.current?.click()}>📁 选择文件导入</button>
+        </div>
+        {showImport && (
+          <div className="import-section">
+            <p className="import-hint">粘贴存档 JSON 数据：</p>
+            <textarea
+              className="import-textarea"
+              rows={6}
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              placeholder='粘贴导出的存档数据...'
+            />
+            <div className="import-actions">
+              <button onClick={handleImportText} disabled={!importText.trim()}>确认导入</button>
+              <button onClick={() => { setImportText(''); setShowImport(false); }}>取消</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="save-section">
+        <h3>备份恢复</h3>
+        {hasBackupAvailable ? (
+          <div className="backup-info">
+            <p>📋 上次备份时间: {formatBackupTime(backupTime)}</p>
+            <p className="backup-hint">每次保存或加载存档时会自动创建备份，当存档损坏时可从此恢复</p>
+            <button onClick={handleRestoreBackup} disabled={!hasBackupAvailable}>
+              🔄 从备份恢复
+            </button>
+          </div>
+        ) : (
+          <div className="backup-info">
+            <p>暂无备份数据</p>
+            <p className="backup-hint">保存游戏后会自动创建备份</p>
+          </div>
+        )}
+      </div>
+
+      <div className="save-section">
+        <h3>存档版本信息</h3>
+        <div className="version-info-grid">
+          <div className="version-item">
+            <span>当前存档版本</span>
+            <span>v{state.saveVersion}</span>
+          </div>
+          <div className="version-item">
+            <span>游戏支持版本</span>
+            <span>v2</span>
+          </div>
+          <div className="version-item">
+            <span>存档状态</span>
+            <span className={state.saveVersion === 2 ? 'version-ok' : 'version-warn'}>
+              {state.saveVersion === 2 ? '✅ 已是最新' : `⚠️ 需迁移 (v${state.saveVersion} → v2)`}
+            </span>
+          </div>
+        </div>
+        <p className="version-hint">
+          旧版本存档会在加载时自动迁移到最新版本，无需手动操作
+        </p>
       </div>
 
       <div className="game-stats">
@@ -1837,7 +1995,7 @@ function SettingsModule() {
 
       <div className="about-section">
         <h3>关于游戏</h3>
-        <p>魔法学院经营游戏 v1.1</p>
+        <p>魔法学院经营游戏 v1.2</p>
         <p>使用 React + TypeScript + Canvas API 构建</p>
       </div>
     </div>

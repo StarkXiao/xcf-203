@@ -155,7 +155,10 @@ export interface Enemy {
   isBoss: boolean;
 }
 
+export const CURRENT_SAVE_VERSION = 2;
+
 export interface GameState {
+  saveVersion: number;
   resources: Resource;
   buildings: Building[];
   students: Student[];

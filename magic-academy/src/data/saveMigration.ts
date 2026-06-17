@@ -1,0 +1,473 @@
+import type { GameState, Resource, Dungeon, Student, Building, Course } from '../types/game';
+import { CURRENT_SAVE_VERSION } from '../types/game';
+import {
+  INITIAL_RESOURCES,
+  INITIAL_BUILDINGS,
+  INITIAL_COURSES,
+  INITIAL_DUNGEONS,
+  INITIAL_STUDENT_MORALE,
+  INITIAL_STUDENT_STAMINA,
+} from './gameData';
+
+type SaveData = Record<string, unknown>;
+
+const SAVE_KEY = 'magicAcademySave';
+const BACKUP_KEY = 'magicAcademySaveBackup';
+const BACKUP_VERSION_KEY = 'magicAcademyBackupVersion';
+
+function ensureResource(partial: Partial<Resource> | undefined, fallback: Resource): Resource {
+  if (!partial) return { ...fallback };
+  return {
+    gold: typeof partial.gold === 'number' ? partial.gold : fallback.gold,
+    mana: typeof partial.mana === 'number' ? partial.mana : fallback.mana,
+    food: typeof partial.food === 'number' ? partial.food : fallback.food,
+    reputation: typeof partial.reputation === 'number' ? partial.reputation : fallback.reputation,
+  };
+}
+
+function ensureNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && !isNaN(value) ? value : fallback;
+}
+
+function ensureString(value: unknown, fallback: string): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function ensureBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function ensureArray<T>(value: unknown, fallback: T[]): T[] {
+  return Array.isArray(value) ? value : fallback;
+}
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
+  if (typeof value !== 'number' || isNaN(value)) return fallback;
+  return Math.max(min, Math.min(max, value));
+}
+
+function ensureDungeon(d: Partial<Dungeon> & Record<string, unknown>, template: Dungeon | undefined): Dungeon {
+  const fallback = template || INITIAL_DUNGEONS[0];
+  return {
+    id: ensureString(d.id, fallback.id),
+    name: ensureString(d.name, fallback.name),
+    level: ensureNumber(d.level, fallback.level),
+    waves: ensureNumber(d.waves, fallback.waves),
+    enemies: ensureArray(d.enemies, fallback.enemies),
+    rewards: ensureResource(d.rewards as Partial<Resource> | undefined, fallback.rewards),
+    firstClearRewards: ensureResource(d.firstClearRewards as Partial<Resource> | undefined, fallback.firstClearRewards),
+    requiredLevel: ensureNumber(d.requiredLevel, fallback.requiredLevel),
+    staminaCost: ensureNumber(d.staminaCost, fallback.staminaCost),
+    stars: ensureNumber(d.stars, 0),
+    bestStars: ensureNumber(d.bestStars, 0),
+    firstCleared: ensureBoolean(d.firstCleared, d.completed ?? false),
+    clearedCount: ensureNumber(d.clearedCount, 0),
+    bestTeam: ensureArray<string>(d.bestTeam, []),
+    sweepUnlocked: ensureBoolean(d.sweepUnlocked, false),
+    starRequirements: d.starRequirements && typeof d.starRequirements === 'object'
+      ? {
+          threeStar: ensureString((d.starRequirements as Record<string, unknown>).threeStar, fallback.starRequirements.threeStar),
+          twoStar: ensureString((d.starRequirements as Record<string, unknown>).twoStar, fallback.starRequirements.twoStar),
+          oneStar: ensureString((d.starRequirements as Record<string, unknown>).oneStar, fallback.starRequirements.oneStar),
+        }
+      : { ...fallback.starRequirements },
+  };
+}
+
+function ensureStudent(s: Partial<Student> & Record<string, unknown>): Student {
+  return {
+    id: ensureString(s.id, `student_recovered_${Math.random().toString(36).slice(2, 8)}`),
+    name: ensureString(s.name, '未知学员'),
+    level: clampNumber(s.level, 1, 999, 1),
+    exp: clampNumber(s.exp, 0, Infinity, 0),
+    magicType: (['fire', 'water', 'earth', 'wind', 'light', 'dark'].includes(s.magicType as string)
+      ? s.magicType : 'fire') as Student['magicType'],
+    skills: ensureArray(s.skills, []),
+    status: (['idle', 'studying', 'training', 'resting'].includes(s.status as string)
+      ? s.status : 'idle') as Student['status'],
+    assignedBuilding: s.assignedBuilding === null ? null : ensureString(s.assignedBuilding, null as unknown as string) || null,
+    assignedCourse: s.assignedCourse === null ? null : ensureString(s.assignedCourse, null as unknown as string) || null,
+    courseProgress: clampNumber(s.courseProgress, 0, Infinity, 0),
+    courseDaysRemaining: clampNumber(s.courseDaysRemaining, 0, Infinity, 0),
+    courseQueue: ensureArray(s.courseQueue, []),
+    quality: (['common', 'rare', 'epic', 'legendary'].includes(s.quality as string)
+      ? s.quality : 'common') as Student['quality'],
+    potential: clampNumber(s.potential, 0.1, 5, 1),
+    traits: ensureArray(s.traits, []),
+    morale: clampNumber(s.morale, 0, 100, INITIAL_STUDENT_MORALE),
+    stamina: clampNumber(s.stamina, 0, 100, INITIAL_STUDENT_STAMINA),
+  };
+}
+
+function ensureBuilding(b: Partial<Building> & Record<string, unknown>, template: Building | undefined): Building {
+  const fallback = template || INITIAL_BUILDINGS[0];
+  return {
+    id: ensureString(b.id, fallback.id),
+    name: ensureString(b.name, fallback.name),
+    level: clampNumber(b.level, 1, b.maxLevel ?? fallback.maxLevel, fallback.level),
+    maxLevel: ensureNumber(b.maxLevel, fallback.maxLevel),
+    cost: ensureResource(b.cost as Partial<Resource> | undefined, fallback.cost),
+    effect: b.effect && typeof b.effect === 'object'
+      ? {
+          type: ensureString((b.effect as Record<string, unknown>).type, fallback.effect.type) as Building['effect']['type'],
+          value: ensureNumber((b.effect as Record<string, unknown>).value, fallback.effect.value),
+        }
+      : { ...fallback.effect },
+    description: ensureString(b.description, fallback.description),
+    prerequisites: Array.isArray(b.prerequisites) ? b.prerequisites as Building['prerequisites'] : fallback.prerequisites,
+    synergyBonus: Array.isArray(b.synergyBonus) ? b.synergyBonus as Building['synergyBonus'] : fallback.synergyBonus,
+  };
+}
+
+function ensureCourse(c: Partial<Course> & Record<string, unknown>, template: Course | undefined): Course {
+  const fallback = template || INITIAL_COURSES[0];
+  return {
+    id: ensureString(c.id, fallback.id),
+    name: ensureString(c.name, fallback.name),
+    level: ensureNumber(c.level, fallback.level),
+    duration: ensureNumber(c.duration, fallback.duration),
+    cost: ensureResource(c.cost as Partial<Resource> | undefined, fallback.cost),
+    effect: c.effect && typeof c.effect === 'object'
+      ? {
+          type: ensureString((c.effect as Record<string, unknown>).type, fallback.effect.type) as Course['effect']['type'],
+          value: ensureNumber((c.effect as Record<string, unknown>).value, fallback.effect.value),
+          stat: (c.effect as Record<string, unknown>).stat as string | undefined,
+        }
+      : { ...fallback.effect },
+    requiredLevel: ensureNumber(c.requiredLevel, fallback.requiredLevel),
+    magicType: (c.magicType as string | undefined) ?? fallback.magicType,
+  };
+}
+
+interface MigrationContext {
+  version: number;
+  data: SaveData;
+}
+
+type MigrationStep = (ctx: MigrationContext) => SaveData;
+
+function migrateV0ToV1(ctx: MigrationContext): SaveData {
+  const data = { ...ctx.data };
+
+  if (!data.dungeons || !Array.isArray(data.dungeons)) {
+    data.dungeons = [];
+  }
+
+  data.dungeons = (data.dungeons as Array<Record<string, unknown>>).map((d: Record<string, unknown>) => {
+    const template = INITIAL_DUNGEONS.find(t => t.id === d.id);
+    return {
+      ...template,
+      ...d,
+      firstClearRewards: d.firstClearRewards ?? template?.firstClearRewards ?? { gold: 0, mana: 0, food: 0, reputation: 0 },
+      staminaCost: d.staminaCost ?? template?.staminaCost ?? 10,
+      stars: d.stars ?? 0,
+      bestStars: d.bestStars ?? 0,
+      firstCleared: d.firstCleared ?? (d.completed ?? false),
+      clearedCount: d.clearedCount ?? 0,
+      bestTeam: d.bestTeam ?? [],
+      sweepUnlocked: d.sweepUnlocked ?? false,
+      starRequirements: d.starRequirements ?? template?.starRequirements ?? {
+        threeStar: '全员存活',
+        twoStar: '至少2人存活',
+        oneStar: '至少1人存活',
+      },
+    };
+  });
+
+  if (!data.students || !Array.isArray(data.students)) {
+    data.students = [];
+  }
+  data.students = (data.students as Array<Record<string, unknown>>).map((s: Record<string, unknown>) => ({
+    ...s,
+    morale: s.morale ?? INITIAL_STUDENT_MORALE,
+    stamina: s.stamina ?? INITIAL_STUDENT_STAMINA,
+    courseQueue: s.courseQueue ?? [],
+  }));
+
+  data.dailyLogs = data.dailyLogs ?? [];
+
+  data.saveVersion = 1;
+  return data;
+}
+
+function migrateV1ToV2(ctx: MigrationContext): SaveData {
+  const data = { ...ctx.data };
+
+  if (Array.isArray(data.buildings)) {
+    data.buildings = (data.buildings as Array<Record<string, unknown>>).map((b: Record<string, unknown>) => {
+      const template = INITIAL_BUILDINGS.find(t => t.id === b.id);
+      if (template) {
+        return {
+          ...template,
+          ...b,
+          synergyBonus: b.synergyBonus ?? template.synergyBonus,
+          prerequisites: b.prerequisites ?? template.prerequisites,
+        };
+      }
+      return b;
+    });
+  }
+
+  if (Array.isArray(data.courses)) {
+    data.courses = (data.courses as Array<Record<string, unknown>>).map((c: Record<string, unknown>) => {
+      const template = INITIAL_COURSES.find(t => t.id === c.id);
+      if (template) {
+        return {
+          ...template,
+          ...c,
+          effect: c.effect ?? template.effect,
+        };
+      }
+      return c;
+    });
+  }
+
+  if (Array.isArray(data.students)) {
+    data.students = (data.students as Array<Record<string, unknown>>).map((s: Record<string, unknown>) => {
+      if (!Array.isArray(s.traits)) s.traits = [];
+      if (typeof s.potential !== 'number' || isNaN(s.potential)) s.potential = 1;
+      return s;
+    });
+  }
+
+  data.saveVersion = 2;
+  return data;
+}
+
+const MIGRATION_CHAIN: Record<number, MigrationStep> = {
+  0: migrateV0ToV1,
+  1: migrateV1ToV2,
+};
+
+export function migrateSave(rawData: SaveData): GameState {
+  let data = { ...rawData };
+  let version = typeof data.saveVersion === 'number' ? data.saveVersion : 0;
+
+  while (version < CURRENT_SAVE_VERSION) {
+    const migrator = MIGRATION_CHAIN[version];
+    if (!migrator) break;
+    data = migrator({ version, data });
+    version = typeof data.saveVersion === 'number' ? data.saveVersion : version + 1;
+  }
+
+  return normalizeToGameState(data);
+}
+
+function normalizeToGameState(data: SaveData): GameState {
+  const resources = ensureResource(data.resources as Partial<Resource> | undefined, INITIAL_RESOURCES);
+
+  const buildings = ensureArray<Record<string, unknown>>(data.buildings, []).map(
+    b => ensureBuilding(b as Partial<Building> & Record<string, unknown>, INITIAL_BUILDINGS.find(t => t.id === b.id))
+  );
+  const missingBuildingIds = INITIAL_BUILDINGS.filter(t => !buildings.find(b => b.id === t.id)).map(t => t.id);
+  for (const id of missingBuildingIds) {
+    const template = INITIAL_BUILDINGS.find(t => t.id === id)!;
+    buildings.push({ ...template });
+  }
+
+  const courses = ensureArray<Record<string, unknown>>(data.courses, []).map(
+    c => ensureCourse(c as Partial<Course> & Record<string, unknown>, INITIAL_COURSES.find(t => t.id === c.id))
+  );
+  const missingCourseIds = INITIAL_COURSES.filter(t => !courses.find(c => c.id === t.id)).map(t => t.id);
+  for (const id of missingCourseIds) {
+    const template = INITIAL_COURSES.find(t => t.id === id)!;
+    courses.push({ ...template });
+  }
+
+  const dungeons = ensureArray<Record<string, unknown>>(data.dungeons, []).map(
+    d => ensureDungeon(d as Partial<Dungeon> & Record<string, unknown>, INITIAL_DUNGEONS.find(t => t.id === d.id))
+  );
+  const missingDungeonIds = INITIAL_DUNGEONS.filter(t => !dungeons.find(d => d.id === t.id)).map(t => t.id);
+  for (const id of missingDungeonIds) {
+    const template = INITIAL_DUNGEONS.find(t => t.id === id)!;
+    dungeons.push({ ...template });
+  }
+
+  const students = ensureArray<Record<string, unknown>>(data.students, []).map(
+    s => ensureStudent(s as Partial<Student> & Record<string, unknown>)
+  );
+
+  const dailyLogs = ensureArray<Record<string, unknown>>(data.dailyLogs, []).map(
+    (log: Record<string, unknown>) => ({
+      day: ensureNumber(log.day, 1),
+      events: ensureArray<Record<string, unknown>>(log.events, []).map(
+        (evt: Record<string, unknown>) => ({
+          type: ensureString(evt.type, 'warning'),
+          message: ensureString(evt.message, ''),
+          value: typeof evt.value === 'number' ? evt.value : undefined,
+          studentId: typeof evt.studentId === 'string' ? evt.studentId : undefined,
+          studentName: typeof evt.studentName === 'string' ? evt.studentName : undefined,
+          courseId: typeof evt.courseId === 'string' ? evt.courseId : undefined,
+          courseName: typeof evt.courseName === 'string' ? evt.courseName : undefined,
+        })
+      ),
+    })
+  );
+
+  return {
+    saveVersion: CURRENT_SAVE_VERSION,
+    resources,
+    buildings,
+    students,
+    courses,
+    dungeons,
+    day: ensureNumber(data.day, 1),
+    maxStudents: ensureNumber(data.maxStudents, 20),
+    currentStudentId: ensureNumber(data.currentStudentId, 1),
+    currentDungeonId: ensureNumber(data.currentDungeonId, 100),
+    gameStarted: ensureBoolean(data.gameStarted, true),
+    dailyLogs,
+  };
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export function validateSaveData(data: unknown): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!data || typeof data !== 'object') {
+    errors.push('存档数据为空或格式不正确');
+    return { valid: false, errors, warnings };
+  }
+
+  const save = data as Record<string, unknown>;
+
+  if (!save.resources || typeof save.resources !== 'object') {
+    errors.push('缺少资源数据');
+  } else {
+    const res = save.resources as Record<string, unknown>;
+    if (typeof res.gold !== 'number' || isNaN(res.gold)) warnings.push('金币数据异常，将使用默认值');
+    if (typeof res.mana !== 'number' || isNaN(res.mana)) warnings.push('魔力数据异常，将使用默认值');
+    if (typeof res.food !== 'number' || isNaN(res.food)) warnings.push('食物数据异常，将使用默认值');
+    if (typeof res.reputation !== 'number' || isNaN(res.reputation)) warnings.push('声望数据异常，将使用默认值');
+  }
+
+  if (!Array.isArray(save.buildings)) {
+    errors.push('缺少建筑数据');
+  }
+
+  if (!Array.isArray(save.students)) {
+    warnings.push('缺少学员数据，将以空列表初始化');
+  } else {
+    for (let i = 0; i < save.students.length; i++) {
+      const s = save.students[i] as Record<string, unknown>;
+      if (!s.id) warnings.push(`学员 #${i + 1} 缺少ID，将自动生成`);
+      if (typeof s.level !== 'number' || s.level < 1) warnings.push(`学员 #${i + 1} 等级异常`);
+    }
+  }
+
+  if (!Array.isArray(save.dungeons)) {
+    errors.push('缺少副本数据');
+  }
+
+  if (typeof save.day !== 'number' || save.day < 1) {
+    warnings.push('天数数据异常，将使用默认值1');
+  }
+
+  const version = save.saveVersion;
+  if (typeof version !== 'number') {
+    warnings.push('存档无版本号，将视为v0旧存档进行完整迁移');
+  } else if (version > CURRENT_SAVE_VERSION) {
+    errors.push(`存档版本(v${version})高于当前游戏版本(v${CURRENT_SAVE_VERSION})，可能不兼容`);
+  } else if (version < CURRENT_SAVE_VERSION) {
+    warnings.push(`存档版本(v${version})低于当前版本(v${CURRENT_SAVE_VERSION})，将自动迁移`);
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+  };
+}
+
+export function createBackup(): boolean {
+  try {
+    const current = localStorage.getItem(SAVE_KEY);
+    if (!current) return false;
+    localStorage.setItem(BACKUP_KEY, current);
+    localStorage.setItem(BACKUP_VERSION_KEY, new Date().toISOString());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function restoreBackup(): SaveData | null {
+  try {
+    const backup = localStorage.getItem(BACKUP_KEY);
+    if (!backup) return null;
+    return JSON.parse(backup);
+  } catch {
+    return null;
+  }
+}
+
+export function hasBackup(): boolean {
+  return localStorage.getItem(BACKUP_KEY) !== null;
+}
+
+export function getBackupTime(): string | null {
+  return localStorage.getItem(BACKUP_VERSION_KEY);
+}
+
+export function loadAndMigrateSave(): { state: GameState; warnings: string[] } | null {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    const validation = validateSaveData(parsed);
+
+    if (!validation.valid) {
+      console.warn('存档校验失败:', validation.errors);
+      const backup = restoreBackup();
+      if (backup) {
+        const backupValidation = validateSaveData(backup);
+        if (backupValidation.valid) {
+          const migrated = migrateSave(backup);
+          return { state: migrated, warnings: ['原始存档损坏，已从备份恢复', ...backupValidation.warnings] };
+        }
+      }
+      return null;
+    }
+
+    createBackup();
+    const migrated = migrateSave(parsed);
+    return { state: migrated, warnings: validation.warnings };
+  } catch (e) {
+    console.error('加载存档失败:', e);
+    const backup = restoreBackup();
+    if (backup) {
+      try {
+        const migrated = migrateSave(backup);
+        return { state: migrated, warnings: ['原始存档解析失败，已从备份恢复'] };
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+export function exportSaveData(state: GameState): string {
+  return JSON.stringify(state, null, 2);
+}
+
+export function importSaveData(jsonString: string): { state: GameState; warnings: string[] } | null {
+  try {
+    const parsed = JSON.parse(jsonString);
+    const validation = validateSaveData(parsed);
+    if (!validation.valid) {
+      return null;
+    }
+    const migrated = migrateSave(parsed);
+    return { state: migrated, warnings: validation.warnings };
+  } catch {
+    return null;
+  }
+}
