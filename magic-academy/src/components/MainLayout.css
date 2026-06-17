@@ -391,6 +391,11 @@ body {
   font-size: 0.85rem;
 }
 
+.level-info {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
 .trait-info {
   color: var(--primary);
 }
@@ -399,11 +404,44 @@ body {
   color: var(--warning);
 }
 
+.exp-info {
+  color: var(--success);
+}
+
+.speed-info {
+  color: var(--secondary);
+}
+
 .student-info {
   display: flex;
   justify-content: center;
   gap: 0.75rem;
   margin-bottom: 0.5rem;
+}
+
+.student-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.stat-badge {
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.stat-badge.exp-badge {
+  background: #065f46;
+  color: #6ee7b7;
+}
+
+.stat-badge.speed-badge {
+  background: #1e3a8a;
+  color: #93c5fd;
 }
 
 .magic-type {
@@ -460,6 +498,20 @@ body {
 .studying-item .course-progress {
   color: var(--text-secondary);
   font-size: 0.85rem;
+}
+
+.course-stats {
+  color: var(--warning);
+  font-size: 0.85rem;
+  margin-left: auto;
+}
+
+.assignment-student-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  flex-wrap: wrap;
 }
 
 .course-card .course-info,

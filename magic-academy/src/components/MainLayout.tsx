@@ -1,6 +1,7 @@
 import React from 'react';
 import { useGame } from '../store/GameContext';
 import type { TabType, Dungeon as DungeonType, Student as StudentType, Course as CourseType } from '../types/game';
+import { getStudentStatsSummary, calculateExpGain } from '../data/gameData';
 import './MainLayout.css';
 
 interface TabConfig {
@@ -155,22 +156,31 @@ function RecruitModule() {
       quality: 'common' as const, 
       name: '普通招募', 
       cost: { gold: 100, mana: 50, food: 0, reputation: 0 },
+      level: '初始 Lv.1',
       traits: '1个普通特质',
       potential: '潜力: 0.5-1.0',
+      exp: '经验加成: 50%-100%',
+      speed: '课程速度: 75%-100%',
     },
     { 
       quality: 'rare' as const, 
       name: '稀有招募', 
       cost: { gold: 300, mana: 150, food: 10, reputation: 20 },
+      level: '初始 Lv.2',
       traits: '1个稀有特质',
       potential: '潜力: 0.9-1.3',
+      exp: '经验加成: 90%-130%',
+      speed: '课程速度: 95%-115%',
     },
     { 
       quality: 'epic' as const, 
       name: '史诗招募', 
       cost: { gold: 800, mana: 400, food: 30, reputation: 50 },
+      level: '初始 Lv.3',
       traits: '2个史诗特质',
       potential: '潜力: 1.2-1.6',
+      exp: '经验加成: 120%-160%',
+      speed: '课程速度: 110%-130%',
     },
   ];
 
@@ -199,6 +209,7 @@ function RecruitModule() {
                 epic: '史诗',
                 legendary: '传说',
               };
+              const stats = getStudentStatsSummary(student);
               return (
                 <div key={student.id} className="student-card" style={{ borderColor: qualityColors[student.quality] || '#9e9e9e' }}>
                   <div className="student-header">
@@ -217,7 +228,11 @@ function RecruitModule() {
                       {student.magicType === 'dark' && '🌑'}
                     </span>
                     <span>Lv.{student.level}</span>
-                    <span className="potential-badge">潜力: {student.potential.toFixed(1)}</span>
+                  </div>
+                  <div className="student-stats">
+                    <span className="potential-badge">潜力: {student.potential.toFixed(2)}</span>
+                    <span className="stat-badge exp-badge">经验 x{stats.expMultiplier / 100}</span>
+                    <span className="stat-badge speed-badge">速度 x{stats.courseSpeedMultiplier / 100}</span>
                   </div>
                   <div className="student-exp">
                     经验: {student.exp}/{student.level * 100}
@@ -243,7 +258,7 @@ function RecruitModule() {
                   )}
                   {student.skills.length > 0 && (
                     <div className="student-skills">
-                      技能: {student.skills.map(s => s.name).join(', ')}
+                      技能: {student.skills.map(s => `${s.name}(${s.damage}伤害)`).join(', ')}
                     </div>
                   )}
                 </div>
@@ -270,8 +285,11 @@ function RecruitModule() {
                 <div key={ticket.quality} className="recruit-card" style={{ borderColor: qualityColors[ticket.quality] }}>
                   <h4 style={{ color: qualityColors[ticket.quality] }}>{ticket.name}</h4>
                   <div className="recruit-info">
+                    <span className="level-info">{ticket.level}</span>
                     <span className="trait-info">{ticket.traits}</span>
                     <span className="potential-info">{ticket.potential}</span>
+                    <span className="exp-info">{ticket.exp}</span>
+                    <span className="speed-info">{ticket.speed}</span>
                   </div>
                   <div className="recruit-cost">
                     <span className={ticket.cost.gold > state.resources.gold ? 'insufficient' : ''}>💰{ticket.cost.gold}</span>
@@ -328,12 +346,16 @@ function CourseModule() {
           <div className="studying-list">
             {studyingStudents.map(student => {
               const course = state.courses.find(c => c.id === student.assignedCourse);
+              const stats = getStudentStatsSummary(student);
               return (
                 <div key={student.id} className="studying-item">
                   <span className="student-name">{student.name}</span>
                   <span className="course-name">{course?.name || '未知课程'}</span>
                   <span className="course-progress">
-                    进度: {student.courseProgress}/{course?.duration || 0} ({student.courseDaysRemaining}天剩余)
+                    进度: {student.courseProgress.toFixed(1)}/{course?.duration || 0} ({student.courseDaysRemaining.toFixed(1)}天剩余)
+                  </span>
+                  <span className="course-stats">
+                    经验x{stats.expMultiplier / 100} / 速度x{stats.courseSpeedMultiplier / 100}
                   </span>
                 </div>
               );
@@ -377,28 +399,43 @@ function CourseModule() {
           <p className="empty-message">没有空闲学员</p>
         ) : (
           <div className="assignment-list">
-            {availableStudents.map(student => (
-              <div key={student.id} className="assignment-item">
-                <span className="student-name">{student.name}</span>
-                <span className="student-level">Lv.{student.level}</span>
-                <select
-                  className="course-select"
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      handleAssignCourse(student.id, e.target.value);
-                    }
-                  }}
-                  defaultValue=""
-                >
-                  <option value="" disabled>选择课程</option>
-                  {state.courses
-                    .filter(c => c.requiredLevel <= student.level)
-                    .map(course => (
-                      <option key={course.id} value={course.id}>{course.name} ({course.duration}天)</option>
-                    ))}
-                </select>
-              </div>
-            ))}
+            {availableStudents.map(student => {
+              const stats = getStudentStatsSummary(student);
+              return (
+                <div key={student.id} className="assignment-item">
+                  <div className="assignment-student-info">
+                    <span className="student-name">{student.name}</span>
+                    <span className="student-level">Lv.{student.level}</span>
+                    <span className="stat-badge exp-badge">经验x{stats.expMultiplier / 100}</span>
+                    <span className="stat-badge speed-badge">速度x{stats.courseSpeedMultiplier / 100}</span>
+                  </div>
+                  <select
+                    className="course-select"
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleAssignCourse(student.id, e.target.value);
+                      }
+                    }}
+                    defaultValue=""
+                  >
+                    <option value="" disabled>选择课程</option>
+                    {state.courses
+                      .filter(c => c.requiredLevel <= student.level)
+                      .map(course => {
+                        const expectedExp = course.effect.type === 'exp_gain' 
+                          ? calculateExpGain(course.effect.value, student)
+                          : null;
+                        const label = expectedExp !== null
+                          ? `${course.name} (${course.duration}天, 预计+${expectedExp}经验)`
+                          : `${course.name} (${course.duration}天)`;
+                        return (
+                          <option key={course.id} value={course.id}>{label}</option>
+                        );
+                      })}
+                  </select>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

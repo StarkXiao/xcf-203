@@ -209,9 +209,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           if (!course) return student;
           
           const courseSpeed = calculateCourseSpeed(1, student);
-          const adjustedProgress = Math.min(courseSpeed, 1);
-          const newProgress = student.courseProgress + adjustedProgress;
-          const daysRemaining = student.courseDaysRemaining - adjustedProgress;
+          const newProgress = student.courseProgress + courseSpeed;
+          const daysRemaining = student.courseDaysRemaining - courseSpeed;
           
           const baseDailyExp = 10 * baseExpMultiplier;
           const dailyExp = calculateExpGain(baseDailyExp, student);

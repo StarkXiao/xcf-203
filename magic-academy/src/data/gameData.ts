@@ -389,7 +389,7 @@ export const calculateCourseSpeed = (
 ): number => {
   let multiplier = 1;
   
-  multiplier += (student.potential - 1) * 0.3;
+  multiplier += (student.potential - 1) * 0.5;
   
   const speedBonus = student.traits
     .filter(t => t.effects.some(e => e.type === 'course_speed' || e.type === 'learning_speed'))
@@ -401,7 +401,7 @@ export const calculateCourseSpeed = (
   
   multiplier += speedBonus;
   
-  return Math.floor(baseSpeed * multiplier);
+  return baseSpeed * multiplier;
 };
 
 export const calculateSkillDamage = (
@@ -440,4 +440,20 @@ export const calculateSkillDamage = (
   }
   
   return Math.floor(baseDamage * multiplier);
+};
+
+export const getStudentStatsSummary = (student: { potential: number; traits: Trait[] }) => {
+  const expMultiplier = student.potential + student.traits
+    .filter(t => t.effects.some(e => e.type === 'exp_bonus'))
+    .reduce((sum, t) => {
+      const effect = t.effects.find(e => e.type === 'exp_bonus');
+      return sum + (effect?.value || 0);
+    }, 0);
+  
+  const courseSpeedMultiplier = calculateCourseSpeed(1, student);
+  
+  return {
+    expMultiplier: Math.round(expMultiplier * 100),
+    courseSpeedMultiplier: Math.round(courseSpeedMultiplier * 100),
+  };
 };
