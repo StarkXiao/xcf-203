@@ -1,4 +1,4 @@
-import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel } from '../types/game';
+import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType } from '../types/game';
 import {
   HP_BATTLE_THRESHOLD,
   HP_COURSE_EFFICIENCY_THRESHOLD,
@@ -1654,3 +1654,286 @@ export const getMaxHealableHp = (student: { currentHp: number; maxHp: number }):
 };
 
 export const isStudentBattleReady = canStudentBattleByHp;
+
+export const INITIAL_GOAL_PROGRESS: GoalProgress = {
+  buildingUpgrades: 0,
+  coursesCompleted: 0,
+  dungeonClears: 0,
+  recruits: 0,
+  totalStudents: 0,
+  reputationGained: 0,
+};
+
+const WEEKLY_GOAL_TEMPLATES: Omit<WeeklyGoal, 'id' | 'current' | 'completed' | 'claimed'>[] = [
+  {
+    name: '🏗️ 学院扩建',
+    description: '升级任意建筑 2 次',
+    type: 'building',
+    target: 2,
+    reward: { gold: 500, mana: 300, reputation: 20 },
+  },
+  {
+    name: '📚 知识积累',
+    description: '完成任意课程 5 次',
+    type: 'course',
+    target: 5,
+    reward: { gold: 400, mana: 500, food: 50, reputation: 15 },
+  },
+  {
+    name: '⚔️ 试炼挑战',
+    description: '成功挑战副本 3 次',
+    type: 'dungeon',
+    target: 3,
+    reward: { gold: 800, mana: 400, food: 30, reputation: 30 },
+  },
+  {
+    name: '📜 广纳英才',
+    description: '招募新学员 2 名',
+    type: 'recruit',
+    target: 2,
+    reward: { gold: 300, mana: 200, food: 100, reputation: 25 },
+  },
+  {
+    name: '✨ 全面发展',
+    description: '升级1次建筑 + 完成2次课程 + 挑战1次副本 + 招募1名学员',
+    type: 'comprehensive',
+    target: 4,
+    reward: { gold: 1000, mana: 600, food: 80, reputation: 50 },
+  },
+  {
+    name: '🎓 学业繁忙',
+    description: '完成任意课程 8 次',
+    type: 'course',
+    target: 8,
+    reward: { gold: 600, mana: 800, food: 60, reputation: 25 },
+  },
+  {
+    name: '🏛️ 基础建设',
+    description: '升级任意建筑 3 次',
+    type: 'building',
+    target: 3,
+    reward: { gold: 700, mana: 400, food: 40, reputation: 30 },
+  },
+  {
+    name: '🔥 勇者无畏',
+    description: '成功挑战副本 5 次',
+    type: 'dungeon',
+    target: 5,
+    reward: { gold: 1200, mana: 600, food: 50, reputation: 45 },
+  },
+];
+
+export const INITIAL_STAGE_TASKS: StageTask[] = [
+  {
+    id: 'stage_1_1',
+    name: '初建学院',
+    description: '招募你的第一名学员',
+    stage: 1,
+    type: 'recruit',
+    target: 1,
+    current: 0,
+    reward: { gold: 200, mana: 100, reputation: 10 },
+    completed: false,
+    claimed: false,
+    unlocked: true,
+  },
+  {
+    id: 'stage_1_2',
+    name: '知识殿堂',
+    description: '完成 3 次课程学习',
+    stage: 1,
+    type: 'course',
+    target: 3,
+    current: 0,
+    reward: { gold: 300, mana: 200, food: 30, reputation: 15 },
+    completed: false,
+    claimed: false,
+    unlocked: true,
+  },
+  {
+    id: 'stage_1_3',
+    name: '初露锋芒',
+    description: '成功挑战 1 次副本',
+    stage: 1,
+    type: 'dungeon',
+    target: 1,
+    current: 0,
+    reward: { gold: 500, mana: 300, food: 20, reputation: 25 },
+    completed: false,
+    claimed: false,
+    unlocked: true,
+  },
+  {
+    id: 'stage_2_1',
+    name: '学院扩建',
+    description: '升级任意建筑 3 次',
+    stage: 2,
+    type: 'building',
+    target: 3,
+    current: 0,
+    reward: { gold: 600, mana: 400, food: 50, reputation: 30 },
+    completed: false,
+    claimed: false,
+    unlocked: false,
+    prerequisite: 'stage_1_3',
+  },
+  {
+    id: 'stage_2_2',
+    name: '人才济济',
+    description: '招募 5 名学员',
+    stage: 2,
+    type: 'recruit',
+    target: 5,
+    current: 0,
+    reward: { gold: 500, mana: 300, food: 100, reputation: 40 },
+    completed: false,
+    claimed: false,
+    unlocked: false,
+    prerequisite: 'stage_1_3',
+  },
+  {
+    id: 'stage_2_3',
+    name: '精英培养',
+    description: '完成 10 次课程学习',
+    stage: 2,
+    type: 'course',
+    target: 10,
+    current: 0,
+    reward: { gold: 800, mana: 600, food: 60, reputation: 35 },
+    completed: false,
+    claimed: false,
+    unlocked: false,
+    prerequisite: 'stage_1_3',
+  },
+  {
+    id: 'stage_3_1',
+    name: '征服试炼',
+    description: '成功挑战 5 次副本',
+    stage: 3,
+    type: 'dungeon',
+    target: 5,
+    current: 0,
+    reward: { gold: 1500, mana: 800, food: 80, reputation: 60 },
+    completed: false,
+    claimed: false,
+    unlocked: false,
+    prerequisite: 'stage_2_3',
+  },
+  {
+    id: 'stage_3_2',
+    name: '魔法圣地',
+    description: '升级任意建筑 8 次',
+    stage: 3,
+    type: 'building',
+    target: 8,
+    current: 0,
+    reward: { gold: 1200, mana: 1000, food: 100, reputation: 70 },
+    completed: false,
+    claimed: false,
+    unlocked: false,
+    prerequisite: 'stage_2_3',
+  },
+  {
+    id: 'stage_3_3',
+    name: '桃李满天下',
+    description: '累计招募 10 名学员',
+    stage: 3,
+    type: 'recruit',
+    target: 10,
+    current: 0,
+    reward: { gold: 1000, mana: 600, food: 150, reputation: 80 },
+    completed: false,
+    claimed: false,
+    unlocked: false,
+    prerequisite: 'stage_2_3',
+  },
+];
+
+export const generateWeeklyGoals = (weekNumber: number): WeeklyGoal[] => {
+  const shuffled = [...WEEKLY_GOAL_TEMPLATES].sort(() => Math.random() - 0.5);
+  const selected = shuffled.slice(0, 4);
+  
+  return selected.map((template, index) => ({
+    ...template,
+    id: `weekly_${weekNumber}_${index}`,
+    current: 0,
+    completed: false,
+    claimed: false,
+  }));
+};
+
+export const INITIAL_WEEKLY_GOALS: WeeklyGoalsState = {
+  weekStartDay: 1,
+  goals: generateWeeklyGoals(1),
+  weeklyResetCount: 0,
+};
+
+export const INITIAL_STAGE_TASKS_STATE: StageTasksState = {
+  tasks: INITIAL_STAGE_TASKS,
+  currentStage: 1,
+};
+
+export const updateWeeklyGoalProgress = (
+  goals: WeeklyGoal[],
+  type: GoalType,
+  amount: number = 1
+): WeeklyGoal[] => {
+  return goals.map(goal => {
+    if (goal.completed || goal.claimed) return goal;
+    
+    let shouldUpdate = false;
+    
+    if (goal.type === type) {
+      shouldUpdate = true;
+    } else if (goal.type === 'comprehensive') {
+      shouldUpdate = true;
+    }
+    
+    if (shouldUpdate) {
+      const newCurrent = Math.min(goal.current + amount, goal.target);
+      const completed = newCurrent >= goal.target;
+      return { ...goal, current: newCurrent, completed };
+    }
+    
+    return goal;
+  });
+};
+
+export const updateStageTaskProgress = (
+  tasks: StageTask[],
+  type: GoalType,
+  amount: number = 1
+): StageTask[] => {
+  return tasks.map(task => {
+    if (!task.unlocked || task.completed || task.claimed) return task;
+    if (task.type !== type && task.type !== 'comprehensive') return task;
+    
+    const newCurrent = Math.min(task.current + amount, task.target);
+    const completed = newCurrent >= task.target;
+    return { ...task, current: newCurrent, completed };
+  });
+};
+
+export const unlockNextStageTasks = (
+  tasks: StageTask[],
+  completedTaskId: string
+): StageTask[] => {
+  return tasks.map(task => {
+    if (task.unlocked) return task;
+    if (task.prerequisite === completedTaskId) {
+      return { ...task, unlocked: true };
+    }
+    return task;
+  });
+};
+
+export const checkWeeklyReset = (
+  currentDay: number,
+  weekStartDay: number
+): boolean => {
+  return currentDay - weekStartDay >= 7;
+};
+
+export const getCurrentWeek = (day: number): number => {
+  return Math.floor((day - 1) / 7) + 1;
+};

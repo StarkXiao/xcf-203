@@ -1,4 +1,4 @@
-import type { GameState, Resource, Dungeon, Student, Building, Course, DailyEvent, Teacher } from '../types/game';
+import type { GameState, Resource, Dungeon, Student, Building, Course, DailyEvent, Teacher, GoalProgress, WeeklyGoalsState, StageTasksState } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import {
   INITIAL_RESOURCES,
@@ -9,6 +9,9 @@ import {
   INITIAL_STUDENT_MORALE,
   INITIAL_STUDENT_STAMINA,
   initializeStudentHp,
+  INITIAL_GOAL_PROGRESS,
+  INITIAL_WEEKLY_GOALS,
+  INITIAL_STAGE_TASKS_STATE,
 } from './gameData';
 
 type SaveData = Record<string, unknown>;
@@ -405,6 +408,17 @@ function migrateV5ToV6(ctx: MigrationContext): SaveData {
   return data;
 }
 
+function migrateV6ToV7(ctx: MigrationContext): SaveData {
+  const data = { ...ctx.data };
+
+  data.goalProgress = { ...INITIAL_GOAL_PROGRESS };
+  data.weeklyGoals = { ...INITIAL_WEEKLY_GOALS };
+  data.stageTasks = { ...INITIAL_STAGE_TASKS_STATE };
+
+  data.saveVersion = 7;
+  return data;
+}
+
 const MIGRATION_CHAIN: Record<number, MigrationStep> = {
   0: migrateV0ToV1,
   1: migrateV1ToV2,
@@ -412,6 +426,7 @@ const MIGRATION_CHAIN: Record<number, MigrationStep> = {
   3: migrateV3ToV4,
   4: migrateV4ToV5,
   5: migrateV5ToV6,
+  6: migrateV6ToV7,
 };
 
 export function migrateSave(rawData: SaveData): GameState {
@@ -571,6 +586,40 @@ function normalizeToGameState(data: SaveData): GameState {
         confirmOnCriticalAction: true,
       };
 
+  const goalProgress = data.goalProgress && typeof data.goalProgress === 'object'
+    ? {
+        buildingUpgrades: ensureNumber((data.goalProgress as Record<string, unknown>).buildingUpgrades, 0),
+        coursesCompleted: ensureNumber((data.goalProgress as Record<string, unknown>).coursesCompleted, 0),
+        dungeonClears: ensureNumber((data.goalProgress as Record<string, unknown>).dungeonClears, 0),
+        recruits: ensureNumber((data.goalProgress as Record<string, unknown>).recruits, 0),
+        totalStudents: ensureNumber((data.goalProgress as Record<string, unknown>).totalStudents, 0),
+        reputationGained: ensureNumber((data.goalProgress as Record<string, unknown>).reputationGained, 0),
+      }
+    : { ...INITIAL_GOAL_PROGRESS };
+
+  const weeklyGoals = data.weeklyGoals && typeof data.weeklyGoals === 'object'
+    ? {
+        weekStartDay: ensureNumber((data.weeklyGoals as Record<string, unknown>).weekStartDay, 1),
+        goals: ensureArray((data.weeklyGoals as Record<string, unknown>).goals, []),
+        weeklyResetCount: ensureNumber((data.weeklyGoals as Record<string, unknown>).weeklyResetCount, 0),
+      }
+    : { ...INITIAL_WEEKLY_GOALS };
+
+  const stageTasks = data.stageTasks && typeof data.stageTasks === 'object'
+    ? {
+        tasks: ensureArray((data.stageTasks as Record<string, unknown>).tasks, []),
+        currentStage: ensureNumber((data.stageTasks as Record<string, unknown>).currentStage, 1),
+      }
+    : { ...INITIAL_STAGE_TASKS_STATE };
+
+  if (stageTasks.tasks.length === 0) {
+    stageTasks.tasks = [...INITIAL_STAGE_TASKS_STATE.tasks];
+  }
+
+  if (weeklyGoals.goals.length === 0) {
+    weeklyGoals.goals = [...INITIAL_WEEKLY_GOALS.goals];
+  }
+
   return {
     saveVersion: CURRENT_SAVE_VERSION,
     resources,
@@ -589,6 +638,9 @@ function normalizeToGameState(data: SaveData): GameState {
     autoSaveConfig,
     pityCounters,
     gachaHistory,
+    goalProgress,
+    weeklyGoals,
+    stageTasks,
   };
 }
 

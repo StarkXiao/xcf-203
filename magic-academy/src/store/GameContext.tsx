@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, WeeklyGoal, StageTask, GoalType } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -58,6 +58,15 @@ import {
   calculateHealCost,
   initializeStudentHp,
   recalculateStudentMaxHp,
+  INITIAL_GOAL_PROGRESS,
+  INITIAL_WEEKLY_GOALS,
+  INITIAL_STAGE_TASKS_STATE,
+  updateWeeklyGoalProgress,
+  updateStageTaskProgress,
+  unlockNextStageTasks,
+  checkWeeklyReset,
+  generateWeeklyGoals,
+  getCurrentWeek,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -93,7 +102,11 @@ type GameAction =
   | { type: 'ADD_DAILY_SNAPSHOT'; snapshot: DailySnapshot }
   | { type: 'UPDATE_AUTO_SAVE_CONFIG'; config: Partial<AutoSaveConfig> }
   | { type: 'CLEAR_OLD_SNAPSHOTS' }
-  | { type: 'TRIGGER_CRITICAL_SAVE' };
+  | { type: 'TRIGGER_CRITICAL_SAVE' }
+  | { type: 'UPDATE_GOAL_PROGRESS'; goalType: GoalType; amount?: number }
+  | { type: 'CLAIM_WEEKLY_GOAL'; goalId: string }
+  | { type: 'CLAIM_STAGE_TASK'; taskId: string }
+  | { type: 'RESET_WEEKLY_GOALS' };
 
 const MAX_STUDENT_CAPACITY = 20;
 
@@ -138,6 +151,9 @@ const initialState: GameState = {
       legendary: 0,
     },
   },
+  goalProgress: INITIAL_GOAL_PROGRESS,
+  weeklyGoals: INITIAL_WEEKLY_GOALS,
+  stageTasks: INITIAL_STAGE_TASKS_STATE,
 };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -187,6 +203,21 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           state.resources.food < cost.food || state.resources.reputation < cost.reputation) {
         return state;
       }
+      const newGoalProgress = {
+        ...state.goalProgress,
+        buildingUpgrades: state.goalProgress.buildingUpgrades + 1,
+      };
+      
+      const newWeeklyGoals = {
+        ...state.weeklyGoals,
+        goals: updateWeeklyGoalProgress(state.weeklyGoals.goals, 'building'),
+      };
+      
+      const newStageTasks = {
+        ...state.stageTasks,
+        tasks: updateStageTaskProgress(state.stageTasks.tasks, 'building'),
+      };
+      
       return {
         ...state,
         resources: {
@@ -198,6 +229,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         buildings: state.buildings.map(b =>
           b.id === action.buildingId ? { ...b, level: b.level + 1 } : b
         ),
+        goalProgress: newGoalProgress,
+        weeklyGoals: newWeeklyGoals,
+        stageTasks: newStageTasks,
       };
     }
 
@@ -228,6 +262,22 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         newHistoryResults.shift();
       }
 
+      const newGoalProgress = {
+        ...state.goalProgress,
+        recruits: state.goalProgress.recruits + 1,
+        totalStudents: state.students.length + 1,
+      };
+      
+      const newWeeklyGoals = {
+        ...state.weeklyGoals,
+        goals: updateWeeklyGoalProgress(state.weeklyGoals.goals, 'recruit'),
+      };
+      
+      const newStageTasks = {
+        ...state.stageTasks,
+        tasks: updateStageTaskProgress(state.stageTasks.tasks, 'recruit'),
+      };
+      
       return {
         ...state,
         pityCounters: newPityCounters,
@@ -239,6 +289,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             [result.resultQuality]: state.gachaHistory.qualityCounts[result.resultQuality] + 1,
           },
         },
+        goalProgress: newGoalProgress,
+        weeklyGoals: newWeeklyGoals,
+        stageTasks: newStageTasks,
       };
     }
 
@@ -524,6 +577,21 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         });
       }
       
+      const newGoalProgress = {
+        ...state.goalProgress,
+        coursesCompleted: state.goalProgress.coursesCompleted + 1,
+      };
+      
+      const newWeeklyGoals = {
+        ...state.weeklyGoals,
+        goals: updateWeeklyGoalProgress(state.weeklyGoals.goals, 'course'),
+      };
+      
+      const newStageTasks = {
+        ...state.stageTasks,
+        tasks: updateStageTaskProgress(state.stageTasks.tasks, 'course'),
+      };
+      
       const dailyLog: DailyLog = {
         day: state.day,
         events: todayEvents,
@@ -535,6 +603,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return {
         ...newState,
         dailyLogs: recentLogs,
+        goalProgress: newGoalProgress,
+        weeklyGoals: newWeeklyGoals,
+        stageTasks: newStageTasks,
       };
     }
 
@@ -858,6 +929,29 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const shouldUpdateTeam = action.stars > dungeon.bestStars;
       const newSweepUnlocked = newBestStars >= 3;
       
+      const newGoalProgress = {
+        ...state.goalProgress,
+        dungeonClears: state.goalProgress.dungeonClears + 1,
+        reputationGained: state.goalProgress.reputationGained + rewards.reputation,
+      };
+      
+      const newWeeklyGoals = {
+        ...state.weeklyGoals,
+        goals: updateWeeklyGoalProgress(state.weeklyGoals.goals, 'dungeon'),
+      };
+      
+      let newStageTasks = {
+        ...state.stageTasks,
+        tasks: updateStageTaskProgress(state.stageTasks.tasks, 'dungeon'),
+      };
+      
+      if (isFirstClear) {
+        const completedTask = newStageTasks.tasks.find(t => t.completed && !t.claimed);
+        if (completedTask) {
+          newStageTasks.tasks = unlockNextStageTasks(newStageTasks.tasks, completedTask.id);
+        }
+      }
+      
       return {
         ...state,
         students: updatedStudents,
@@ -879,6 +973,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             sweepUnlocked: newSweepUnlocked,
           } : d
         ),
+        goalProgress: newGoalProgress,
+        weeklyGoals: newWeeklyGoals,
+        stageTasks: newStageTasks,
       };
     }
 
@@ -900,6 +997,22 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         };
       });
       
+      const newGoalProgress = {
+        ...state.goalProgress,
+        dungeonClears: state.goalProgress.dungeonClears + 1,
+        reputationGained: state.goalProgress.reputationGained + rewards.reputation,
+      };
+      
+      const newWeeklyGoals = {
+        ...state.weeklyGoals,
+        goals: updateWeeklyGoalProgress(state.weeklyGoals.goals, 'dungeon'),
+      };
+      
+      const newStageTasks = {
+        ...state.stageTasks,
+        tasks: updateStageTaskProgress(state.stageTasks.tasks, 'dungeon'),
+      };
+      
       return {
         ...state,
         students: updatedStudents,
@@ -918,6 +1031,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             sweepUnlocked: d.bestStars >= 3,
           } : d
         ),
+        goalProgress: newGoalProgress,
+        weeklyGoals: newWeeklyGoals,
+        stageTasks: newStageTasks,
       };
     }
 
@@ -1034,6 +1150,86 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         },
         students: updatedStudents,
         dailyLogs: recentLogs,
+      };
+    }
+
+    case 'UPDATE_GOAL_PROGRESS': {
+      const amount = action.amount || 1;
+      return {
+        ...state,
+        weeklyGoals: {
+          ...state.weeklyGoals,
+          goals: updateWeeklyGoalProgress(state.weeklyGoals.goals, action.goalType, amount),
+        },
+        stageTasks: {
+          ...state.stageTasks,
+          tasks: updateStageTaskProgress(state.stageTasks.tasks, action.goalType, amount),
+        },
+      };
+    }
+
+    case 'CLAIM_WEEKLY_GOAL': {
+      const goal = state.weeklyGoals.goals.find(g => g.id === action.goalId);
+      if (!goal || !goal.completed || goal.claimed) return state;
+
+      const newGoals = state.weeklyGoals.goals.map(g =>
+        g.id === action.goalId ? { ...g, claimed: true } : g
+      );
+
+      return {
+        ...state,
+        resources: {
+          gold: state.resources.gold + (goal.reward.gold || 0),
+          mana: state.resources.mana + (goal.reward.mana || 0),
+          food: state.resources.food + (goal.reward.food || 0),
+          reputation: state.resources.reputation + (goal.reward.reputation || 0),
+        },
+        weeklyGoals: {
+          ...state.weeklyGoals,
+          goals: newGoals,
+        },
+      };
+    }
+
+    case 'CLAIM_STAGE_TASK': {
+      const task = state.stageTasks.tasks.find(t => t.id === action.taskId);
+      if (!task || !task.completed || task.claimed) return state;
+
+      let newTasks = state.stageTasks.tasks.map(t =>
+        t.id === action.taskId ? { ...t, claimed: true } : t
+      );
+
+      newTasks = unlockNextStageTasks(newTasks, action.taskId);
+
+      const allStageTasks = newTasks.filter(t => t.stage === task.stage);
+      const allClaimed = allStageTasks.every(t => t.claimed);
+      const newCurrentStage = allClaimed ? task.stage + 1 : state.stageTasks.currentStage;
+
+      return {
+        ...state,
+        resources: {
+          gold: state.resources.gold + (task.reward.gold || 0),
+          mana: state.resources.mana + (task.reward.mana || 0),
+          food: state.resources.food + (task.reward.food || 0),
+          reputation: state.resources.reputation + (task.reward.reputation || 0),
+        },
+        stageTasks: {
+          ...state.stageTasks,
+          tasks: newTasks,
+          currentStage: newCurrentStage,
+        },
+      };
+    }
+
+    case 'RESET_WEEKLY_GOALS': {
+      const newWeekNumber = state.weeklyGoals.weeklyResetCount + 2;
+      return {
+        ...state,
+        weeklyGoals: {
+          weekStartDay: state.day,
+          goals: generateWeeklyGoals(newWeekNumber),
+          weeklyResetCount: state.weeklyGoals.weeklyResetCount + 1,
+        },
       };
     }
 
@@ -1588,6 +1784,20 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         }
       }
 
+      let finalWeeklyGoals = state.weeklyGoals;
+      if (checkWeeklyReset(newDay, state.weeklyGoals.weekStartDay)) {
+        const newWeekNumber = state.weeklyGoals.weeklyResetCount + 2;
+        finalWeeklyGoals = {
+          weekStartDay: newDay,
+          goals: generateWeeklyGoals(newWeekNumber),
+          weeklyResetCount: state.weeklyGoals.weeklyResetCount + 1,
+        };
+        todayEvents.push({
+          type: 'income',
+          message: `📅 新的一周开始了！周目标已重置`,
+        });
+      }
+
       return {
         ...state,
         day: newDay,
@@ -1595,6 +1805,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         dailyLogs: recentLogs,
         resources: finalResources,
         dailySnapshots: newDailySnapshots,
+        weeklyGoals: finalWeeklyGoals,
       };
     }
 
@@ -1700,6 +1911,11 @@ interface GameContextType {
   canAccessBuilding: typeof canAccessBuilding;
   canAccessRecruitmentTicket: typeof canAccessRecruitmentTicket;
   REPUTATION_LEVELS: typeof REPUTATION_LEVELS;
+  claimWeeklyGoal: (goalId: string) => void;
+  claimStageTask: (taskId: string) => void;
+  resetWeeklyGoals: () => void;
+  getCurrentWeek: typeof getCurrentWeek;
+  getWeeklyProgress: () => { current: number; total: number; daysLeft: number };
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -2047,6 +2263,27 @@ export function GameProvider({ children }: { children: ReactNode }) {
     return state.autoSaveConfig.confirmOnCriticalAction;
   };
 
+  const claimWeeklyGoal = (goalId: string) => {
+    dispatch({ type: 'CLAIM_WEEKLY_GOAL', goalId });
+    autoSaveIfEnabled();
+  };
+
+  const claimStageTask = (taskId: string) => {
+    dispatch({ type: 'CLAIM_STAGE_TASK', taskId });
+    autoSaveIfEnabled();
+  };
+
+  const resetWeeklyGoals = () => {
+    dispatch({ type: 'RESET_WEEKLY_GOALS' });
+  };
+
+  const getWeeklyProgress = () => {
+    const completed = state.weeklyGoals.goals.filter(g => g.completed).length;
+    const total = state.weeklyGoals.goals.length;
+    const daysLeft = Math.max(0, 7 - (state.day - state.weeklyGoals.weekStartDay));
+    return { current: completed, total, daysLeft };
+  };
+
   return (
     <GameContext.Provider value={{ 
       state, 
@@ -2106,6 +2343,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
       canAccessBuilding,
       canAccessRecruitmentTicket,
       REPUTATION_LEVELS,
+      claimWeeklyGoal,
+      claimStageTask,
+      resetWeeklyGoals,
+      getCurrentWeek,
+      getWeeklyProgress,
     }}>
       {children}
     </GameContext.Provider>

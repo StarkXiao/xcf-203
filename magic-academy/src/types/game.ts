@@ -216,7 +216,56 @@ export interface Enemy {
   isBoss: boolean;
 }
 
-export const CURRENT_SAVE_VERSION = 6;
+export const CURRENT_SAVE_VERSION = 7;
+
+export type GoalType = 'building' | 'course' | 'dungeon' | 'recruit' | 'comprehensive';
+
+export interface WeeklyGoal {
+  id: string;
+  name: string;
+  description: string;
+  type: GoalType;
+  target: number;
+  current: number;
+  reward: Partial<Resource>;
+  completed: boolean;
+  claimed: boolean;
+}
+
+export interface StageTask {
+  id: string;
+  name: string;
+  description: string;
+  stage: number;
+  type: GoalType;
+  target: number;
+  current: number;
+  reward: Partial<Resource>;
+  completed: boolean;
+  claimed: boolean;
+  unlocked: boolean;
+  prerequisite?: string;
+}
+
+export interface GoalProgress {
+  buildingUpgrades: number;
+  coursesCompleted: number;
+  dungeonClears: number;
+  recruits: number;
+  totalStudents: number;
+  reputationGained: number;
+}
+
+export interface WeeklyGoalsState {
+  weekStartDay: number;
+  goals: WeeklyGoal[];
+  weeklyResetCount: number;
+}
+
+export interface StageTasksState {
+  tasks: StageTask[];
+  currentStage: number;
+}
 
 export interface ReputationLevel {
   level: number;
@@ -294,6 +343,9 @@ export interface GameState {
   autoSaveConfig: AutoSaveConfig;
   pityCounters: PityCounter;
   gachaHistory: GachaHistory;
+  goalProgress: GoalProgress;
+  weeklyGoals: WeeklyGoalsState;
+  stageTasks: StageTasksState;
 }
 
 export interface CourseBenefitBreakdown {

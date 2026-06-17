@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useGame } from '../store/GameContext';
-import type { TabType, Dungeon as DungeonType, Student as StudentType, Course as CourseType, DailyEvent, GachaResult, StudentQuality } from '../types/game';
+import type { TabType, Dungeon as DungeonType, Student as StudentType, Course as CourseType, DailyEvent, GachaResult, StudentQuality, GoalType, Resource } from '../types/game';
 import { getStudentStatsSummary, calculateExpGain, calculateSynergyBonus, isStudentBattleReady, calculateHpEfficiencyMultiplier, HP_BATTLE_THRESHOLD, calculateHealCost, getMaxHealableHp, RECRUITMENT_TICKETS } from '../data/gameData';
 import './MainLayout.css';
 
@@ -15,6 +15,7 @@ const tabs: TabConfig[] = [
   { id: 'recruit', label: '学员招募', icon: '📜' },
   { id: 'course', label: '课程安排', icon: '📚' },
   { id: 'dungeon', label: '试炼副本', icon: '⚔️' },
+  { id: 'goals', label: '目标任务', icon: '🎯' },
   { id: 'settlement', label: '资源结算', icon: '💰' },
   { id: 'records', label: '经营记录', icon: '📊' },
   { id: 'settings', label: '设置存档', icon: '⚙️' },
@@ -112,6 +113,7 @@ export default function MainLayout() {
         {activeTab === 'recruit' && <RecruitModule onStudentClick={setSelectedStudentId} setConfirmDialog={setConfirmDialog} />}
         {activeTab === 'course' && <CourseModule onStudentClick={setSelectedStudentId} />}
         {activeTab === 'dungeon' && <DungeonModule onStudentClick={setSelectedStudentId} setConfirmDialog={setConfirmDialog} />}
+        {activeTab === 'goals' && <GoalsModule />}
         {activeTab === 'settlement' && <SettlementModule setConfirmDialog={setConfirmDialog} />}
         {activeTab === 'records' && <RecordsModule />}
         {activeTab === 'settings' && <SettingsModule />}
@@ -2383,6 +2385,307 @@ function SettlementModule({ setConfirmDialog }: ModuleProps) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function GoalsModule() {
+  const { state, dispatch } = useGame();
+  const { weeklyGoals, stageTasks } = state;
+
+  const progressToNextWeek = Math.min(100, ((state.day - weeklyGoals.weekStartDay) / 7) * 100);
+  const daysRemaining = Math.max(0, 7 - (state.day - weeklyGoals.weekStartDay));
+
+  const handleClaimWeeklyReward = (goalId: string) => {
+    dispatch({ type: 'CLAIM_WEEKLY_GOAL', goalId });
+  };
+
+  const handleClaimStageReward = (taskId: string) => {
+    dispatch({ type: 'CLAIM_STAGE_TASK', taskId });
+  };
+
+  const getProgressColor = (current: number, target: number) => {
+    const ratio = current / target;
+    if (ratio >= 1) return 'bg-green-500';
+    if (ratio >= 0.5) return 'bg-yellow-500';
+    return 'bg-blue-500';
+  };
+
+  const formatReward = (reward: Partial<Resource>) => {
+    const parts: string[] = [];
+    if (reward.gold) parts.push(`💰 ${reward.gold}`);
+    if (reward.mana) parts.push(`💎 ${reward.mana}`);
+    if (reward.food) parts.push(`🍞 ${reward.food}`);
+    if (reward.reputation) parts.push(`⭐ ${reward.reputation}`);
+    return parts.join(' ');
+  };
+
+  const getTypeIcon = (type: GoalType) => {
+    switch (type) {
+      case 'building': return '🏗️';
+      case 'course': return '📚';
+      case 'dungeon': return '⚔️';
+      case 'recruit': return '👤';
+      case 'totalStudents': return '👥';
+      case 'reputation': return '⭐';
+      default: return '🎯';
+    }
+  };
+
+  const unlockedStageTasks = stageTasks.tasks.filter(t => t.unlocked);
+  const completedCount = stageTasks.tasks.filter(t => t.completed).length;
+
+  return (
+    <div className="module-container goals-module">
+      <div className="module-header">
+        <h2>🎯 目标任务</h2>
+      </div>
+
+      <div className="goals-overview">
+        <div className="overview-card">
+          <h3>📅 周进度</h3>
+          <div className="progress-bar">
+            <div
+              className="progress-fill"
+              style={{ width: `${progressToNextWeek}%`, backgroundColor: '#4f46e5' }}
+            />
+          </div>
+          <p>第 {weeklyGoals.weeklyResetCount + 1} 周 · 剩余 {daysRemaining} 天</p>
+          <p className="small-text">每周一自动刷新目标</p>
+        </div>
+        <div className="overview-card">
+          <h3>🏆 阶段进度</h3>
+          <div className="progress-bar">
+            <div
+              className="progress-fill"
+              style={{ width: `${(completedCount / stageTasks.tasks.length) * 100}%`, backgroundColor: '#10b981' }}
+            />
+          </div>
+          <p>已完成 {completedCount} / {stageTasks.tasks.length}</p>
+          <p className="small-text">当前阶段 {stageTasks.currentStage}</p>
+        </div>
+      </div>
+
+      <div className="goals-section">
+        <h3>📋 周目标</h3>
+        <div className="goals-grid">
+          {weeklyGoals.goals.map(goal => {
+            const isComplete = goal.current >= goal.target;
+            return (
+              <div
+                key={goal.id}
+                className={`goal-card ${goal.completed ? 'completed' : ''} ${goal.claimed ? 'claimed' : ''}`}
+              >
+                <div className="goal-header">
+                  <span className="goal-icon">{getTypeIcon(goal.type)}</span>
+                  <div className="goal-info">
+                    <h4>{goal.name}</h4>
+                    <p>{goal.description}</p>
+                  </div>
+                </div>
+                <div className="goal-progress">
+                  <div className="progress-bar">
+                    <div
+                      className="progress-fill"
+                      style={{
+                        width: `${Math.min(100, (goal.current / goal.target) * 100)}%`,
+                        backgroundColor: isComplete ? '#10b981' : '#4f46e5',
+                      }}
+                    />
+                  </div>
+                  <span className="progress-text">
+                    {goal.current} / {goal.target}
+                  </span>
+                </div>
+                <div className="goal-footer">
+                  <span className="reward-text">奖励: {formatReward(goal.reward)}</span>
+                  {!goal.claimed && goal.completed && (
+                    <button
+                      className="btn btn-primary btn-small"
+                      onClick={() => handleClaimWeeklyReward(goal.id)}
+                    >
+                      领取
+                    </button>
+                  )}
+                  {goal.claimed && <span className="claimed-badge">✓ 已领取</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="goals-section">
+        <h3>🚀 阶段任务</h3>
+        <div className="goals-grid">
+          {unlockedStageTasks.map(task => {
+            const isComplete = task.current >= task.target;
+            return (
+              <div
+                key={task.id}
+                className={`goal-card stage-task ${task.completed ? 'completed' : ''} ${task.claimed ? 'claimed' : ''}`}
+              >
+                <div className="goal-header">
+                  <span className="stage-badge">阶段 {task.stage}</span>
+                  <div className="goal-info">
+                    <h4>{task.name}</h4>
+                    <p>{task.description}</p>
+                  </div>
+                </div>
+                <div className="goal-progress">
+                  <div className="progress-bar">
+                    <div
+                      className="progress-fill"
+                      style={{
+                        width: `${Math.min(100, (task.current / task.target) * 100)}%`,
+                        backgroundColor: isComplete ? '#10b981' : '#f59e0b',
+                      }}
+                    />
+                  </div>
+                  <span className="progress-text">
+                    {task.current} / {task.target}
+                  </span>
+                </div>
+                <div className="goal-footer">
+                  <span className="reward-text">奖励: {formatReward(task.reward)}</span>
+                  {!task.claimed && task.completed && (
+                    <button
+                      className="btn btn-primary btn-small"
+                      onClick={() => handleClaimStageReward(task.id)}
+                    >
+                      领取
+                    </button>
+                  )}
+                  {task.claimed && <span className="claimed-badge">✓ 已领取</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <style>{`
+        .goals-overview {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+          gap: 1rem;
+          margin-bottom: 2rem;
+        }
+        .overview-card {
+          background: rgba(255, 255, 255, 0.9);
+          padding: 1rem;
+          border-radius: 8px;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .overview-card h3 {
+          margin: 0 0 0.5rem 0;
+          font-size: 1rem;
+          color: #1f2937;
+        }
+        .overview-card p {
+          margin: 0.25rem 0;
+          color: #6b7280;
+          font-size: 0.875rem;
+        }
+        .overview-card .small-text {
+          font-size: 0.75rem;
+          color: #9ca3af;
+        }
+        .goals-section {
+          margin-bottom: 2rem;
+        }
+        .goals-section h3 {
+          margin-bottom: 1rem;
+          color: #1f2937;
+          font-size: 1.125rem;
+        }
+        .goals-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+          gap: 1rem;
+        }
+        .goal-card {
+          background: rgba(255, 255, 255, 0.95);
+          padding: 1rem;
+          border-radius: 8px;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+          border: 2px solid transparent;
+          transition: all 0.2s;
+        }
+        .goal-card.completed {
+          border-color: #10b981;
+          background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(255, 255, 255, 0.95));
+        }
+        .goal-card.claimed {
+          opacity: 0.7;
+        }
+        .goal-card.stage-task {
+          border-left: 4px solid #f59e0b;
+        }
+        .goal-header {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.75rem;
+          margin-bottom: 0.75rem;
+        }
+        .goal-icon {
+          font-size: 1.5rem;
+        }
+        .stage-badge {
+          background: #f59e0b;
+          color: white;
+          padding: 0.125rem 0.5rem;
+          border-radius: 4px;
+          font-size: 0.75rem;
+          font-weight: bold;
+        }
+        .goal-info h4 {
+          margin: 0 0 0.25rem 0;
+          font-size: 1rem;
+          color: #1f2937;
+        }
+        .goal-info p {
+          margin: 0;
+          color: #6b7280;
+          font-size: 0.875rem;
+        }
+        .goal-progress {
+          margin-bottom: 0.75rem;
+        }
+        .progress-bar {
+          height: 8px;
+          background: #e5e7eb;
+          border-radius: 4px;
+          overflow: hidden;
+          margin-bottom: 0.25rem;
+        }
+        .progress-fill {
+          height: 100%;
+          transition: width 0.3s ease;
+        }
+        .progress-text {
+          font-size: 0.75rem;
+          color: #6b7280;
+        }
+        .goal-footer {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .reward-text {
+          font-size: 0.875rem;
+          color: #6b7280;
+        }
+        .claimed-badge {
+          color: #10b981;
+          font-size: 0.875rem;
+          font-weight: bold;
+        }
+        .btn-small {
+          padding: 0.25rem 0.75rem;
+          font-size: 0.875rem;
+        }
+      `}</style>
     </div>
   );
 }
