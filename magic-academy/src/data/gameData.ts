@@ -820,3 +820,141 @@ export const calculateDailyIncome = (
     reputation: 5 + diningHallLevel * 2 + reputationBonus,
   };
 };
+
+export interface PityConfig {
+  quality: StudentQuality;
+  pityThreshold: number;
+  guaranteedQuality: StudentQuality;
+}
+
+export const PITY_CONFIGS: PityConfig[] = [
+  { quality: 'common', pityThreshold: 10, guaranteedQuality: 'rare' },
+  { quality: 'rare', pityThreshold: 15, guaranteedQuality: 'epic' },
+  { quality: 'epic', pityThreshold: 20, guaranteedQuality: 'legendary' },
+  { quality: 'legendary', pityThreshold: 30, guaranteedQuality: 'legendary' },
+];
+
+export interface TicketProbability {
+  ticketQuality: StudentQuality;
+  probabilities: Record<StudentQuality, number>;
+}
+
+export const RECRUITMENT_PROBABILITIES: TicketProbability[] = [
+  {
+    ticketQuality: 'common',
+    probabilities: { common: 0.70, rare: 0.25, epic: 0.045, legendary: 0.005 },
+  },
+  {
+    ticketQuality: 'rare',
+    probabilities: { common: 0.30, rare: 0.50, epic: 0.17, legendary: 0.03 },
+  },
+  {
+    ticketQuality: 'epic',
+    probabilities: { common: 0.10, rare: 0.30, epic: 0.45, legendary: 0.15 },
+  },
+  {
+    ticketQuality: 'legendary',
+    probabilities: { common: 0.05, rare: 0.15, epic: 0.35, legendary: 0.45 },
+  },
+];
+
+export const QUALITY_WEIGHTS: Record<StudentQuality, number> = {
+  common: 1,
+  rare: 2,
+  epic: 4,
+  legendary: 8,
+};
+
+export const getPityThreshold = (ticketQuality: StudentQuality): number => {
+  const config = PITY_CONFIGS.find(c => c.quality === ticketQuality);
+  return config?.pityThreshold || 10;
+};
+
+export const getGuaranteedQuality = (ticketQuality: StudentQuality): StudentQuality => {
+  const config = PITY_CONFIGS.find(c => c.quality === ticketQuality);
+  return config?.guaranteedQuality || 'rare';
+};
+
+export const getProbabilities = (ticketQuality: StudentQuality): Record<StudentQuality, number> => {
+  const config = RECRUITMENT_PROBABILITIES.find(p => p.ticketQuality === ticketQuality);
+  return config?.probabilities || RECRUITMENT_PROBABILITIES[0].probabilities;
+};
+
+export const getQualityOrder = (quality: StudentQuality): number => {
+  const order: Record<StudentQuality, number> = {
+    common: 0,
+    rare: 1,
+    epic: 2,
+    legendary: 3,
+  };
+  return order[quality];
+};
+
+export const rollQuality = (
+  ticketQuality: StudentQuality,
+  pityCount: number,
+  recruitQualityBonus: number = 0
+): { quality: StudentQuality; isPity: boolean; adjustedProbabilities: Record<StudentQuality, number> } => {
+  const baseProbabilities = getProbabilities(ticketQuality);
+  const pityThreshold = getPityThreshold(ticketQuality);
+  const guaranteedQuality = getGuaranteedQuality(ticketQuality);
+
+  const adjustedProbabilities: Record<StudentQuality, number> = {
+    common: baseProbabilities.common,
+    rare: baseProbabilities.rare,
+    epic: baseProbabilities.epic,
+    legendary: baseProbabilities.legendary,
+  };
+
+  if (recruitQualityBonus > 0) {
+    const qualities: StudentQuality[] = ['common', 'rare', 'epic', 'legendary'];
+    for (let i = 0; i < qualities.length - 1; i++) {
+      const shift = Math.min(adjustedProbabilities[qualities[i]] * recruitQualityBonus * 0.1, adjustedProbabilities[qualities[i]] * 0.5);
+      adjustedProbabilities[qualities[i]] -= shift;
+      adjustedProbabilities[qualities[i + 1]] += shift;
+    }
+  }
+
+  const pityProgress = pityCount / pityThreshold;
+  if (pityProgress >= 0.5) {
+    const boostFactor = (pityProgress - 0.5) * 2;
+    const guaranteedOrder = getQualityOrder(guaranteedQuality);
+    const qualities: StudentQuality[] = ['common', 'rare', 'epic', 'legendary'];
+    
+    for (let i = 0; i < qualities.length; i++) {
+      if (i < guaranteedOrder) {
+        const reduction = adjustedProbabilities[qualities[i]] * boostFactor * 0.8;
+        adjustedProbabilities[qualities[i]] -= reduction;
+        adjustedProbabilities[guaranteedQuality] += reduction;
+      }
+    }
+  }
+
+  const isPity = pityCount >= pityThreshold;
+
+  if (isPity) {
+    return { quality: guaranteedQuality, isPity: true, adjustedProbabilities };
+  }
+
+  const roll = Math.random();
+  let cumulative = 0;
+  const qualities: StudentQuality[] = ['legendary', 'epic', 'rare', 'common'];
+
+  for (const quality of qualities) {
+    cumulative += adjustedProbabilities[quality];
+    if (roll < cumulative) {
+      return { quality, isPity: false, adjustedProbabilities };
+    }
+  }
+
+  return { quality: 'common', isPity: false, adjustedProbabilities };
+};
+
+export const getRecruitQualityBonus = (buildings: Building[]): number => {
+  return buildings.reduce((acc, b) => {
+    if (b.effect.type === 'recruit_quality') {
+      return acc + b.effect.value * b.level;
+    }
+    return acc;
+  }, 0);
+};

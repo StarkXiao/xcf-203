@@ -201,6 +201,44 @@ export interface Enemy {
 
 export const CURRENT_SAVE_VERSION = 2;
 
+export interface PityCounter {
+  common: number;
+  rare: number;
+  epic: number;
+  legendary: number;
+}
+
+export interface ProbabilityConfig {
+  quality: StudentQuality;
+  probability: number;
+  minProbability?: number;
+  maxProbability?: number;
+}
+
+export interface GachaResult {
+  id: string;
+  ticketQuality: StudentQuality;
+  resultQuality: StudentQuality;
+  studentId: string;
+  studentName: string;
+  isPityTriggered: boolean;
+  pityCountBefore: number;
+  timestamp: number;
+  day: number;
+  details: {
+    potential: number;
+    traits: string[];
+    magicType: MagicType;
+    initialLevel: number;
+  };
+}
+
+export interface GachaHistory {
+  results: GachaResult[];
+  totalDraws: number;
+  qualityCounts: Record<StudentQuality, number>;
+}
+
 export interface GameState {
   saveVersion: number;
   resources: Resource;
@@ -214,6 +252,8 @@ export interface GameState {
   currentDungeonId: number;
   gameStarted: boolean;
   dailyLogs: DailyLog[];
+  pityCounters: PityCounter;
+  gachaHistory: GachaHistory;
 }
 
 export interface RecruitmentTicket {

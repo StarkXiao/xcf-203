@@ -328,6 +328,36 @@ function normalizeToGameState(data: SaveData): GameState {
     })
   );
 
+  const pityCounters = data.pityCounters && typeof data.pityCounters === 'object'
+    ? {
+        common: ensureNumber((data.pityCounters as Record<string, unknown>).common, 0),
+        rare: ensureNumber((data.pityCounters as Record<string, unknown>).rare, 0),
+        epic: ensureNumber((data.pityCounters as Record<string, unknown>).epic, 0),
+        legendary: ensureNumber((data.pityCounters as Record<string, unknown>).legendary, 0),
+      }
+    : { common: 0, rare: 0, epic: 0, legendary: 0 };
+
+  const gachaQualityCounts = data.gachaHistory && typeof data.gachaHistory === 'object' && (data.gachaHistory as Record<string, unknown>).qualityCounts && typeof (data.gachaHistory as Record<string, unknown>).qualityCounts === 'object'
+    ? (data.gachaHistory as Record<string, unknown>).qualityCounts as Record<string, unknown>
+    : {};
+
+  const gachaHistory = data.gachaHistory && typeof data.gachaHistory === 'object'
+    ? {
+        results: ensureArray((data.gachaHistory as Record<string, unknown>).results, []),
+        totalDraws: ensureNumber((data.gachaHistory as Record<string, unknown>).totalDraws, 0),
+        qualityCounts: {
+          common: ensureNumber(gachaQualityCounts.common, 0),
+          rare: ensureNumber(gachaQualityCounts.rare, 0),
+          epic: ensureNumber(gachaQualityCounts.epic, 0),
+          legendary: ensureNumber(gachaQualityCounts.legendary, 0),
+        },
+      }
+    : {
+        results: [],
+        totalDraws: 0,
+        qualityCounts: { common: 0, rare: 0, epic: 0, legendary: 0 },
+      };
+
   return {
     saveVersion: CURRENT_SAVE_VERSION,
     resources,
@@ -341,6 +371,8 @@ function normalizeToGameState(data: SaveData): GameState {
     currentDungeonId: ensureNumber(data.currentDungeonId, 100),
     gameStarted: ensureBoolean(data.gameStarted, true),
     dailyLogs,
+    pityCounters,
+    gachaHistory,
   };
 }
 

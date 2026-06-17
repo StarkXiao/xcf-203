@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGame } from '../store/GameContext';
-import type { TabType, Dungeon as DungeonType, Student as StudentType, Course as CourseType, DailyEvent } from '../types/game';
+import type { TabType, Dungeon as DungeonType, Student as StudentType, Course as CourseType, DailyEvent, GachaResult, StudentQuality } from '../types/game';
 import { getStudentStatsSummary, calculateExpGain, calculateSynergyBonus } from '../data/gameData';
 import './MainLayout.css';
 
@@ -229,7 +229,11 @@ interface ModuleProps {
 }
 
 function RecruitModule({ onStudentClick }: ModuleProps) {
-  const { state, dispatch, canAfford, recruitStudent, assignStudentToRest, getMoraleLabel, getStaminaLabel } = useGame();
+  const { state, dispatch, canAfford, recruitStudent, assignStudentToRest, getMoraleLabel, getStaminaLabel, getPityThreshold, getProbabilities } = useGame();
+  const [showProbability, setShowProbability] = useState<StudentQuality | null>(null);
+  const [gachaAnimation, setGachaAnimation] = useState<{ showing: boolean; result: GachaResult | null; phase: 'rolling' | 'reveal' }>({ showing: false, result: null, phase: 'rolling' });
+  const [showHistory, setShowHistory] = useState(false);
+
   const getCapacity = () => {
     const baseCapacity = 10;
     const buildingBonus = state.buildings.reduce((acc, b) => {
@@ -277,9 +281,270 @@ function RecruitModule({ onStudentClick }: ModuleProps) {
 
   const isFull = state.students.length >= getCapacity();
 
+  const qualityColors: Record<string, string> = {
+    common: '#9e9e9e',
+    rare: '#2196f3',
+    epic: '#9c27b0',
+    legendary: '#ff9800',
+  };
+
+  const qualityNames: Record<string, string> = {
+    common: '普通',
+    rare: '稀有',
+    epic: '史诗',
+    legendary: '传说',
+  };
+
+  const handleRecruit = (ticketQuality: StudentQuality) => {
+    const ticket = tickets.find(t => t.quality === ticketQuality);
+    if (!ticket || !canAfford(ticket.cost) || isFull) return;
+
+    dispatch({ type: 'SPEND_RESOURCE', resource: ticket.cost });
+    const result = recruitStudent(ticketQuality);
+    
+    if (result) {
+      setGachaAnimation({ showing: true, result, phase: 'rolling' });
+      setTimeout(() => {
+        setGachaAnimation(prev => ({ ...prev, phase: 'reveal' }));
+      }, 1500);
+    }
+  };
+
+  const renderPityProgress = (quality: StudentQuality) => {
+    const currentCount = state.pityCounters[quality];
+    const threshold = getPityThreshold(quality);
+    const progress = Math.min((currentCount / threshold) * 100, 100);
+    const guaranteedQuality = quality === 'common' ? 'rare' : quality === 'rare' ? 'epic' : quality === 'epic' ? 'legendary' : 'legendary';
+
+    return (
+      <div className="pity-progress">
+        <div className="pity-info">
+          <span className="pity-count">保底: {currentCount}/{threshold}</span>
+          <span className="pity-guaranteed" style={{ color: qualityColors[guaranteedQuality] }}>
+            保底{qualityNames[guaranteedQuality]}
+          </span>
+        </div>
+        <div className="pity-bar-bg">
+          <div 
+            className="pity-bar-fill" 
+            style={{ 
+              width: `${progress}%`, 
+              background: progress >= 100 ? qualityColors[guaranteedQuality] : qualityColors[quality],
+              boxShadow: progress >= 100 ? `0 0 10px ${qualityColors[guaranteedQuality]}` : 'none'
+            }}
+          ></div>
+        </div>
+        {currentCount >= threshold && (
+          <div className="pity-ready" style={{ color: qualityColors[guaranteedQuality] }}>
+            ✨ 下次招募必出{qualityNames[guaranteedQuality]}！
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderProbabilityPanel = (quality: StudentQuality) => {
+    const probabilities = getProbabilities(quality);
+    const qualities: StudentQuality[] = ['legendary', 'epic', 'rare', 'common'];
+
+    return (
+      <div className="probability-panel">
+        <div className="probability-header">
+          <span>📊 {qualityNames[quality]}招募概率</span>
+          <button className="close-btn" onClick={() => setShowProbability(null)}>✕</button>
+        </div>
+        <div className="probability-list">
+          {qualities.map(q => (
+            <div key={q} className="probability-item">
+              <span className="probability-quality" style={{ color: qualityColors[q] }}>{qualityNames[q]}</span>
+              <div className="probability-bar-wrapper">
+                <div 
+                  className="probability-bar-fill" 
+                  style={{ 
+                    width: `${probabilities[q] * 100}%`, 
+                    background: qualityColors[q] 
+                  }}
+                ></div>
+              </div>
+              <span className="probability-value">{(probabilities[q] * 100).toFixed(1)}%</span>
+            </div>
+          ))}
+        </div>
+        <div className="probability-note">
+          <p>💡 提示：连续招募未获得高品质学员时，保底概率会逐渐提升</p>
+          <p>💡 达到保底次数后，下次招募必定获得保底品质或更高品质</p>
+        </div>
+      </div>
+    );
+  };
+
+  const renderGachaAnimation = () => {
+    if (!gachaAnimation.showing || !gachaAnimation.result) return null;
+
+    const result = gachaAnimation.result;
+    const isRevealPhase = gachaAnimation.phase === 'reveal';
+
+    return (
+      <div className="gacha-overlay" onClick={() => isRevealPhase && setGachaAnimation({ showing: false, result: null, phase: 'rolling' })}>
+        <div className="gacha-modal" onClick={(e) => e.stopPropagation()}>
+          {!isRevealPhase ? (
+            <div className="gacha-rolling">
+              <div className="gacha-cards">
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="gacha-card rolling" style={{ animationDelay: `${i * 0.1}s` }}>
+                    <div className="card-back">✨</div>
+                  </div>
+                ))}
+              </div>
+              <div className="gacha-rolling-text">招募中...</div>
+            </div>
+          ) : (
+            <div className="gacha-reveal">
+              {result.isPityTriggered && (
+                <div className="pity-triggered">
+                  🌟 保底触发！连续 {result.pityCountBefore} 次招募后获得保底 🌟
+                </div>
+              )}
+              <div 
+                className="gacha-result-card" 
+                style={{ 
+                  borderColor: qualityColors[result.resultQuality],
+                  boxShadow: `0 0 30px ${qualityColors[result.resultQuality]}`,
+                  animation: 'revealCard 0.5s ease-out'
+                }}
+              >
+                <div className="gacha-result-header">
+                  <span 
+                    className="gacha-result-quality" 
+                    style={{ color: qualityColors[result.resultQuality] }}
+                  >
+                    {qualityNames[result.resultQuality]}
+                  </span>
+                  <span className="gacha-result-ticket">
+                    ({qualityNames[result.ticketQuality]}招募)
+                  </span>
+                </div>
+                <div className="gacha-result-name">{result.studentName}</div>
+                <div className="gacha-result-details">
+                  <div className="detail-row">
+                    <span className="detail-label">魔法属性</span>
+                    <span className="detail-value">
+                      {result.details.magicType === 'fire' && '🔥 火系'}
+                      {result.details.magicType === 'water' && '💧 水系'}
+                      {result.details.magicType === 'earth' && '🪨 土系'}
+                      {result.details.magicType === 'wind' && '💨 风系'}
+                      {result.details.magicType === 'light' && '✨ 光系'}
+                      {result.details.magicType === 'dark' && '🌑 暗系'}
+                    </span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">初始等级</span>
+                    <span className="detail-value">Lv.{result.details.initialLevel}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">潜力值</span>
+                    <span className="detail-value">{result.details.potential.toFixed(2)}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">获得特质</span>
+                    <span className="detail-value">
+                      {result.details.traits.map((trait, i) => (
+                        <span key={i} className="gacha-trait">{trait}</span>
+                      ))}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button 
+                className="gacha-close-btn"
+                onClick={() => setGachaAnimation({ showing: false, result: null, phase: 'rolling' })}
+              >
+                确定
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderHistoryPanel = () => {
+    if (!showHistory) return null;
+
+    const recentResults = [...state.gachaHistory.results].reverse().slice(0, 20);
+
+    return (
+      <div className="history-overlay" onClick={() => setShowHistory(false)}>
+        <div className="history-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="history-header">
+            <h3>📜 招募历史</h3>
+            <button className="close-btn" onClick={() => setShowHistory(false)}>✕</button>
+          </div>
+          <div className="history-stats">
+            <div className="stat-item">
+              <span className="stat-label">总招募次数</span>
+              <span className="stat-value">{state.gachaHistory.totalDraws}</span>
+            </div>
+            {(['legendary', 'epic', 'rare', 'common'] as StudentQuality[]).map(q => (
+              <div key={q} className="stat-item">
+                <span className="stat-label" style={{ color: qualityColors[q] }}>{qualityNames[q]}</span>
+                <span className="stat-value">
+                  {state.gachaHistory.qualityCounts[q]} 
+                  ({state.gachaHistory.totalDraws > 0 
+                    ? ((state.gachaHistory.qualityCounts[q] / state.gachaHistory.totalDraws) * 100).toFixed(1) 
+                    : '0.0'}%)
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="history-list">
+            {recentResults.length === 0 ? (
+              <p className="empty-message">暂无招募记录</p>
+            ) : (
+              recentResults.map(result => (
+                <div 
+                  key={result.id} 
+                  className="history-item"
+                  style={{ borderLeftColor: qualityColors[result.resultQuality] }}
+                >
+                  <div className="history-item-left">
+                    <span 
+                      className="history-quality" 
+                      style={{ color: qualityColors[result.resultQuality] }}
+                    >
+                      {qualityNames[result.resultQuality]}
+                    </span>
+                    <span className="history-name">{result.studentName}</span>
+                    {result.isPityTriggered && (
+                      <span className="history-pity">🌟保底</span>
+                    )}
+                  </div>
+                  <div className="history-item-right">
+                    <span className="history-day">第{result.day}天</span>
+                    <span className="history-ticket">({qualityNames[result.ticketQuality]}券)</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="module recruit-module">
       <h2>📜 学员招募</h2>
+      
+      <div className="recruit-header-actions">
+        <button 
+          className="history-btn"
+          onClick={() => setShowHistory(true)}
+        >
+          📜 招募历史 ({state.gachaHistory.totalDraws})
+        </button>
+      </div>
+
       <div className="student-list">
         <h3>当前学员 ({state.students.length}/{getCapacity()})</h3>
         {state.students.length === 0 ? (
@@ -288,18 +553,6 @@ function RecruitModule({ onStudentClick }: ModuleProps) {
           <div className="student-grid">
             {state.students.map(student => {
               const course = student.assignedCourse ? state.courses.find(c => c.id === student.assignedCourse) : null;
-              const qualityColors: Record<string, string> = {
-                common: '#9e9e9e',
-                rare: '#2196f3',
-                epic: '#9c27b0',
-                legendary: '#ff9800',
-              };
-              const qualityNames: Record<string, string> = {
-                common: '普通',
-                rare: '稀有',
-                epic: '史诗',
-                legendary: '传说',
-              };
               const stats = getStudentStatsSummary(student);
               const moraleInfo = getMoraleLabel(student.morale);
               const staminaInfo = getStaminaLabel(student.stamina);
@@ -396,15 +649,26 @@ function RecruitModule({ onStudentClick }: ModuleProps) {
         ) : (
           <div className="recruit-options">
             {tickets.map(ticket => {
-              const qualityColors: Record<string, string> = {
-                common: '#9e9e9e',
-                rare: '#2196f3',
-                epic: '#9c27b0',
-                legendary: '#ff9800',
-              };
               return (
                 <div key={ticket.quality} className="recruit-card" style={{ borderColor: qualityColors[ticket.quality] }}>
-                  <h4 style={{ color: qualityColors[ticket.quality] }}>{ticket.name}</h4>
+                  <div className="recruit-card-header">
+                    <h4 style={{ color: qualityColors[ticket.quality] }}>{ticket.name}</h4>
+                    <button 
+                      className="probability-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowProbability(showProbability === ticket.quality ? null : ticket.quality);
+                      }}
+                      title="查看概率"
+                    >
+                      📊
+                    </button>
+                  </div>
+                  
+                  {showProbability === ticket.quality && renderProbabilityPanel(ticket.quality)}
+                  
+                  {renderPityProgress(ticket.quality)}
+                  
                   <div className="recruit-info">
                     <span className="level-info">{ticket.level}</span>
                     <span className="trait-info">{ticket.traits}</span>
@@ -420,12 +684,7 @@ function RecruitModule({ onStudentClick }: ModuleProps) {
                   </div>
                   <button
                     className={`recruit-btn ${ticket.quality} ${!canAfford(ticket.cost) ? 'disabled' : ''}`}
-                    onClick={() => {
-                      if (canAfford(ticket.cost)) {
-                        dispatch({ type: 'SPEND_RESOURCE', resource: ticket.cost });
-                        recruitStudent(ticket.quality);
-                      }
-                    }}
+                    onClick={() => handleRecruit(ticket.quality)}
                     disabled={!canAfford(ticket.cost)}
                   >
                     招募
@@ -436,6 +695,9 @@ function RecruitModule({ onStudentClick }: ModuleProps) {
           </div>
         )}
       </div>
+
+      {renderGachaAnimation()}
+      {renderHistoryPanel()}
     </div>
   );
 }

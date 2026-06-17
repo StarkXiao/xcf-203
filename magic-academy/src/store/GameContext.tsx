@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -33,6 +33,11 @@ import {
   calculateDailyIncome,
   getMoraleLabel,
   getStaminaLabel,
+  rollQuality,
+  getPityThreshold,
+  getQualityOrder,
+  getRecruitQualityBonus,
+  getProbabilities,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -48,6 +53,9 @@ type GameAction =
   | { type: 'ASSIGN_STUDENT_TO_COURSE'; studentId: string; courseId: string | null; courseDuration: number }
   | { type: 'ASSIGN_STUDENT_TO_REST'; studentId: string }
   | { type: 'COMPLETE_COURSE'; studentId: string; courseId: string }
+  | { type: 'RECRUIT_STUDENT'; result: GachaResult }
+  | { type: 'UPDATE_PITY_COUNTER'; quality: StudentQuality; value: number }
+  | { type: 'RESET_PITY_COUNTER'; quality: StudentQuality }
   | { type: 'QUEUE_COURSE'; studentId: string; courseId: string; day: number }
   | { type: 'REMOVE_FROM_QUEUE'; studentId: string; queueIndex: number }
   | { type: 'REORDER_QUEUE'; studentId: string; fromIndex: number; toIndex: number }
@@ -76,6 +84,22 @@ const initialState: GameState = {
   currentDungeonId: 100,
   gameStarted: false,
   dailyLogs: [],
+  pityCounters: {
+    common: 0,
+    rare: 0,
+    epic: 0,
+    legendary: 0,
+  },
+  gachaHistory: {
+    results: [],
+    totalDraws: 0,
+    qualityCounts: {
+      common: 0,
+      rare: 0,
+      epic: 0,
+      legendary: 0,
+    },
+  },
 };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -142,6 +166,66 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         students: [...state.students, action.student],
         currentStudentId: state.currentStudentId + 1,
       };
+
+    case 'RECRUIT_STUDENT': {
+      const { result } = action;
+      const resultQualityOrder = getQualityOrder(result.resultQuality);
+      const ticketQualityOrder = getQualityOrder(result.ticketQuality);
+
+      const newPityCounters = { ...state.pityCounters };
+      const qualities: StudentQuality[] = ['common', 'rare', 'epic', 'legendary'];
+      
+      qualities.forEach((quality) => {
+        const qualityOrder = getQualityOrder(quality);
+        if (qualityOrder <= ticketQualityOrder) {
+          if (result.isPityTriggered || resultQualityOrder > qualityOrder) {
+            newPityCounters[quality] = 0;
+          } else if (quality === result.ticketQuality) {
+            newPityCounters[quality] += 1;
+          } else if (qualityOrder < ticketQualityOrder) {
+            newPityCounters[quality] += 1;
+          }
+        }
+      });
+
+      const newHistoryResults = [...state.gachaHistory.results, result];
+      if (newHistoryResults.length > 100) {
+        newHistoryResults.shift();
+      }
+
+      return {
+        ...state,
+        pityCounters: newPityCounters,
+        gachaHistory: {
+          results: newHistoryResults,
+          totalDraws: state.gachaHistory.totalDraws + 1,
+          qualityCounts: {
+            ...state.gachaHistory.qualityCounts,
+            [result.resultQuality]: state.gachaHistory.qualityCounts[result.resultQuality] + 1,
+          },
+        },
+      };
+    }
+
+    case 'UPDATE_PITY_COUNTER': {
+      return {
+        ...state,
+        pityCounters: {
+          ...state.pityCounters,
+          [action.quality]: action.value,
+        },
+      };
+    }
+
+    case 'RESET_PITY_COUNTER': {
+      return {
+        ...state,
+        pityCounters: {
+          ...state.pityCounters,
+          [action.quality]: 0,
+        },
+      };
+    }
 
     case 'REMOVE_STUDENT':
       return {
@@ -1153,7 +1237,7 @@ interface GameContextType {
   activeTab: TabType;
   setActiveTab: (tab: TabType) => void;
   canAfford: (cost: Partial<Resource>) => boolean;
-  recruitStudent: (quality: 'common' | 'rare' | 'epic' | 'legendary') => void;
+  recruitStudent: (quality: 'common' | 'rare' | 'epic' | 'legendary') => GachaResult | null;
   assignStudentToRest: (studentId: string) => void;
   assignStudentToCourse: (studentId: string, courseId: string) => void;
   queueCourse: (studentId: string, courseId: string) => void;
@@ -1180,6 +1264,9 @@ interface GameContextType {
   getStaminaLabel: (stamina: number) => { label: string; color: string };
   calculateMoraleEfficiencyMultiplier: typeof calculateMoraleEfficiencyMultiplier;
   calculateStaminaEfficiencyMultiplier: typeof calculateStaminaEfficiencyMultiplier;
+  getPityThreshold: typeof getPityThreshold;
+  getProbabilities: typeof getProbabilities;
+  getRecruitQualityBonus: typeof getRecruitQualityBonus;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -1206,18 +1293,30 @@ export function GameProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  const recruitStudent = (quality: 'common' | 'rare' | 'epic' | 'legendary') => {
+  const recruitStudent = (ticketQuality: 'common' | 'rare' | 'epic' | 'legendary'): GachaResult | null => {
+    if (state.students.length >= state.maxStudents) return null;
+
+    const pityCount = state.pityCounters[ticketQuality];
+    const recruitQualityBonus = getRecruitQualityBonus(state.buildings);
+    
+    const rollResult = rollQuality(ticketQuality, pityCount, recruitQualityBonus);
+    const resultQuality = rollResult.quality;
+    const isPityTriggered = rollResult.isPity;
+
     const levelMap = { common: 1, rare: 2, epic: 3, legendary: 5 };
-    const traits = generateTraits(quality);
-    const potential = generatePotential(quality);
-    const initialLevel = levelMap[quality];
+    const traits = generateTraits(resultQuality);
+    const potential = generatePotential(resultQuality);
+    const initialLevel = levelMap[resultQuality];
+    const magicType = getRandomMagicType();
+    const studentName = generateStudentName();
+    const studentId = `student_${state.currentStudentId}`;
     
     const newStudent: StudentType = {
-      id: `student_${state.currentStudentId}`,
-      name: generateStudentName(),
+      id: studentId,
+      name: studentName,
       level: initialLevel,
       exp: 0,
-      magicType: getRandomMagicType(),
+      magicType: magicType,
       skills: [],
       status: 'idle' as const,
       assignedBuilding: null,
@@ -1225,14 +1324,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
       courseProgress: 0,
       courseDaysRemaining: 0,
       courseQueue: [],
-      quality: quality,
+      quality: resultQuality,
       potential: potential,
       traits: traits,
       morale: INITIAL_STUDENT_MORALE,
       stamina: INITIAL_STUDENT_STAMINA,
       recruitmentInfo: {
         recruitedAt: state.day,
-        recruitmentQuality: quality,
+        recruitmentQuality: resultQuality,
         initialLevel: initialLevel,
         initialPotential: potential,
       },
@@ -1248,7 +1347,29 @@ export function GameProvider({ children }: { children: ReactNode }) {
       courseHistory: [],
       dungeonHistory: [],
     };
+
+    const gachaResult: GachaResult = {
+      id: `gacha_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      ticketQuality: ticketQuality,
+      resultQuality: resultQuality,
+      studentId: studentId,
+      studentName: studentName,
+      isPityTriggered: isPityTriggered,
+      pityCountBefore: pityCount,
+      timestamp: Date.now(),
+      day: state.day,
+      details: {
+        potential: potential,
+        traits: traits.map(t => t.name),
+        magicType: magicType,
+        initialLevel: initialLevel,
+      },
+    };
+
     dispatch({ type: 'ADD_STUDENT', student: newStudent });
+    dispatch({ type: 'RECRUIT_STUDENT', result: gachaResult });
+
+    return gachaResult;
   };
 
   const assignStudentToRest = (studentId: string) => {
@@ -1393,6 +1514,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
       getStaminaLabel,
       calculateMoraleEfficiencyMultiplier,
       calculateStaminaEfficiencyMultiplier,
+      getPityThreshold,
+      getProbabilities,
+      getRecruitQualityBonus,
     }}>
       {children}
     </GameContext.Provider>
