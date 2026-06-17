@@ -16,6 +16,10 @@ import {
   checkPrerequisites,
   getActiveSynergies,
   calculateSynergyBonus,
+  calculateBattleStars,
+  calculateDungeonRewards,
+  calculateSweepRewards,
+  canSweep,
 } from '../data/gameData';
 
 type GameAction =
@@ -29,7 +33,10 @@ type GameAction =
   | { type: 'ASSIGN_STUDENT_TO_COURSE'; studentId: string; courseId: string | null; courseDuration: number }
   | { type: 'COMPLETE_COURSE'; studentId: string; courseId: string }
   | { type: 'START_DUNGEON'; dungeonId: string }
-  | { type: 'COMPLETE_DUNGEON'; dungeonId: string }
+  | { type: 'COMPLETE_DUNGEON'; dungeonId: string; stars: number; survivingMembers: number; totalMembers: number; averageHpPercent: number; totalTurns: number; team: string[] }
+  | { type: 'SWEEP_DUNGEON'; dungeonId: string }
+  | { type: 'SAVE_BEST_TEAM'; dungeonId: string; team: string[] }
+  | { type: 'UNLOCK_SWEEP'; dungeonId: string }
   | { type: 'NEXT_DAY' }
   | { type: 'LOAD_GAME'; state: GameState }
   | { type: 'RESET_GAME' };
@@ -195,16 +202,77 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case 'COMPLETE_DUNGEON': {
       const dungeon = state.dungeons.find(d => d.id === action.dungeonId);
       if (!dungeon) return state;
+      
+      const isFirstClear = !dungeon.firstCleared;
+      const rewards = calculateDungeonRewards(dungeon, action.stars, isFirstClear);
+      const newBestStars = Math.max(dungeon.bestStars, action.stars);
+      const sweepUnlocked = newBestStars >= 3;
+      
       return {
         ...state,
         resources: {
-          gold: state.resources.gold + dungeon.rewards.gold,
-          mana: state.resources.mana + dungeon.rewards.mana,
-          food: state.resources.food + dungeon.rewards.food,
-          reputation: state.resources.reputation + dungeon.rewards.reputation,
+          gold: state.resources.gold + rewards.gold,
+          mana: state.resources.mana + rewards.mana,
+          food: state.resources.food + rewards.food,
+          reputation: state.resources.reputation + rewards.reputation,
         },
         dungeons: state.dungeons.map(d =>
-          d.id === action.dungeonId ? { ...d, completed: true } : d
+          d.id === action.dungeonId ? {
+            ...d,
+            stars: action.stars,
+            bestStars: newBestStars,
+            firstCleared: true,
+            clearedCount: d.clearedCount + 1,
+            bestTeam: action.stars >= d.bestStars ? action.team : d.bestTeam,
+            sweepUnlocked: sweepUnlocked || d.sweepUnlocked,
+          } : d
+        ),
+      };
+    }
+
+    case 'SWEEP_DUNGEON': {
+      const dungeon = state.dungeons.find(d => d.id === action.dungeonId);
+      if (!dungeon || !canSweep(dungeon)) return state;
+      
+      const rewards = calculateSweepRewards(dungeon);
+      
+      return {
+        ...state,
+        resources: {
+          gold: state.resources.gold + rewards.gold,
+          mana: state.resources.mana + rewards.mana,
+          food: state.resources.food + rewards.food,
+          reputation: state.resources.reputation + rewards.reputation,
+        },
+        dungeons: state.dungeons.map(d =>
+          d.id === action.dungeonId ? {
+            ...d,
+            clearedCount: d.clearedCount + 1,
+          } : d
+        ),
+      };
+    }
+
+    case 'SAVE_BEST_TEAM': {
+      return {
+        ...state,
+        dungeons: state.dungeons.map(d =>
+          d.id === action.dungeonId ? {
+            ...d,
+            bestTeam: action.team,
+          } : d
+        ),
+      };
+    }
+
+    case 'UNLOCK_SWEEP': {
+      return {
+        ...state,
+        dungeons: state.dungeons.map(d =>
+          d.id === action.dungeonId ? {
+            ...d,
+            sweepUnlocked: true,
+          } : d
         ),
       };
     }
@@ -324,6 +392,10 @@ interface GameContextType {
   checkPrerequisites: typeof checkPrerequisites;
   getActiveSynergies: typeof getActiveSynergies;
   calculateSynergyBonus: typeof calculateSynergyBonus;
+  calculateBattleStars: typeof calculateBattleStars;
+  calculateDungeonRewards: typeof calculateDungeonRewards;
+  calculateSweepRewards: typeof calculateSweepRewards;
+  canSweep: typeof canSweep;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -408,6 +480,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
       checkPrerequisites,
       getActiveSynergies,
       calculateSynergyBonus,
+      calculateBattleStars,
+      calculateDungeonRewards,
+      calculateSweepRewards,
+      canSweep,
     }}>
       {children}
     </GameContext.Provider>

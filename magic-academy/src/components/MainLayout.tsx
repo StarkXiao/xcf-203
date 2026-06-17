@@ -521,42 +521,167 @@ function CourseModule() {
 }
 
 function DungeonModule() {
-  const { state, dispatch } = useGame();
+  const { state, dispatch, calculateSweepRewards, canSweep } = useGame();
   const [selectedDungeon, setSelectedDungeon] = React.useState<string | null>(null);
+  const [showSweepConfirm, setShowSweepConfirm] = React.useState<string | null>(null);
+
+  const renderStars = (stars: number, maxStars: number = 3) => {
+    return (
+      <div className="star-display">
+        {Array.from({ length: maxStars }, (_, i) => (
+          <span key={i} className={`star ${i < stars ? 'filled' : 'empty'}`}>★</span>
+        ))}
+      </div>
+    );
+  };
+
+  const handleSweep = (dungeonId: string) => {
+    const dungeon = state.dungeons.find(d => d.id === dungeonId);
+    if (!dungeon || !canSweep(dungeon)) return;
+    
+    dispatch({ type: 'SWEEP_DUNGEON', dungeonId });
+    setShowSweepConfirm(null);
+  };
 
   return (
     <div className="module dungeon-module">
       <h2>⚔️ 试炼副本</h2>
+      
+      <div className="dungeon-info-bar">
+        <div className="dungeon-stats">
+          <span>📊 总通关次数: {state.dungeons.reduce((acc, d) => acc + d.clearedCount, 0)}</span>
+          <span>⭐ 最高星级: {state.dungeons.reduce((acc, d) => acc + d.bestStars, 0)}/{state.dungeons.length * 3}</span>
+        </div>
+      </div>
+
       <div className="dungeon-grid">
-        {state.dungeons.map(dungeon => (
-          <div key={dungeon.id} className={`dungeon-card ${dungeon.completed ? 'completed' : ''}`}>
-            <div className="dungeon-header">
-              <h3>{dungeon.name}</h3>
-              <span className="dungeon-level">Lv.{dungeon.level}</span>
+        {state.dungeons.map(dungeon => {
+          const eligibleCount = state.students.filter(s => s.level >= dungeon.requiredLevel).length;
+          const canChallenge = eligibleCount > 0;
+          const sweepable = canSweep(dungeon);
+          const hasBestTeam = dungeon.bestTeam.length > 0;
+          const sweepRewards = calculateSweepRewards(dungeon);
+          
+          return (
+            <div key={dungeon.id} className={`dungeon-card ${dungeon.firstCleared ? 'cleared' : ''}`}>
+              <div className="dungeon-header">
+                <h3>
+                  {dungeon.name}
+                  {!dungeon.firstCleared && <span className="first-clear-badge">首通</span>}
+                </h3>
+                <span className="dungeon-level">Lv.{dungeon.level}</span>
+              </div>
+
+              <div className="dungeon-stars-section">
+                <div className="best-stars">
+                  <span className="stars-label">最高纪录:</span>
+                  {renderStars(dungeon.bestStars)}
+                </div>
+                {dungeon.clearedCount > 0 && (
+                  <div className="clear-count">已通关 {dungeon.clearedCount} 次</div>
+                )}
+              </div>
+
+              <div className="dungeon-info">
+                <span>🌊 {dungeon.waves} 波</span>
+                <span>📍 需要 Lv.{dungeon.requiredLevel}</span>
+                <span>⚡ 消耗 {dungeon.staminaCost}</span>
+              </div>
+
+              <div className="dungeon-star-reqs">
+                <div className="star-req-title">星级条件:</div>
+                <div className="star-req-item"><span className="star-gold">★★★</span> {dungeon.starRequirements.threeStar}</div>
+                <div className="star-req-item"><span className="star-silver">★★</span> {dungeon.starRequirements.twoStar}</div>
+                <div className="star-req-item"><span className="star-bronze">★</span> {dungeon.starRequirements.oneStar}</div>
+              </div>
+
+              <div className="dungeon-rewards">
+                <div className="reward-section">
+                  <span className="reward-label">普通奖励:</span>
+                  <div className="reward-items">
+                    <span>💰{dungeon.rewards.gold}</span>
+                    <span>🔮{dungeon.rewards.mana}</span>
+                    <span>🍖{dungeon.rewards.food}</span>
+                    <span>⭐{dungeon.rewards.reputation}</span>
+                  </div>
+                </div>
+                {!dungeon.firstCleared && (
+                  <div className="reward-section first-clear">
+                    <span className="reward-label">首通奖励:</span>
+                    <div className="reward-items">
+                      <span className="highlight">💰{dungeon.firstClearRewards.gold}</span>
+                      <span className="highlight">🔮{dungeon.firstClearRewards.mana}</span>
+                      <span className="highlight">🍖{dungeon.firstClearRewards.food}</span>
+                      <span className="highlight">⭐{dungeon.firstClearRewards.reputation}</span>
+                    </div>
+                  </div>
+                )}
+                {sweepable && (
+                  <div className="reward-section sweep">
+                    <span className="reward-label">扫荡奖励 (80%):</span>
+                    <div className="reward-items">
+                      <span>💰{sweepRewards.gold}</span>
+                      <span>🔮{sweepRewards.mana}</span>
+                      <span>🍖{sweepRewards.food}</span>
+                      <span>⭐{sweepRewards.reputation}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {hasBestTeam && (
+                <div className="best-team-info">
+                  <span>👥 最佳阵容: {dungeon.bestTeam.map(id => {
+                    const student = state.students.find(s => s.id === id);
+                    return student?.name || '未知';
+                  }).join(', ')}</span>
+                </div>
+              )}
+
+              <div className="dungeon-actions">
+                <button
+                  className="dungeon-btn challenge-btn"
+                  onClick={() => setSelectedDungeon(dungeon.id)}
+                  disabled={!canChallenge}
+                >
+                  {hasBestTeam ? '挑战 (使用最佳)' : '挑战'}
+                </button>
+                {sweepable && (
+                  <>
+                    {showSweepConfirm === dungeon.id ? (
+                      <div className="sweep-confirm">
+                        <span>确认扫荡？</span>
+                        <button className="confirm-btn" onClick={() => handleSweep(dungeon.id)}>确定</button>
+                        <button className="cancel-btn" onClick={() => setShowSweepConfirm(null)}>取消</button>
+                      </div>
+                    ) : (
+                      <button
+                        className="dungeon-btn sweep-btn"
+                        onClick={() => setShowSweepConfirm(dungeon.id)}
+                      >
+                        ⚡ 扫荡
+                      </button>
+                    )}
+                  </>
+                )}
+                {dungeon.bestStars >= 3 && !dungeon.sweepUnlocked && (
+                  <button
+                    className="dungeon-btn unlock-btn"
+                    onClick={() => dispatch({ type: 'UNLOCK_SWEEP', dungeonId: dungeon.id })}
+                  >
+                    🔓 解锁扫荡
+                  </button>
+                )}
+              </div>
+
+              {!canChallenge && (
+                <div className="dungeon-locked">
+                  需要 {dungeon.requiredLevel} 级学员 ({eligibleCount}/{state.students.length} 人符合)
+                </div>
+              )}
             </div>
-            <div className="dungeon-info">
-              <span>🌊 {dungeon.waves} 波</span>
-              <span>📍 需要 Lv.{dungeon.requiredLevel}</span>
-            </div>
-            <div className="dungeon-rewards">
-              <span>💰{dungeon.rewards.gold}</span>
-              <span>🔮{dungeon.rewards.mana}</span>
-              <span>🍖{dungeon.rewards.food}</span>
-              <span>⭐{dungeon.rewards.reputation}</span>
-            </div>
-            {dungeon.completed ? (
-              <div className="dungeon-completed">✅ 已通关</div>
-            ) : (
-              <button
-                className="dungeon-btn"
-                onClick={() => setSelectedDungeon(dungeon.id)}
-                disabled={state.students.filter(s => s.level >= dungeon.requiredLevel).length === 0}
-              >
-                挑战
-              </button>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {selectedDungeon && (
@@ -565,8 +690,17 @@ function DungeonModule() {
           students={state.students}
           courses={state.courses}
           onClose={() => setSelectedDungeon(null)}
-          onComplete={() => {
-            dispatch({ type: 'COMPLETE_DUNGEON', dungeonId: selectedDungeon });
+          onComplete={(result) => {
+            dispatch({
+              type: 'COMPLETE_DUNGEON',
+              dungeonId: selectedDungeon,
+              stars: result.stars,
+              survivingMembers: result.survivingMembers,
+              totalMembers: result.totalMembers,
+              averageHpPercent: result.averageHpPercent,
+              totalTurns: result.totalTurns,
+              team: result.team,
+            });
             setSelectedDungeon(null);
           }}
         />
@@ -580,14 +714,34 @@ interface DungeonBattleProps {
   students: StudentType[];
   courses: CourseType[];
   onClose: () => void;
-  onComplete: () => void;
+  onComplete: (result: {
+    stars: number;
+    survivingMembers: number;
+    totalMembers: number;
+    averageHpPercent: number;
+    totalTurns: number;
+    team: string[];
+  }) => void;
+}
+
+interface BattleResultData {
+  victory: boolean;
+  stars: number;
+  survivingMembers: number;
+  totalMembers: number;
+  averageHpPercent: number;
+  totalTurns: number;
+  rewards: { gold: number; mana: number; food: number; reputation: number };
+  isFirstClear: boolean;
+  team: string[];
 }
 
 function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: DungeonBattleProps) {
+  const { calculateBattleStars, calculateDungeonRewards } = useGame();
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const [battleStarted, setBattleStarted] = React.useState(false);
-  const [selectedTeam, setSelectedTeam] = React.useState<string[]>([]);
-  const [battleResult, setBattleResult] = React.useState<'win' | 'lose' | null>(null);
+  const [selectedTeam, setSelectedTeam] = React.useState<string[]>(dungeon.bestTeam || []);
+  const [battleResult, setBattleResult] = React.useState<BattleResultData | null>(null);
   
   const battleRef = React.useRef<{
     playerTeam: (StudentType & { hp: number; maxHp: number })[];
@@ -599,6 +753,8 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
     playerActionTimer: number;
     enemyActionTimer: number;
     attackLog: string[];
+    turnCount: number;
+    teamIds: string[];
   }>({
     playerTeam: [],
     enemyTeam: [],
@@ -609,9 +765,20 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
     playerActionTimer: 0,
     enemyActionTimer: 0,
     attackLog: [],
+    turnCount: 0,
+    teamIds: [],
   });
 
   const eligibleStudents = students.filter(s => s.level >= dungeon.requiredLevel);
+
+  React.useEffect(() => {
+    if (dungeon.bestTeam && dungeon.bestTeam.length > 0) {
+      const validTeam = dungeon.bestTeam.filter(id => 
+        eligibleStudents.some(s => s.id === id && s.status === 'idle')
+      );
+      setSelectedTeam(validTeam);
+    }
+  }, [dungeon.bestTeam, eligibleStudents]);
 
   const generateEnemies = (wave: number): Enemy[] => {
     const count = Math.min(1 + Math.floor(wave / 2), 3);
@@ -632,6 +799,32 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
     });
   };
 
+  const calculateBattleResult = (victory: boolean): BattleResultData => {
+    const { playerTeam, turnCount, teamIds } = battleRef.current;
+    const totalMembers = teamIds.length;
+    const survivingMembers = playerTeam.filter(p => p.hp > 0).length;
+    
+    const totalHp = playerTeam.reduce((sum, p) => sum + p.maxHp, 0);
+    const currentHp = playerTeam.reduce((sum, p) => sum + Math.max(0, p.hp), 0);
+    const averageHpPercent = totalHp > 0 ? currentHp / totalHp : 0;
+
+    const stars = victory ? calculateBattleStars(dungeon, survivingMembers, totalMembers, averageHpPercent, turnCount) : 0;
+    const isFirstClear = !dungeon.firstCleared;
+    const rewards = calculateDungeonRewards(dungeon, stars, isFirstClear);
+
+    return {
+      victory,
+      stars,
+      survivingMembers,
+      totalMembers,
+      averageHpPercent,
+      totalTurns: turnCount,
+      rewards,
+      isFirstClear,
+      team: teamIds,
+    };
+  };
+
   const startBattle = () => {
     if (selectedTeam.length === 0) return;
     const team = eligibleStudents.filter(s => selectedTeam.includes(s.id));
@@ -649,9 +842,29 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
       playerActionTimer: 0,
       enemyActionTimer: 0,
       attackLog: [],
+      turnCount: 0,
+      teamIds: selectedTeam,
     };
     setBattleStarted(true);
     setBattleResult(null);
+  };
+
+  const handleBattleEnd = (victory: boolean) => {
+    const result = calculateBattleResult(victory);
+    setBattleResult(result);
+    
+    if (victory) {
+      setTimeout(() => {
+        onComplete({
+          stars: result.stars,
+          survivingMembers: result.survivingMembers,
+          totalMembers: result.totalMembers,
+          averageHpPercent: result.averageHpPercent,
+          totalTurns: result.totalTurns,
+          team: result.team,
+        });
+      }, 3000);
+    }
   };
 
   React.useEffect(() => {
@@ -678,6 +891,9 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 18px Arial';
       ctx.fillText(`第 ${battleRef.current.currentWave}/${battleRef.current.totalWaves} 波`, 10, 25);
+      ctx.font = '14px Arial';
+      ctx.fillStyle = '#aaa';
+      ctx.fillText(`回合: ${battleRef.current.turnCount}`, 10, 45);
 
       const { playerTeam, enemyTeam, attackLog } = battleRef.current;
 
@@ -687,6 +903,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
 
       if (battleRef.current.playerActionTimer > playerAttackInterval && enemyTeam.length > 0 && playerTeam.length > 0) {
         battleRef.current.playerActionTimer = 0;
+        battleRef.current.turnCount++;
         
         const attacker = playerTeam[Math.floor(Math.random() * playerTeam.length)];
         const target = enemyTeam[Math.floor(Math.random() * enemyTeam.length)];
@@ -767,7 +984,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
         ctx.fillStyle = '#f44336';
         ctx.font = 'bold 32px Arial';
         ctx.fillText('战斗失败！', canvas.width / 2 - 80, canvas.height / 2);
-        setBattleResult('lose');
+        handleBattleEnd(false);
       } else if (enemyTeam.length === 0) {
         if (battleRef.current.currentWave < battleRef.current.totalWaves) {
           battleRef.current.currentWave++;
@@ -778,8 +995,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
           ctx.fillStyle = '#4CAF50';
           ctx.font = 'bold 32px Arial';
           ctx.fillText('战斗胜利！', canvas.width / 2 - 80, canvas.height / 2);
-          setBattleResult('win');
-          setTimeout(() => onComplete(), 1500);
+          handleBattleEnd(true);
         }
       }
 
@@ -793,20 +1009,36 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
         cancelAnimationFrame(battleRef.current.animationId);
       }
     };
-  }, [battleStarted, onComplete, dungeon.waves]);
+  }, [battleStarted, dungeon, calculateBattleStars, calculateDungeonRewards, onComplete]);
+
+  const renderStars = (stars: number, maxStars: number = 3) => {
+    return (
+      <div className="star-display large">
+        {Array.from({ length: maxStars }, (_, i) => (
+          <span key={i} className={`star ${i < stars ? 'filled' : 'empty'}`}>★</span>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="dungeon-battle-overlay">
       <div className="dungeon-battle-modal">
         <h3>{dungeon.name}</h3>
-        {!battleStarted ? (
+        {!battleStarted && !battleResult ? (
           <div className="team-selection">
             <p>选择参战学员 (至少1人，推荐2-3人):</p>
+            {dungeon.bestTeam.length > 0 && (
+              <div className="best-team-hint">
+                💡 已保存最佳阵容，已自动选中
+              </div>
+            )}
             <div className="team-select-grid">
               {eligibleStudents.map(student => {
                 const course = student.assignedCourse ? courses.find(c => c.id === student.assignedCourse) : null;
+                const isInBestTeam = dungeon.bestTeam.includes(student.id);
                 return (
-                  <label key={student.id} className={`team-member-option ${student.status !== 'idle' ? 'disabled' : ''}`}>
+                  <label key={student.id} className={`team-member-option ${student.status !== 'idle' ? 'disabled' : ''} ${isInBestTeam ? 'best-team' : ''}`}>
                     <input
                       type="checkbox"
                       checked={selectedTeam.includes(student.id)}
@@ -823,6 +1055,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
                       {student.name} (Lv.{student.level})
                       {student.skills.length > 0 && ` [${student.skills.length}技能]`}
                       {student.status !== 'idle' && course && ` - 正在${course.name}`}
+                      {isInBestTeam && ' ⭐最佳阵容'}
                     </span>
                   </label>
                 );
@@ -833,15 +1066,71 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
               <button onClick={onClose}>取消</button>
             </div>
           </div>
+        ) : battleResult ? (
+          <div className="battle-result-modal">
+            <h4 className={battleResult.victory ? 'victory' : 'defeat'}>
+              {battleResult.victory ? '🎉 战斗胜利！' : '💔 战斗失败'}
+            </h4>
+            
+            {battleResult.victory && (
+              <>
+                <div className="result-stars">
+                  {renderStars(battleResult.stars)}
+                </div>
+                
+                {battleResult.isFirstClear && (
+                  <div className="first-clear-announce">
+                    🏆 首次通关！获得额外奖励！
+                  </div>
+                )}
+                
+                <div className="result-stats">
+                  <div className="stat-row">
+                    <span>存活队员:</span>
+                    <span>{battleResult.survivingMembers}/{battleResult.totalMembers}</span>
+                  </div>
+                  <div className="stat-row">
+                    <span>平均剩余HP:</span>
+                    <span>{Math.round(battleResult.averageHpPercent * 100)}%</span>
+                  </div>
+                  <div className="stat-row">
+                    <span>总回合数:</span>
+                    <span>{battleResult.totalTurns}</span>
+                  </div>
+                </div>
+                
+                <div className="result-rewards">
+                  <h5>获得奖励:</h5>
+                  <div className="reward-list">
+                    <span>💰 {battleResult.rewards.gold}</span>
+                    <span>🔮 {battleResult.rewards.mana}</span>
+                    <span>🍖 {battleResult.rewards.food}</span>
+                    <span>⭐ {battleResult.rewards.reputation}</span>
+                  </div>
+                </div>
+
+                {battleResult.stars >= 3 && !dungeon.sweepUnlocked && (
+                  <div className="sweep-unlock-hint">
+                    🔓 达成3星！可在副本详情中解锁扫荡功能
+                  </div>
+                )}
+              </>
+            )}
+            
+            {!battleResult.victory && (
+              <div className="defeat-hint">
+                <p>学员们需要更多训练！</p>
+                <p>建议: 提升等级、学习更多技能、搭配更强阵容</p>
+              </div>
+            )}
+            
+            {!battleResult.victory && (
+              <button onClick={onClose}>返回</button>
+            )}
+          </div>
         ) : (
           <div className="battle-arena">
             <canvas ref={canvasRef} width={550} height={300} />
-            {battleResult === 'lose' && (
-              <div className="battle-result lose">
-                <p>战斗失败，学员需要更多训练！</p>
-                <button onClick={onClose}>返回</button>
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -1051,7 +1340,15 @@ function SettingsModule() {
           </div>
           <div className="stat-item">
             <span>⚔️ 通关副本</span>
-            <span>{state.dungeons.filter(d => d.completed).length}/{state.dungeons.length}</span>
+            <span>{state.dungeons.filter(d => d.firstCleared).length}/{state.dungeons.length}</span>
+          </div>
+          <div className="stat-item">
+            <span>⭐ 累计星级</span>
+            <span>{state.dungeons.reduce((acc, d) => acc + d.bestStars, 0)}/{state.dungeons.length * 3}</span>
+          </div>
+          <div className="stat-item">
+            <span>🎯 总挑战次数</span>
+            <span>{state.dungeons.reduce((acc, d) => acc + d.clearedCount, 0)}</span>
           </div>
           <div className="stat-item">
             <span>📅 游戏天数</span>

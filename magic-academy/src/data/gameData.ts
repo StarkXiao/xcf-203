@@ -205,8 +205,20 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
     waves: 3,
     enemies: [],
     rewards: { gold: 300, mana: 150, food: 20, reputation: 10 },
+    firstClearRewards: { gold: 800, mana: 400, food: 50, reputation: 30 },
     requiredLevel: 2,
-    completed: false,
+    staminaCost: 10,
+    stars: 0,
+    bestStars: 0,
+    firstCleared: false,
+    clearedCount: 0,
+    bestTeam: [],
+    sweepUnlocked: false,
+    starRequirements: {
+      threeStar: '全员存活且平均HP≥70%',
+      twoStar: '全员存活',
+      oneStar: '至少1人存活',
+    },
   },
   {
     id: 'ancient_ruins',
@@ -215,8 +227,20 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
     waves: 5,
     enemies: [],
     rewards: { gold: 500, mana: 300, food: 40, reputation: 25 },
+    firstClearRewards: { gold: 1200, mana: 700, food: 100, reputation: 60 },
     requiredLevel: 5,
-    completed: false,
+    staminaCost: 15,
+    stars: 0,
+    bestStars: 0,
+    firstCleared: false,
+    clearedCount: 0,
+    bestTeam: [],
+    sweepUnlocked: false,
+    starRequirements: {
+      threeStar: '全员存活且平均HP≥60%',
+      twoStar: '至少2人存活',
+      oneStar: '至少1人存活',
+    },
   },
   {
     id: 'dragon_lair',
@@ -225,8 +249,20 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
     waves: 7,
     enemies: [],
     rewards: { gold: 1000, mana: 600, food: 80, reputation: 50 },
+    firstClearRewards: { gold: 2500, mana: 1500, food: 200, reputation: 120 },
     requiredLevel: 10,
-    completed: false,
+    staminaCost: 25,
+    stars: 0,
+    bestStars: 0,
+    firstCleared: false,
+    clearedCount: 0,
+    bestTeam: [],
+    sweepUnlocked: false,
+    starRequirements: {
+      threeStar: '全员存活且平均HP≥50%',
+      twoStar: '至少2人存活',
+      oneStar: '至少1人存活',
+    },
   },
 ];
 
@@ -600,4 +636,76 @@ export const calculateSynergyBonus = (
     }
     return total;
   }, 0);
+};
+
+export const calculateBattleStars = (
+  dungeon: Dungeon,
+  survivingMembers: number,
+  totalMembers: number,
+  averageHpPercent: number,
+  _totalTurns: number
+): number => {
+  if (survivingMembers === 0) return 0;
+
+  const hpThreshold = dungeon.id === 'dark_forest' ? 0.7 : dungeon.id === 'ancient_ruins' ? 0.6 : 0.5;
+
+  if (survivingMembers === totalMembers && averageHpPercent >= hpThreshold) {
+    return 3;
+  }
+
+  const minSurvivorsForTwoStars = totalMembers >= 3 ? 2 : totalMembers;
+  if (survivingMembers >= minSurvivorsForTwoStars) {
+    return 2;
+  }
+
+  if (survivingMembers >= 1) {
+    return 1;
+  }
+
+  return 0;
+};
+
+export const calculateDungeonRewards = (
+  dungeon: Dungeon,
+  stars: number,
+  isFirstClear: boolean
+): Resource => {
+  const baseRewards = dungeon.rewards;
+  const starMultiplier = stars === 3 ? 1.5 : stars === 2 ? 1.2 : 1.0;
+
+  const rewards: Resource = {
+    gold: Math.floor(baseRewards.gold * starMultiplier),
+    mana: Math.floor(baseRewards.mana * starMultiplier),
+    food: Math.floor(baseRewards.food * starMultiplier),
+    reputation: Math.floor(baseRewards.reputation * starMultiplier),
+  };
+
+  if (isFirstClear) {
+    rewards.gold += dungeon.firstClearRewards.gold;
+    rewards.mana += dungeon.firstClearRewards.mana;
+    rewards.food += dungeon.firstClearRewards.food;
+    rewards.reputation += dungeon.firstClearRewards.reputation;
+  }
+
+  return rewards;
+};
+
+export const getSweepRewardMultiplier = (bestStars: number): number => {
+  if (bestStars >= 3) return 0.8;
+  if (bestStars >= 2) return 0.6;
+  return 0.4;
+};
+
+export const calculateSweepRewards = (dungeon: Dungeon): Resource => {
+  const multiplier = getSweepRewardMultiplier(dungeon.bestStars);
+  return {
+    gold: Math.floor(dungeon.rewards.gold * multiplier),
+    mana: Math.floor(dungeon.rewards.mana * multiplier),
+    food: Math.floor(dungeon.rewards.food * multiplier),
+    reputation: Math.floor(dungeon.rewards.reputation * multiplier),
+  };
+};
+
+export const canSweep = (dungeon: Dungeon): boolean => {
+  return dungeon.sweepUnlocked && dungeon.bestStars >= 3;
 };

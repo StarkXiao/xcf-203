@@ -121,8 +121,20 @@ export interface Dungeon {
   waves: number;
   enemies: Enemy[];
   rewards: Resource;
+  firstClearRewards: Resource;
   requiredLevel: number;
-  completed: boolean;
+  staminaCost: number;
+  stars: number;
+  bestStars: number;
+  firstCleared: boolean;
+  clearedCount: number;
+  bestTeam: string[];
+  sweepUnlocked: boolean;
+  starRequirements: {
+    threeStar: string;
+    twoStar: string;
+    oneStar: string;
+  };
 }
 
 export interface Enemy {
@@ -152,6 +164,24 @@ export interface RecruitmentTicket {
   id: string;
   quality: 'common' | 'rare' | 'epic' | 'legendary';
   cost: Resource;
+}
+
+export interface BattleResult {
+  victory: boolean;
+  stars: number;
+  survivingMembers: number;
+  totalMembers: number;
+  averageHpPercent: number;
+  totalTurns: number;
+  rewards: Resource;
+  isFirstClear: boolean;
+}
+
+export interface DungeonProgress {
+  currentWave: number;
+  totalWaves: number;
+  playerTeamHp: Record<string, { current: number; max: number }>;
+  turnCount: number;
 }
 
 export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'settlement' | 'settings';
