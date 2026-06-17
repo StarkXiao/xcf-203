@@ -8,6 +8,10 @@ import {
   INITIAL_COURSES, 
   INITIAL_DUNGEONS, 
   INITIAL_TEACHERS,
+  REPUTATION_LEVELS,
+  RECRUITMENT_TICKETS,
+  getReputationLevel,
+  getNextReputationLevel,
   generateStudentName, 
   getRandomMagicType,
   generateTraits,
@@ -30,6 +34,10 @@ import {
   calculateDailyStaminaChange,
   shouldStudentLeave,
   calculateDailyIncome,
+  calculateDiscountedCost,
+  canAccessCourse,
+  canAccessBuilding,
+  canAccessRecruitmentTicket,
   getMoraleLabel,
   getStaminaLabel,
   rollQuality,
@@ -162,15 +170,19 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const building = state.buildings.find(b => b.id === action.buildingId);
       if (!building || building.level >= building.maxLevel) return state;
       
+      if (!canAccessBuilding(building, state.resources.reputation)) return state;
+      
       const prereqCheck = checkPrerequisites(building, state.buildings);
       if (!prereqCheck.met) return state;
       
-      const cost = {
+      const baseCost = {
         gold: building.cost.gold * building.level,
         mana: building.cost.mana * building.level,
         food: building.cost.food * building.level,
         reputation: building.cost.reputation * building.level,
       };
+      const cost = calculateDiscountedCost(baseCost, state.resources.reputation, 'building');
+      
       if (state.resources.gold < cost.gold || state.resources.mana < cost.mana ||
           state.resources.food < cost.food || state.resources.reputation < cost.reputation) {
         return state;
@@ -533,12 +545,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       
       if (student.assignedCourse === action.courseId) return state;
       if (student.courseQueue.some(q => q.courseId === action.courseId)) return state;
-      if (course.requiredLevel > student.level) return state;
+      if (!canAccessCourse(course, student.level, state.resources.reputation)) return state;
       
-      const canAffordCourse = state.resources.gold >= course.cost.gold &&
-        state.resources.mana >= course.cost.mana &&
-        state.resources.food >= course.cost.food &&
-        state.resources.reputation >= course.cost.reputation;
+      const discountedCost = calculateDiscountedCost(course.cost, state.resources.reputation, 'course');
+      const canAffordCourse = state.resources.gold >= discountedCost.gold &&
+        state.resources.mana >= discountedCost.mana &&
+        state.resources.food >= discountedCost.food &&
+        state.resources.reputation >= discountedCost.reputation;
       if (!canAffordCourse) return state;
       
       const queueEvent: DailyEvent = {
@@ -682,13 +695,15 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const nextQueued = student.courseQueue[0];
       const nextCourse = state.courses.find(c => c.id === nextQueued.courseId);
       if (!nextCourse) return state;
-      if (state.resources.gold < nextCourse.cost.gold ||
-          state.resources.mana < nextCourse.cost.mana ||
-          state.resources.food < nextCourse.cost.food ||
-          state.resources.reputation < nextCourse.cost.reputation) {
+      if (!canAccessCourse(nextCourse, student.level, state.resources.reputation)) return state;
+      
+      const discountedCost = calculateDiscountedCost(nextCourse.cost, state.resources.reputation, 'course');
+      if (state.resources.gold < discountedCost.gold ||
+          state.resources.mana < discountedCost.mana ||
+          state.resources.food < discountedCost.food ||
+          state.resources.reputation < discountedCost.reputation) {
         return state;
       }
-      if (nextCourse.requiredLevel > student.level) return state;
       
       const startEvent: DailyEvent = {
         type: 'course_started',
@@ -710,10 +725,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return {
         ...state,
         resources: {
-          gold: state.resources.gold - nextCourse.cost.gold,
-          mana: state.resources.mana - nextCourse.cost.mana,
-          food: state.resources.food - nextCourse.cost.food,
-          reputation: state.resources.reputation - nextCourse.cost.reputation,
+          gold: state.resources.gold - discountedCost.gold,
+          mana: state.resources.mana - discountedCost.mana,
+          food: state.resources.food - discountedCost.food,
+          reputation: state.resources.reputation - discountedCost.reputation,
         },
         students: state.students.map(s => {
           if (s.id === action.studentId) {
@@ -1030,7 +1045,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const efficiencyBonus = calculateSynergyBonus(state.buildings, 'efficiency');
       const baseExpMultiplier = 1 + libraryLevel * 0.1 + efficiencyBonus * 0.01;
 
-      const dailyIncome = calculateDailyIncome(state.buildings);
+      const dailyIncome = calculateDailyIncome(state.buildings, state.resources.reputation);
       todayEvents.push({
         type: 'income',
         message: `每日产出: +${dailyIncome.gold}金币, +${dailyIncome.mana}魔力, +${dailyIncome.food}食物, +${dailyIncome.reputation}声望`,
@@ -1678,6 +1693,13 @@ interface GameContextType {
   calculateCourseBenefit: typeof calculateCourseBenefit;
   calculateEnhancedSkillDamage: typeof calculateEnhancedSkillDamage;
   formatBenefitBreakdown: typeof formatBenefitBreakdown;
+  getReputationLevel: typeof getReputationLevel;
+  getNextReputationLevel: typeof getNextReputationLevel;
+  calculateDiscountedCost: typeof calculateDiscountedCost;
+  canAccessCourse: typeof canAccessCourse;
+  canAccessBuilding: typeof canAccessBuilding;
+  canAccessRecruitmentTicket: typeof canAccessRecruitmentTicket;
+  REPUTATION_LEVELS: typeof REPUTATION_LEVELS;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -1755,8 +1777,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const recruitStudent = (ticketQuality: 'common' | 'rare' | 'epic' | 'legendary'): GachaResult | null => {
     if (state.students.length >= state.maxStudents) return null;
 
+    const ticket = RECRUITMENT_TICKETS.find((t: { quality: string }) => t.quality === ticketQuality);
+    if (ticket && !canAccessRecruitmentTicket(ticket, state.resources.reputation)) return null;
+
     const pityCount = state.pityCounters[ticketQuality];
-    const recruitQualityBonus = getRecruitQualityBonus(state.buildings);
+    const recruitQualityBonus = getRecruitQualityBonus(state.buildings, state.resources.reputation);
     
     const rollResult = rollQuality(ticketQuality, pityCount, recruitQualityBonus);
     const resultQuality = rollResult.quality;
@@ -1944,7 +1969,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const backupTime = getBackupTime();
 
   const recordDailySnapshot = (events?: DailyEvent[]) => {
-    const income = calculateDailyIncome(state.buildings);
+    const income = calculateDailyIncome(state.buildings, state.resources.reputation);
     const foodConsumption = calculateFoodConsumption(state.students.length);
     const buildingLevels: Record<string, number> = {};
     state.buildings.forEach(b => {
@@ -2074,6 +2099,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
       calculateCourseBenefit,
       calculateEnhancedSkillDamage,
       formatBenefitBreakdown,
+      getReputationLevel,
+      getNextReputationLevel,
+      calculateDiscountedCost,
+      canAccessCourse,
+      canAccessBuilding,
+      canAccessRecruitmentTicket,
+      REPUTATION_LEVELS,
     }}>
       {children}
     </GameContext.Provider>

@@ -1,4 +1,4 @@
-import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student } from '../types/game';
+import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel } from '../types/game';
 import {
   HP_BATTLE_THRESHOLD,
   HP_COURSE_EFFICIENCY_THRESHOLD,
@@ -13,6 +13,76 @@ import {
 } from '../types/game';
 
 export { HP_BATTLE_THRESHOLD };
+
+export const REPUTATION_LEVELS: ReputationLevel[] = [
+  {
+    level: 1,
+    name: '默默无名',
+    minReputation: 0,
+    description: '初建的学院，还没有什么名气',
+    bonuses: { recruitQualityBonus: 0, courseDiscount: 0, buildingCostDiscount: 0, dailyReputationBonus: 0 },
+  },
+  {
+    level: 2,
+    name: '小有名气',
+    minReputation: 100,
+    description: '周边地区开始知晓你的学院',
+    bonuses: { recruitQualityBonus: 0.5, courseDiscount: 0.05, buildingCostDiscount: 0.03, dailyReputationBonus: 2 },
+  },
+  {
+    level: 3,
+    name: '声名远扬',
+    minReputation: 300,
+    description: '在王国境内有一定知名度',
+    bonuses: { recruitQualityBonus: 1, courseDiscount: 0.1, buildingCostDiscount: 0.06, dailyReputationBonus: 5 },
+  },
+  {
+    level: 4,
+    name: '闻名遐迩',
+    minReputation: 600,
+    description: '周边王国都知道这所优秀的学院',
+    bonuses: { recruitQualityBonus: 1.5, courseDiscount: 0.15, buildingCostDiscount: 0.1, dailyReputationBonus: 8 },
+  },
+  {
+    level: 5,
+    name: '如日中天',
+    minReputation: 1000,
+    description: '整个大陆闻名的顶尖学院',
+    bonuses: { recruitQualityBonus: 2, courseDiscount: 0.2, buildingCostDiscount: 0.15, dailyReputationBonus: 12 },
+  },
+  {
+    level: 6,
+    name: '传奇学院',
+    minReputation: 1500,
+    description: '载入史册的传奇魔法学院',
+    bonuses: { recruitQualityBonus: 3, courseDiscount: 0.25, buildingCostDiscount: 0.2, dailyReputationBonus: 18 },
+  },
+  {
+    level: 7,
+    name: '神话学府',
+    minReputation: 2500,
+    description: '神话般存在的最高学府',
+    bonuses: { recruitQualityBonus: 5, courseDiscount: 0.3, buildingCostDiscount: 0.25, dailyReputationBonus: 25 },
+  },
+];
+
+export const getReputationLevel = (reputation: number): ReputationLevel => {
+  let currentLevel = REPUTATION_LEVELS[0];
+  for (const level of REPUTATION_LEVELS) {
+    if (reputation >= level.minReputation) {
+      currentLevel = level;
+    } else {
+      break;
+    }
+  }
+  return currentLevel;
+};
+
+export const getNextReputationLevel = (reputation: number): ReputationLevel | null => {
+  const currentLevel = getReputationLevel(reputation);
+  const nextIndex = REPUTATION_LEVELS.findIndex(l => l.level === currentLevel.level) + 1;
+  return nextIndex < REPUTATION_LEVELS.length ? REPUTATION_LEVELS[nextIndex] : null;
+};
 
 export const INITIAL_RESOURCES: Resource = {
   gold: 1000,
@@ -30,6 +100,7 @@ export const INITIAL_BUILDINGS: Building[] = [
     cost: { gold: 200, mana: 100, food: 20, reputation: 0 },
     effect: { type: 'student_capacity', value: 5 },
     description: '增加5点学员容量',
+    requiredReputation: 0,
   },
   {
     id: 'mana_tower',
@@ -39,6 +110,7 @@ export const INITIAL_BUILDINGS: Building[] = [
     cost: { gold: 300, mana: 200, food: 30, reputation: 10 },
     effect: { type: 'mana_capacity', value: 100 },
     description: '增加100魔力上限',
+    requiredReputation: 50,
   },
   {
     id: 'library',
@@ -48,6 +120,7 @@ export const INITIAL_BUILDINGS: Building[] = [
     cost: { gold: 250, mana: 150, food: 25, reputation: 5 },
     effect: { type: 'course_speed', value: 10 },
     description: '课程经验获取+10%',
+    requiredReputation: 80,
     prerequisites: [
       { buildingId: 'main_building', requiredLevel: 2 },
     ],
@@ -81,6 +154,7 @@ export const INITIAL_BUILDINGS: Building[] = [
     cost: { gold: 200, mana: 100, food: 30, reputation: 5 },
     effect: { type: 'recruit_quality', value: 1 },
     description: '招募品质加成+1/级',
+    requiredReputation: 60,
   },
   {
     id: 'dormitory',
@@ -90,6 +164,7 @@ export const INITIAL_BUILDINGS: Building[] = [
     cost: { gold: 150, mana: 80, food: 40, reputation: 0 },
     effect: { type: 'student_capacity', value: 4 },
     description: '增加4点学员容量',
+    requiredReputation: 30,
     prerequisites: [
       { buildingId: 'main_building', requiredLevel: 2 },
     ],
@@ -123,6 +198,7 @@ export const INITIAL_BUILDINGS: Building[] = [
     cost: { gold: 180, mana: 90, food: 10, reputation: 5 },
     effect: { type: 'reputation_gain', value: 5 },
     description: '声望获取+5',
+    requiredReputation: 40,
     prerequisites: [
       { buildingId: 'main_building', requiredLevel: 2 },
     ],
@@ -156,6 +232,7 @@ export const INITIAL_BUILDINGS: Building[] = [
     cost: { gold: 400, mana: 250, food: 30, reputation: 15 },
     effect: { type: 'magic_type_bonus', value: 15, magicType: 'fire' },
     description: '火系课程经验+15%',
+    requiredReputation: 120,
     prerequisites: [
       { buildingId: 'library', requiredLevel: 2 },
     ],
@@ -168,6 +245,7 @@ export const INITIAL_BUILDINGS: Building[] = [
     cost: { gold: 400, mana: 250, food: 30, reputation: 15 },
     effect: { type: 'magic_type_bonus', value: 15, magicType: 'water' },
     description: '水系课程经验+15%',
+    requiredReputation: 120,
     prerequisites: [
       { buildingId: 'library', requiredLevel: 2 },
     ],
@@ -180,6 +258,7 @@ export const INITIAL_BUILDINGS: Building[] = [
     cost: { gold: 400, mana: 250, food: 30, reputation: 15 },
     effect: { type: 'magic_type_bonus', value: 15, magicType: 'earth' },
     description: '土系课程经验+15%',
+    requiredReputation: 120,
     prerequisites: [
       { buildingId: 'library', requiredLevel: 2 },
     ],
@@ -192,6 +271,7 @@ export const INITIAL_BUILDINGS: Building[] = [
     cost: { gold: 400, mana: 250, food: 30, reputation: 15 },
     effect: { type: 'magic_type_bonus', value: 15, magicType: 'wind' },
     description: '风系课程经验+15%',
+    requiredReputation: 120,
     prerequisites: [
       { buildingId: 'library', requiredLevel: 2 },
     ],
@@ -204,6 +284,7 @@ export const INITIAL_BUILDINGS: Building[] = [
     cost: { gold: 500, mana: 300, food: 35, reputation: 25 },
     effect: { type: 'magic_type_bonus', value: 20, magicType: 'light' },
     description: '光系课程经验+20%',
+    requiredReputation: 200,
     prerequisites: [
       { buildingId: 'library', requiredLevel: 3 },
     ],
@@ -216,6 +297,7 @@ export const INITIAL_BUILDINGS: Building[] = [
     cost: { gold: 500, mana: 300, food: 35, reputation: 25 },
     effect: { type: 'magic_type_bonus', value: 20, magicType: 'dark' },
     description: '暗系课程经验+20%',
+    requiredReputation: 200,
     prerequisites: [
       { buildingId: 'library', requiredLevel: 3 },
     ],
@@ -304,6 +386,7 @@ export const INITIAL_COURSES: Course[] = [
     cost: { gold: 50, mana: 30, food: 10, reputation: 0 },
     effect: { type: 'exp_gain', value: 20 },
     requiredLevel: 1,
+    requiredReputation: 0,
   },
   {
     id: 'fire_magic',
@@ -313,6 +396,7 @@ export const INITIAL_COURSES: Course[] = [
     cost: { gold: 100, mana: 60, food: 15, reputation: 5 },
     effect: { type: 'skill_unlock', value: 1 },
     requiredLevel: 3,
+    requiredReputation: 50,
     magicType: 'fire',
     assignedTeacher: 'teacher_fire',
   },
@@ -324,6 +408,7 @@ export const INITIAL_COURSES: Course[] = [
     cost: { gold: 100, mana: 60, food: 15, reputation: 5 },
     effect: { type: 'skill_unlock', value: 1 },
     requiredLevel: 3,
+    requiredReputation: 50,
     magicType: 'water',
     assignedTeacher: 'teacher_water',
   },
@@ -335,6 +420,7 @@ export const INITIAL_COURSES: Course[] = [
     cost: { gold: 100, mana: 60, food: 15, reputation: 5 },
     effect: { type: 'skill_unlock', value: 1 },
     requiredLevel: 3,
+    requiredReputation: 50,
     magicType: 'earth',
     assignedTeacher: 'teacher_earth',
   },
@@ -346,6 +432,7 @@ export const INITIAL_COURSES: Course[] = [
     cost: { gold: 100, mana: 60, food: 15, reputation: 5 },
     effect: { type: 'skill_unlock', value: 1 },
     requiredLevel: 3,
+    requiredReputation: 50,
     magicType: 'wind',
     assignedTeacher: 'teacher_wind',
   },
@@ -357,6 +444,7 @@ export const INITIAL_COURSES: Course[] = [
     cost: { gold: 120, mana: 80, food: 15, reputation: 8 },
     effect: { type: 'skill_unlock', value: 1 },
     requiredLevel: 3,
+    requiredReputation: 100,
     magicType: 'light',
     assignedTeacher: 'teacher_light',
   },
@@ -368,6 +456,7 @@ export const INITIAL_COURSES: Course[] = [
     cost: { gold: 120, mana: 80, food: 15, reputation: 8 },
     effect: { type: 'skill_unlock', value: 1 },
     requiredLevel: 3,
+    requiredReputation: 100,
     magicType: 'dark',
     assignedTeacher: 'teacher_dark',
   },
@@ -379,6 +468,7 @@ export const INITIAL_COURSES: Course[] = [
     cost: { gold: 200, mana: 120, food: 25, reputation: 10 },
     effect: { type: 'exp_gain', value: 50 },
     requiredLevel: 5,
+    requiredReputation: 150,
     assignedTeacher: 'teacher_arcane',
   },
   {
@@ -389,6 +479,7 @@ export const INITIAL_COURSES: Course[] = [
     cost: { gold: 350, mana: 200, food: 30, reputation: 15 },
     effect: { type: 'exp_gain', value: 80 },
     requiredLevel: 8,
+    requiredReputation: 300,
     magicType: 'fire',
     assignedTeacher: 'teacher_fire',
   },
@@ -400,6 +491,7 @@ export const INITIAL_COURSES: Course[] = [
     cost: { gold: 350, mana: 200, food: 30, reputation: 15 },
     effect: { type: 'exp_gain', value: 80 },
     requiredLevel: 8,
+    requiredReputation: 300,
     magicType: 'water',
     assignedTeacher: 'teacher_water',
   },
@@ -411,6 +503,7 @@ export const INITIAL_COURSES: Course[] = [
     cost: { gold: 350, mana: 200, food: 30, reputation: 15 },
     effect: { type: 'exp_gain', value: 80 },
     requiredLevel: 8,
+    requiredReputation: 300,
     magicType: 'earth',
     assignedTeacher: 'teacher_earth',
   },
@@ -422,6 +515,7 @@ export const INITIAL_COURSES: Course[] = [
     cost: { gold: 350, mana: 200, food: 30, reputation: 15 },
     effect: { type: 'exp_gain', value: 80 },
     requiredLevel: 8,
+    requiredReputation: 300,
     magicType: 'wind',
     assignedTeacher: 'teacher_wind',
   },
@@ -433,6 +527,7 @@ export const INITIAL_COURSES: Course[] = [
     cost: { gold: 380, mana: 220, food: 30, reputation: 20 },
     effect: { type: 'exp_gain', value: 90 },
     requiredLevel: 8,
+    requiredReputation: 400,
     magicType: 'light',
     assignedTeacher: 'teacher_light',
   },
@@ -444,6 +539,7 @@ export const INITIAL_COURSES: Course[] = [
     cost: { gold: 380, mana: 220, food: 30, reputation: 20 },
     effect: { type: 'exp_gain', value: 90 },
     requiredLevel: 8,
+    requiredReputation: 400,
     magicType: 'dark',
     assignedTeacher: 'teacher_dark',
   },
@@ -523,16 +619,25 @@ export const RECRUITMENT_TICKETS: RecruitmentTicket[] = [
     id: 'common_ticket',
     quality: 'common',
     cost: { gold: 100, mana: 50, food: 0, reputation: 0 },
+    requiredReputation: 0,
   },
   {
     id: 'rare_ticket',
     quality: 'rare',
     cost: { gold: 300, mana: 150, food: 10, reputation: 20 },
+    requiredReputation: 80,
   },
   {
     id: 'epic_ticket',
     quality: 'epic',
     cost: { gold: 800, mana: 400, food: 30, reputation: 50 },
+    requiredReputation: 200,
+  },
+  {
+    id: 'legendary_ticket',
+    quality: 'legendary',
+    cost: { gold: 2000, mana: 1000, food: 100, reputation: 150 },
+    requiredReputation: 500,
   },
 ];
 
@@ -1058,19 +1163,51 @@ export const getStaminaLabel = (stamina: number): { label: string; color: string
 };
 
 export const calculateDailyIncome = (
-  buildings: Building[]
+  buildings: Building[],
+  reputation: number = 0
 ): { gold: number; mana: number; food: number; reputation: number } => {
   const diningHallLevel = buildings.find(b => b.id === 'dining_hall')?.level || 0;
   const manaTowerLevel = buildings.find(b => b.id === 'mana_tower')?.level || 0;
   const mainBuildingLevel = buildings.find(b => b.id === 'main_building')?.level || 0;
   const reputationBonus = calculateSynergyBonus(buildings, 'reputation');
+  const reputationLevel = getReputationLevel(reputation);
 
   return {
     gold: 50 + diningHallLevel * 5 + mainBuildingLevel * 3,
     mana: 30 + manaTowerLevel * 10,
     food: 10 + diningHallLevel * 3,
-    reputation: 5 + diningHallLevel * 2 + reputationBonus,
+    reputation: 5 + diningHallLevel * 2 + reputationBonus + reputationLevel.bonuses.dailyReputationBonus,
   };
+};
+
+export const calculateDiscountedCost = (
+  baseCost: Resource,
+  reputation: number,
+  type: 'course' | 'building'
+): Resource => {
+  const reputationLevel = getReputationLevel(reputation);
+  const discount = type === 'course' 
+    ? reputationLevel.bonuses.courseDiscount 
+    : reputationLevel.bonuses.buildingCostDiscount;
+  
+  return {
+    gold: Math.floor(baseCost.gold * (1 - discount)),
+    mana: Math.floor(baseCost.mana * (1 - discount)),
+    food: Math.floor(baseCost.food * (1 - discount)),
+    reputation: Math.floor(baseCost.reputation * (1 - discount)),
+  };
+};
+
+export const canAccessCourse = (course: Course, studentLevel: number, reputation: number): boolean => {
+  return studentLevel >= course.requiredLevel && reputation >= course.requiredReputation;
+};
+
+export const canAccessBuilding = (building: Building, reputation: number): boolean => {
+  return reputation >= building.requiredReputation;
+};
+
+export const canAccessRecruitmentTicket = (ticket: RecruitmentTicket, reputation: number): boolean => {
+  return reputation >= ticket.requiredReputation;
 };
 
 export interface PityConfig {
@@ -1171,10 +1308,11 @@ export const rollQuality = (
   return { quality: 'common', isPity: false, adjustedProbabilities };
 };
 
-export const getRecruitQualityBonus = (buildings: Building[]): number => {
+export const getRecruitQualityBonus = (buildings: Building[], reputation: number = 0): number => {
   const trainingFieldLevel = buildings.find(b => b.id === 'training_field')?.level || 0;
   const libraryLevel = buildings.find(b => b.id === 'library')?.level || 0;
-  return trainingFieldLevel * 0.5 + libraryLevel * 0.3;
+  const reputationLevel = getReputationLevel(reputation);
+  return trainingFieldLevel * 0.5 + libraryLevel * 0.3 + reputationLevel.bonuses.recruitQualityBonus;
 };
 
 export const computeAdjustedProbabilities = (

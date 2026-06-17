@@ -13,6 +13,7 @@ export interface Building {
   cost: Resource;
   effect: BuildingEffect;
   description: string;
+  requiredReputation: number;
   prerequisites?: BuildingPrerequisite[];
   synergyBonus?: BuildingSynergy[];
 }
@@ -160,6 +161,7 @@ export interface Course {
   cost: Resource;
   effect: CourseEffect;
   requiredLevel: number;
+  requiredReputation: number;
   magicType?: MagicType;
   assignedTeacher?: string | null;
 }
@@ -214,7 +216,27 @@ export interface Enemy {
   isBoss: boolean;
 }
 
-export const CURRENT_SAVE_VERSION = 5;
+export const CURRENT_SAVE_VERSION = 6;
+
+export interface ReputationLevel {
+  level: number;
+  name: string;
+  minReputation: number;
+  description: string;
+  bonuses: {
+    recruitQualityBonus: number;
+    courseDiscount: number;
+    buildingCostDiscount: number;
+    dailyReputationBonus: number;
+  };
+}
+
+export interface RecruitmentTicket {
+  id: string;
+  quality: 'common' | 'rare' | 'epic' | 'legendary';
+  cost: Resource;
+  requiredReputation: number;
+}
 
 export interface PityCounter {
   common: number;
@@ -285,12 +307,6 @@ export interface CourseBenefitBreakdown {
   magicTypeMatch: boolean;
   matchedTeacher?: Teacher;
   contributingBuildings: string[];
-}
-
-export interface RecruitmentTicket {
-  id: string;
-  quality: 'common' | 'rare' | 'epic' | 'legendary';
-  cost: Resource;
 }
 
 export interface BattleResult {

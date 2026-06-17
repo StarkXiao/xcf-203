@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useGame } from '../store/GameContext';
 import type { TabType, Dungeon as DungeonType, Student as StudentType, Course as CourseType, DailyEvent, GachaResult, StudentQuality } from '../types/game';
-import { getStudentStatsSummary, calculateExpGain, calculateSynergyBonus, isStudentBattleReady, calculateHpEfficiencyMultiplier, HP_BATTLE_THRESHOLD, calculateHealCost, getMaxHealableHp } from '../data/gameData';
+import { getStudentStatsSummary, calculateExpGain, calculateSynergyBonus, isStudentBattleReady, calculateHpEfficiencyMultiplier, HP_BATTLE_THRESHOLD, calculateHealCost, getMaxHealableHp, RECRUITMENT_TICKETS } from '../data/gameData';
 import './MainLayout.css';
 
 interface TabConfig {
@@ -41,7 +41,7 @@ interface ConfirmDialogState {
 }
 
 export default function MainLayout() {
-  const { state, activeTab, setActiveTab } = useGame();
+  const { state, activeTab, setActiveTab, getReputationLevel, getNextReputationLevel } = useGame();
   const [selectedStudentId, setSelectedStudentId] = React.useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = React.useState<ConfirmDialogState>({
     show: false,
@@ -50,6 +50,9 @@ export default function MainLayout() {
     onConfirm: () => {},
     onCancel: () => {},
   });
+
+  const reputationLevel = getReputationLevel(state.resources.reputation);
+  const nextLevel = getNextReputationLevel(state.resources.reputation);
 
   const getCapacity = () => {
     const baseCapacity = 10;
@@ -73,7 +76,12 @@ export default function MainLayout() {
           <span className="resource-item">💰 {state.resources.gold}</span>
           <span className="resource-item">🔮 {state.resources.mana}</span>
           <span className="resource-item">🍖 {state.resources.food}</span>
-          <span className="resource-item">⭐ {state.resources.reputation}</span>
+          <span 
+            className="resource-item reputation-item" 
+            title={`${reputationLevel.name} - ${reputationLevel.description}${nextLevel ? `\n下一等级: ${nextLevel.name} (需要 ${nextLevel.minReputation} 声望)` : ''}\n\n当前加成:\n• 招募品质 +${reputationLevel.bonuses.recruitQualityBonus}\n• 课程费用 -${Math.round(reputationLevel.bonuses.courseDiscount * 100)}%\n• 建筑费用 -${Math.round(reputationLevel.bonuses.buildingCostDiscount * 100)}%\n• 每日声望 +${reputationLevel.bonuses.dailyReputationBonus}`}
+          >
+            ⭐ {state.resources.reputation} <span className="reputation-level">[{reputationLevel.name}]</span>
+          </span>
         </div>
         <div className="day-info">
           <span>第 {state.day} 天</span>
@@ -127,8 +135,9 @@ export default function MainLayout() {
 }
 
 function AcademyModule() {
-  const { state, dispatch, canAfford, checkPrerequisites, getActiveSynergies, calculateSynergyBonus } = useGame();
+  const { state, dispatch, canAfford, checkPrerequisites, getActiveSynergies, calculateSynergyBonus, canAccessBuilding, calculateDiscountedCost, getReputationLevel } = useGame();
   const activeSynergies = getActiveSynergies(state.buildings);
+  const reputationLevel = getReputationLevel(state.resources.reputation);
 
   const getCapacity = () => {
     const baseCapacity = 10;
@@ -235,16 +244,18 @@ function AcademyModule() {
 
       <div className="building-grid">
         {state.buildings.map(building => {
-          const cost = {
+          const baseCost = {
             gold: building.cost.gold * building.level,
             mana: building.cost.mana * building.level,
             food: building.cost.food * building.level,
             reputation: building.cost.reputation * building.level,
           };
+          const cost = calculateDiscountedCost(baseCost, state.resources.reputation, 'building');
           const affordable = canAfford(cost);
           const maxed = building.level >= building.maxLevel;
           const prereqCheck = checkPrerequisites(building, state.buildings);
-          const canUpgrade = affordable && prereqCheck.met && !maxed;
+          const hasReputationAccess = canAccessBuilding(building, state.resources.reputation);
+          const canUpgrade = affordable && prereqCheck.met && !maxed && hasReputationAccess;
 
           return (
             <div key={building.id} className="building-card">
@@ -261,8 +272,17 @@ function AcademyModule() {
                 {building.effect.type === 'recruit_quality' && `效果: 招募品质加成 +${(building.effect.value * building.level * 0.5).toFixed(1)}`}
               </div>
               
+              <div className="prerequisites">
+                <div className="prereq-label">审批要求:</div>
+                <span 
+                  className={`prereq-item ${hasReputationAccess ? 'met' : 'not-met'}`}
+                >
+                  ⭐ 声望 {state.resources.reputation}/{building.requiredReputation}
+                </span>
+              </div>
+              
               {building.prerequisites && building.prerequisites.length > 0 && (
-                <div className="prerequisites">
+                <>
                   <div className="prereq-label">前置条件:</div>
                   {prereqCheck.requirements.map((req, idx) => (
                     <span 
@@ -272,6 +292,13 @@ function AcademyModule() {
                       {req.name} Lv.{req.current}/{req.required}
                     </span>
                   ))}
+                </>
+              )}
+              
+              {reputationLevel.bonuses.buildingCostDiscount > 0 && (
+                <div className="discount-info">
+                  <span className="discount-label">🎁 声望折扣:</span>
+                  <span className="discount-value">-{Math.round(reputationLevel.bonuses.buildingCostDiscount * 100)}%</span>
                 </div>
               )}
 
@@ -312,6 +339,8 @@ function AcademyModule() {
               )}
               {maxed ? (
                 <div className="building-maxed">已满级</div>
+              ) : !hasReputationAccess ? (
+                <div className="prereq-blocked">声望不足，无法审批</div>
               ) : !prereqCheck.met ? (
                 <div className="prereq-blocked">前置条件未满足</div>
               ) : (
@@ -339,7 +368,7 @@ interface ModuleProps {
 }
 
 function RecruitModule({ onStudentClick, setConfirmDialog }: ModuleProps) {
-  const { state, dispatch, canAfford, recruitStudent, assignStudentToRest, getMoraleLabel, getStaminaLabel, getPityThreshold, computeAdjustedProbabilities, getRecruitQualityBonus, getGuaranteedQuality, shouldConfirmAction, autoSaveIfEnabled } = useGame();
+  const { state, dispatch, canAfford, recruitStudent, assignStudentToRest, getMoraleLabel, getStaminaLabel, getPityThreshold, computeAdjustedProbabilities, getRecruitQualityBonus, getGuaranteedQuality, shouldConfirmAction, autoSaveIfEnabled, canAccessRecruitmentTicket, getReputationLevel } = useGame();
   const [showProbability, setShowProbability] = useState<StudentQuality | null>(null);
   const [gachaAnimation, setGachaAnimation] = useState<{ showing: boolean; result: GachaResult | null; phase: 'rolling' | 'reveal' }>({ showing: false, result: null, phase: 'rolling' });
   const [showHistory, setShowHistory] = useState(false);
@@ -356,38 +385,20 @@ function RecruitModule({ onStudentClick, setConfirmDialog }: ModuleProps) {
     return baseCapacity + buildingBonus + synergyBonus;
   };
 
-  const tickets = [
-    { 
-      quality: 'common' as const, 
-      name: '普通招募', 
-      cost: { gold: 100, mana: 50, food: 0, reputation: 0 },
-      level: '初始 Lv.1',
-      traits: '1个普通特质',
-      potential: '潜力: 0.5-1.0',
-      exp: '经验加成: 50%-100%',
-      speed: '课程速度: 75%-100%',
-    },
-    { 
-      quality: 'rare' as const, 
-      name: '稀有招募', 
-      cost: { gold: 300, mana: 150, food: 10, reputation: 20 },
-      level: '初始 Lv.2',
-      traits: '1个稀有特质',
-      potential: '潜力: 0.9-1.3',
-      exp: '经验加成: 90%-130%',
-      speed: '课程速度: 95%-115%',
-    },
-    { 
-      quality: 'epic' as const, 
-      name: '史诗招募', 
-      cost: { gold: 800, mana: 400, food: 30, reputation: 50 },
-      level: '初始 Lv.3',
-      traits: '2个史诗特质',
-      potential: '潜力: 1.2-1.6',
-      exp: '经验加成: 120%-160%',
-      speed: '课程速度: 110%-130%',
-    },
-  ];
+  const reputationLevel = getReputationLevel(state.resources.reputation);
+  const recruitBonus = getRecruitQualityBonus(state.buildings, state.resources.reputation);
+
+  const ticketDetails: Record<string, { name: string; level: string; traits: string; potential: string; exp: string; speed: string }> = {
+    common: { name: '普通招募', level: '初始 Lv.1', traits: '1个普通特质', potential: '潜力: 0.5-1.0', exp: '经验加成: 50%-100%', speed: '课程速度: 75%-100%' },
+    rare: { name: '稀有招募', level: '初始 Lv.2', traits: '1个稀有特质', potential: '潜力: 0.9-1.3', exp: '经验加成: 90%-130%', speed: '课程速度: 95%-115%' },
+    epic: { name: '史诗招募', level: '初始 Lv.3', traits: '2个史诗特质', potential: '潜力: 1.2-1.6', exp: '经验加成: 120%-160%', speed: '课程速度: 110%-130%' },
+    legendary: { name: '传说招募', level: '初始 Lv.5', traits: '3个传说特质', potential: '潜力: 1.5-2.0', exp: '经验加成: 150%-200%', speed: '课程速度: 125%-150%' },
+  };
+
+  const tickets = RECRUITMENT_TICKETS.map(ticket => ({
+    ...ticket,
+    ...ticketDetails[ticket.quality],
+  }));
 
   const isFull = state.students.length >= getCapacity();
 
@@ -480,10 +491,10 @@ function RecruitModule({ onStudentClick, setConfirmDialog }: ModuleProps) {
 
   const renderProbabilityPanel = (quality: StudentQuality) => {
     const pityCount = state.pityCounters[quality];
-    const buildingBonus = getRecruitQualityBonus(state.buildings);
-    const { adjusted, base } = computeAdjustedProbabilities(quality, pityCount, buildingBonus);
+    const totalBonus = getRecruitQualityBonus(state.buildings, state.resources.reputation);
+    const { adjusted, base } = computeAdjustedProbabilities(quality, pityCount, totalBonus);
     const qualities: StudentQuality[] = ['legendary', 'epic', 'rare', 'common'];
-    const hasAdjustment = buildingBonus > 0 || pityCount > 0;
+    const hasAdjustment = totalBonus > 0 || pityCount > 0;
     const guaranteedQuality = getGuaranteedQuality(quality);
     const threshold = getPityThreshold(quality);
 
@@ -530,8 +541,11 @@ function RecruitModule({ onStudentClick, setConfirmDialog }: ModuleProps) {
           </div>
         </div>
         <div className="probability-note">
-          {buildingBonus > 0 && (
-            <p>🏗️ 建筑加成: 训练场/图书馆等级提供品质权重 ×{buildingBonus.toFixed(1)} 加成</p>
+          {totalBonus > 0 && (
+            <p>🏗️ 品质加成: 建筑 +{recruitBonus.toFixed(1)}，声望等级 +{reputationLevel.bonuses.recruitQualityBonus.toFixed(1)}，总计 ×{totalBonus.toFixed(1)}</p>
+          )}
+          {reputationLevel.bonuses.recruitQualityBonus > 0 && (
+            <p>⭐ 声望等级 [{reputationLevel.name}] 提供招募品质加成</p>
           )}
           {pityCount > 0 && (
             <p>🎯 保底进度: {pityCount}/{threshold} (达到{threshold}次必出{qualityNames[guaranteedQuality]})</p>
@@ -825,8 +839,11 @@ function RecruitModule({ onStudentClick, setConfirmDialog }: ModuleProps) {
         ) : (
           <div className="recruit-options">
             {tickets.map(ticket => {
+              const hasReputationAccess = canAccessRecruitmentTicket(ticket, state.resources.reputation);
+              const canRecruit = canAfford(ticket.cost) && hasReputationAccess;
+              
               return (
-                <div key={ticket.quality} className="recruit-card" style={{ borderColor: qualityColors[ticket.quality] }}>
+                <div key={ticket.quality} className={`recruit-card ${!hasReputationAccess ? 'locked' : ''}`} style={{ borderColor: qualityColors[ticket.quality] }}>
                   <div className="recruit-card-header">
                     <h4 style={{ color: qualityColors[ticket.quality] }}>{ticket.name}</h4>
                     <button 
@@ -845,6 +862,15 @@ function RecruitModule({ onStudentClick, setConfirmDialog }: ModuleProps) {
                   
                   {renderPityProgress(ticket.quality)}
                   
+                  <div className="recruit-reputation-req">
+                    <span className={`req-label ${hasReputationAccess ? 'met' : 'not-met'}`}>
+                      ⭐ 声望要求: {state.resources.reputation}/{ticket.requiredReputation}
+                    </span>
+                    {!hasReputationAccess && (
+                      <span className="lock-hint">🔒 学院声望不足</span>
+                    )}
+                  </div>
+                  
                   <div className="recruit-info">
                     <span className="level-info">{ticket.level}</span>
                     <span className="trait-info">{ticket.traits}</span>
@@ -858,12 +884,18 @@ function RecruitModule({ onStudentClick, setConfirmDialog }: ModuleProps) {
                     <span className={ticket.cost.food > state.resources.food ? 'insufficient' : ''}>🍖{ticket.cost.food}</span>
                     <span className={ticket.cost.reputation > state.resources.reputation ? 'insufficient' : ''}>⭐{ticket.cost.reputation}</span>
                   </div>
+                  {reputationLevel.bonuses.recruitQualityBonus > 0 && (
+                    <div className="discount-info">
+                      <span className="discount-label">🎁 声望加成:</span>
+                      <span className="discount-value">品质 +{reputationLevel.bonuses.recruitQualityBonus}</span>
+                    </div>
+                  )}
                   <button
-                    className={`recruit-btn ${ticket.quality} ${!canAfford(ticket.cost) ? 'disabled' : ''}`}
-                    onClick={() => handleRecruit(ticket.quality)}
-                    disabled={!canAfford(ticket.cost)}
+                    className={`recruit-btn ${ticket.quality} ${!canRecruit ? 'disabled' : ''}`}
+                    onClick={() => canRecruit && handleRecruit(ticket.quality)}
+                    disabled={!canRecruit}
                   >
-                    招募
+                    {!hasReputationAccess ? '🔒 声望不足' : '招募'}
                   </button>
                 </div>
               );
@@ -879,7 +911,8 @@ function RecruitModule({ onStudentClick, setConfirmDialog }: ModuleProps) {
 }
 
 function CourseModule({ onStudentClick }: ModuleProps) {
-  const { state, assignStudentToCourse, queueCourse, removeFromQueue, reorderQueue, checkCourseConflict, canAfford } = useGame();
+  const { state, assignStudentToCourse, queueCourse, removeFromQueue, reorderQueue, checkCourseConflict, canAfford, calculateDiscountedCost, getReputationLevel } = useGame();
+  const reputationLevel = getReputationLevel(state.resources.reputation);
   const [selectedStudentForQueue, setSelectedStudentForQueue] = React.useState<string | null>(null);
   const [conflictMessage, setConflictMessage] = React.useState<string | null>(null);
 
@@ -1111,29 +1144,48 @@ function CourseModule({ onStudentClick }: ModuleProps) {
       <div className="course-list">
         <h3>可选课程</h3>
         <div className="course-grid">
-          {state.courses.map(course => (
-            <div key={course.id} className="course-card">
-              <div className="course-header">
-                <h3>{course.name}</h3>
-                <span className="course-level">Lv.{course.level}</span>
+          {state.courses.map(course => {
+            const hasReputationAccess = state.resources.reputation >= course.requiredReputation;
+            const discountedCost = calculateDiscountedCost(course.cost, state.resources.reputation, 'course');
+            
+            return (
+              <div key={course.id} className={`course-card ${!hasReputationAccess ? 'locked' : ''}`}>
+                <div className="course-header">
+                  <h3>{course.name}</h3>
+                  <span className="course-level">Lv.{course.level}</span>
+                </div>
+                <div className="course-info">
+                  <span>⏱️ 持续 {course.duration} 天</span>
+                  <span>📖 所需等级 Lv.{course.requiredLevel}</span>
+                </div>
+                <div className="course-reputation-req">
+                  <span className={`req-label ${hasReputationAccess ? 'met' : 'not-met'}`}>
+                    ⭐ 声望要求: {state.resources.reputation}/{course.requiredReputation}
+                  </span>
+                  {!hasReputationAccess && (
+                    <span className="lock-hint">🔒 学院声望不足</span>
+                  )}
+                </div>
+                <div className="course-effect">
+                  {course.effect.type === 'exp_gain' && `经验 +${course.effect.value}`}
+                  {course.effect.type === 'skill_unlock' && course.magicType && `解锁 ${course.magicType} 技能`}
+                  {course.effect.type === 'stat_boost' && `属性 +${course.effect.value}`}
+                </div>
+                {reputationLevel.bonuses.courseDiscount > 0 && (
+                  <div className="discount-info">
+                    <span className="discount-label">🎁 声望折扣:</span>
+                    <span className="discount-value">-{Math.round(reputationLevel.bonuses.courseDiscount * 100)}%</span>
+                  </div>
+                )}
+                <div className="course-cost">
+                  <span className={discountedCost.gold > state.resources.gold ? 'insufficient' : ''}>💰{discountedCost.gold}</span>
+                  <span className={discountedCost.mana > state.resources.mana ? 'insufficient' : ''}>🔮{discountedCost.mana}</span>
+                  <span className={discountedCost.food > state.resources.food ? 'insufficient' : ''}>🍖{discountedCost.food}</span>
+                  <span className={discountedCost.reputation > state.resources.reputation ? 'insufficient' : ''}>⭐{discountedCost.reputation}</span>
+                </div>
               </div>
-              <div className="course-info">
-                <span>⏱️ 持续 {course.duration} 天</span>
-                <span>📖 所需等级 Lv.{course.requiredLevel}</span>
-              </div>
-              <div className="course-effect">
-                {course.effect.type === 'exp_gain' && `经验 +${course.effect.value}`}
-                {course.effect.type === 'skill_unlock' && course.magicType && `解锁 ${course.magicType} 技能`}
-                {course.effect.type === 'stat_boost' && `属性 +${course.effect.value}`}
-              </div>
-              <div className="course-cost">
-                <span className={course.cost.gold > state.resources.gold ? 'insufficient' : ''}>💰{course.cost.gold}</span>
-                <span className={course.cost.mana > state.resources.mana ? 'insufficient' : ''}>🔮{course.cost.mana}</span>
-                <span className={course.cost.food > state.resources.food ? 'insufficient' : ''}>🍖{course.cost.food}</span>
-                <span className={course.cost.reputation > state.resources.reputation ? 'insufficient' : ''}>⭐{course.cost.reputation}</span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

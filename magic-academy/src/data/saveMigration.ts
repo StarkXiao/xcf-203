@@ -151,6 +151,7 @@ function ensureBuilding(b: Partial<Building> & Record<string, unknown>, template
         }
       : { ...fallback.effect },
     description: ensureString(b.description, fallback.description),
+    requiredReputation: ensureNumber(b.requiredReputation, fallback.requiredReputation),
     prerequisites: Array.isArray(b.prerequisites) ? b.prerequisites as Building['prerequisites'] : fallback.prerequisites,
     synergyBonus: Array.isArray(b.synergyBonus) ? b.synergyBonus as Building['synergyBonus'] : fallback.synergyBonus,
   };
@@ -172,6 +173,7 @@ function ensureCourse(c: Partial<Course> & Record<string, unknown>, template: Co
         }
       : { ...fallback.effect },
     requiredLevel: ensureNumber(c.requiredLevel, fallback.requiredLevel),
+    requiredReputation: ensureNumber(c.requiredReputation, fallback.requiredReputation),
     magicType: (['fire', 'water', 'earth', 'wind', 'light', 'dark'].includes(c.magicType as string)
       ? c.magicType
       : fallback.magicType) as Course['magicType'],
@@ -374,12 +376,42 @@ function migrateV4ToV5(ctx: MigrationContext): SaveData {
   return data;
 }
 
+function migrateV5ToV6(ctx: MigrationContext): SaveData {
+  const data = { ...ctx.data };
+
+  if (Array.isArray(data.buildings)) {
+    data.buildings = (data.buildings as Array<Record<string, unknown>>).map((b: Record<string, unknown>) => {
+      const template = INITIAL_BUILDINGS.find(t => t.id === b.id);
+      return {
+        ...template,
+        ...b,
+        requiredReputation: b.requiredReputation ?? template?.requiredReputation ?? 0,
+      };
+    });
+  }
+
+  if (Array.isArray(data.courses)) {
+    data.courses = (data.courses as Array<Record<string, unknown>>).map((c: Record<string, unknown>) => {
+      const template = INITIAL_COURSES.find(t => t.id === c.id);
+      return {
+        ...template,
+        ...c,
+        requiredReputation: c.requiredReputation ?? template?.requiredReputation ?? 0,
+      };
+    });
+  }
+
+  data.saveVersion = 6;
+  return data;
+}
+
 const MIGRATION_CHAIN: Record<number, MigrationStep> = {
   0: migrateV0ToV1,
   1: migrateV1ToV2,
   2: migrateV2ToV3,
   3: migrateV3ToV4,
   4: migrateV4ToV5,
+  5: migrateV5ToV6,
 };
 
 export function migrateSave(rawData: SaveData): GameState {
