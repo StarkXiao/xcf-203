@@ -357,11 +357,29 @@ function migrateV3ToV4(ctx: MigrationContext): SaveData {
   return data;
 }
 
+function migrateV4ToV5(ctx: MigrationContext): SaveData {
+  const data = { ...ctx.data };
+
+  data.dailySnapshots = [];
+  data.autoSaveConfig = {
+    enabled: true,
+    saveOnDayAdvance: true,
+    saveOnCriticalAction: true,
+    maxSnapshots: 30,
+    lastAutoSave: null,
+    confirmOnCriticalAction: true,
+  };
+
+  data.saveVersion = 5;
+  return data;
+}
+
 const MIGRATION_CHAIN: Record<number, MigrationStep> = {
   0: migrateV0ToV1,
   1: migrateV1ToV2,
   2: migrateV2ToV3,
   3: migrateV3ToV4,
+  4: migrateV4ToV5,
 };
 
 export function migrateSave(rawData: SaveData): GameState {
@@ -468,6 +486,59 @@ function normalizeToGameState(data: SaveData): GameState {
         qualityCounts: { common: 0, rare: 0, epic: 0, legendary: 0 },
       };
 
+  const dailySnapshots = ensureArray<Record<string, unknown>>(data.dailySnapshots, []).map(
+    (snap: Record<string, unknown>) => ({
+      day: ensureNumber(snap.day, 1),
+      timestamp: ensureNumber(snap.timestamp, Date.now()),
+      resources: ensureResource(snap.resources as Partial<Resource> | undefined, INITIAL_RESOURCES),
+      studentCount: ensureNumber(snap.studentCount, 0),
+      buildingLevels: snap.buildingLevels && typeof snap.buildingLevels === 'object'
+        ? (snap.buildingLevels as Record<string, number>)
+        : {},
+      avgMorale: ensureNumber(snap.avgMorale, 0),
+      avgStamina: ensureNumber(snap.avgStamina, 0),
+      studyingCount: ensureNumber(snap.studyingCount, 0),
+      restingCount: ensureNumber(snap.restingCount, 0),
+      totalExp: ensureNumber(snap.totalExp, 0),
+      events: ensureArray<Record<string, unknown>>(snap.events, []).map(
+        (evt: Record<string, unknown>) => ({
+          type: ensureString(evt.type, 'warning') as DailyEvent['type'],
+          message: ensureString(evt.message, ''),
+          value: typeof evt.value === 'number' ? evt.value : undefined,
+          studentId: typeof evt.studentId === 'string' ? evt.studentId : undefined,
+          studentName: typeof evt.studentName === 'string' ? evt.studentName : undefined,
+          courseId: typeof evt.courseId === 'string' ? evt.courseId : undefined,
+          courseName: typeof evt.courseName === 'string' ? evt.courseName : undefined,
+        })
+      ),
+      income: ensureResource(snap.income as Partial<Resource> | undefined, { gold: 0, mana: 0, food: 0, reputation: 0 }),
+      consumption: {
+        food: ensureNumber((snap.consumption as Record<string, unknown> | undefined)?.food, 0),
+      },
+      netChange: ensureResource(snap.netChange as Partial<Resource> | undefined, { gold: 0, mana: 0, food: 0, reputation: 0 }),
+    })
+  );
+
+  const autoSaveConfig = data.autoSaveConfig && typeof data.autoSaveConfig === 'object'
+    ? {
+        enabled: ensureBoolean((data.autoSaveConfig as Record<string, unknown>).enabled, true),
+        saveOnDayAdvance: ensureBoolean((data.autoSaveConfig as Record<string, unknown>).saveOnDayAdvance, true),
+        saveOnCriticalAction: ensureBoolean((data.autoSaveConfig as Record<string, unknown>).saveOnCriticalAction, true),
+        maxSnapshots: ensureNumber((data.autoSaveConfig as Record<string, unknown>).maxSnapshots, 30),
+        lastAutoSave: typeof (data.autoSaveConfig as Record<string, unknown>).lastAutoSave === 'number'
+          ? (data.autoSaveConfig as Record<string, unknown>).lastAutoSave as number
+          : null,
+        confirmOnCriticalAction: ensureBoolean((data.autoSaveConfig as Record<string, unknown>).confirmOnCriticalAction, true),
+      }
+    : {
+        enabled: true,
+        saveOnDayAdvance: true,
+        saveOnCriticalAction: true,
+        maxSnapshots: 30,
+        lastAutoSave: null,
+        confirmOnCriticalAction: true,
+      };
+
   return {
     saveVersion: CURRENT_SAVE_VERSION,
     resources,
@@ -482,6 +553,8 @@ function normalizeToGameState(data: SaveData): GameState {
     currentDungeonId: ensureNumber(data.currentDungeonId, 100),
     gameStarted: ensureBoolean(data.gameStarted, true),
     dailyLogs,
+    dailySnapshots,
+    autoSaveConfig,
     pityCounters,
     gachaHistory,
   };

@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -81,9 +81,21 @@ type GameAction =
   | { type: 'HEAL_ALL_STUDENTS' }
   | { type: 'NEXT_DAY' }
   | { type: 'LOAD_GAME'; state: GameState }
-  | { type: 'RESET_GAME' };
+  | { type: 'RESET_GAME' }
+  | { type: 'ADD_DAILY_SNAPSHOT'; snapshot: DailySnapshot }
+  | { type: 'UPDATE_AUTO_SAVE_CONFIG'; config: Partial<AutoSaveConfig> }
+  | { type: 'CLEAR_OLD_SNAPSHOTS' };
 
 const MAX_STUDENT_CAPACITY = 20;
+
+const initialAutoSaveConfig: AutoSaveConfig = {
+  enabled: true,
+  saveOnDayAdvance: true,
+  saveOnCriticalAction: true,
+  maxSnapshots: 30,
+  lastAutoSave: null,
+  confirmOnCriticalAction: true,
+};
 
 const initialState: GameState = {
   saveVersion: CURRENT_SAVE_VERSION,
@@ -99,6 +111,8 @@ const initialState: GameState = {
   currentDungeonId: 100,
   gameStarted: false,
   dailyLogs: [],
+  dailySnapshots: [],
+  autoSaveConfig: initialAutoSaveConfig,
   pityCounters: {
     common: 0,
     rare: 0,
@@ -1531,6 +1545,33 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case 'RESET_GAME':
       return { ...initialState, gameStarted: true };
 
+    case 'ADD_DAILY_SNAPSHOT': {
+      const maxSnapshots = state.autoSaveConfig.maxSnapshots;
+      const newSnapshots = [...state.dailySnapshots, action.snapshot];
+      if (newSnapshots.length > maxSnapshots) {
+        newSnapshots.splice(0, newSnapshots.length - maxSnapshots);
+      }
+      return {
+        ...state,
+        dailySnapshots: newSnapshots,
+      };
+    }
+
+    case 'UPDATE_AUTO_SAVE_CONFIG':
+      return {
+        ...state,
+        autoSaveConfig: {
+          ...state.autoSaveConfig,
+          ...action.config,
+        },
+      };
+
+    case 'CLEAR_OLD_SNAPSHOTS':
+      return {
+        ...state,
+        dailySnapshots: state.dailySnapshots.slice(-state.autoSaveConfig.maxSnapshots),
+      };
+
     default:
       return state;
   }
@@ -1556,6 +1597,13 @@ interface GameContextType {
   restoreFromBackup: () => boolean;
   hasBackupAvailable: boolean;
   backupTime: string | null;
+  recordDailySnapshot: (events?: DailyEvent[]) => void;
+  updateAutoSaveConfig: (config: Partial<AutoSaveConfig>) => void;
+  autoSaveIfEnabled: () => void;
+  getSnapshotForDay: (day: number) => DailySnapshot | undefined;
+  getPreviousSnapshot: (day?: number) => DailySnapshot | undefined;
+  nextDayWithSave: (days?: number) => void;
+  shouldConfirmAction: () => boolean;
   checkPrerequisites: typeof checkPrerequisites;
   getActiveSynergies: typeof getActiveSynergies;
   calculateSynergyBonus: typeof calculateSynergyBonus;
@@ -1797,6 +1845,89 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const hasBackupAvailable = hasBackup();
   const backupTime = getBackupTime();
 
+  const recordDailySnapshot = (events?: DailyEvent[]) => {
+    const income = calculateDailyIncome(state.buildings);
+    const foodConsumption = calculateFoodConsumption(state.students.length);
+    const buildingLevels: Record<string, number> = {};
+    state.buildings.forEach(b => {
+      buildingLevels[b.id] = b.level;
+    });
+    const avgMorale = state.students.length > 0
+      ? Math.round(state.students.reduce((sum, s) => sum + s.morale, 0) / state.students.length)
+      : 0;
+    const avgStamina = state.students.length > 0
+      ? Math.round(state.students.reduce((sum, s) => sum + s.stamina, 0) / state.students.length)
+      : 0;
+    const totalExp = state.students.reduce((sum, s) => sum + s.exp + s.level * 100, 0);
+    const studyingCount = state.students.filter(s => s.status === 'studying').length;
+    const restingCount = state.students.filter(s => s.status === 'resting').length;
+
+    const snapshot: DailySnapshot = {
+      day: state.day,
+      timestamp: Date.now(),
+      resources: { ...state.resources },
+      studentCount: state.students.length,
+      buildingLevels,
+      avgMorale,
+      avgStamina,
+      studyingCount,
+      restingCount,
+      totalExp,
+      events: events || [],
+      income,
+      consumption: { food: foodConsumption },
+      netChange: {
+        gold: income.gold,
+        mana: income.mana,
+        food: income.food - foodConsumption,
+        reputation: income.reputation,
+      },
+    };
+
+    dispatch({ type: 'ADD_DAILY_SNAPSHOT', snapshot });
+  };
+
+  const updateAutoSaveConfig = (config: Partial<AutoSaveConfig>) => {
+    dispatch({ type: 'UPDATE_AUTO_SAVE_CONFIG', config });
+  };
+
+  const autoSaveIfEnabled = () => {
+    if (state.autoSaveConfig.enabled) {
+      saveGame();
+      dispatch({ type: 'UPDATE_AUTO_SAVE_CONFIG', config: { lastAutoSave: Date.now() } });
+    }
+  };
+
+  const getSnapshotForDay = (day: number): DailySnapshot | undefined => {
+    return state.dailySnapshots.find(s => s.day === day);
+  };
+
+  const getPreviousSnapshot = (day?: number): DailySnapshot | undefined => {
+    if (state.dailySnapshots.length === 0) return undefined;
+    const sorted = [...state.dailySnapshots].sort((a, b) => a.day - b.day);
+    if (day === undefined) {
+      return sorted[sorted.length - 1];
+    }
+    const idx = sorted.findIndex(s => s.day === day);
+    if (idx > 0) return sorted[idx - 1];
+    return undefined;
+  };
+
+  const nextDayWithSave = (days: number = 1) => {
+    const safeDays = Math.max(1, Math.min(30, days));
+    if (state.autoSaveConfig.saveOnDayAdvance) {
+      recordDailySnapshot();
+      autoSaveIfEnabled();
+    }
+    for (let i = 0; i < safeDays; i++) {
+      dispatch({ type: 'NEXT_DAY' });
+    }
+  };
+
+  const shouldConfirmAction = (): boolean => {
+    return state.autoSaveConfig.confirmOnCriticalAction;
+  };
+
   return (
     <GameContext.Provider value={{ 
       state, 
@@ -1818,6 +1949,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
       restoreFromBackup,
       hasBackupAvailable,
       backupTime,
+      recordDailySnapshot,
+      updateAutoSaveConfig,
+      autoSaveIfEnabled,
+      getSnapshotForDay,
+      getPreviousSnapshot,
+      nextDayWithSave,
+      shouldConfirmAction,
       checkPrerequisites,
       getActiveSynergies,
       calculateSynergyBonus,

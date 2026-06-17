@@ -16,6 +16,7 @@ const tabs: TabConfig[] = [
   { id: 'course', label: '课程安排', icon: '📚' },
   { id: 'dungeon', label: '试炼副本', icon: '⚔️' },
   { id: 'settlement', label: '资源结算', icon: '💰' },
+  { id: 'records', label: '经营记录', icon: '📊' },
   { id: 'settings', label: '设置存档', icon: '⚙️' },
 ];
 
@@ -29,9 +30,26 @@ interface Enemy {
   isBoss: boolean;
 }
 
+interface ConfirmDialogState {
+  show: boolean;
+  title: string;
+  description: string;
+  warning?: string;
+  cost?: Partial<{ gold: number; mana: number; food: number; reputation: number }>;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
 export default function MainLayout() {
   const { state, activeTab, setActiveTab } = useGame();
   const [selectedStudentId, setSelectedStudentId] = React.useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = React.useState<ConfirmDialogState>({
+    show: false,
+    title: '',
+    description: '',
+    onConfirm: () => {},
+    onCancel: () => {},
+  });
 
   const getCapacity = () => {
     const baseCapacity = 10;
@@ -60,6 +78,11 @@ export default function MainLayout() {
         <div className="day-info">
           <span>第 {state.day} 天</span>
           <span>学员: {state.students.length}/{getCapacity()}</span>
+          {state.autoSaveConfig.enabled && (
+            <span className="auto-save-indicator" title="自动保存已开启">
+              💾
+            </span>
+          )}
         </div>
       </header>
 
@@ -78,10 +101,11 @@ export default function MainLayout() {
 
       <main className="game-content">
         {activeTab === 'academy' && <AcademyModule />}
-        {activeTab === 'recruit' && <RecruitModule onStudentClick={setSelectedStudentId} />}
+        {activeTab === 'recruit' && <RecruitModule onStudentClick={setSelectedStudentId} setConfirmDialog={setConfirmDialog} />}
         {activeTab === 'course' && <CourseModule onStudentClick={setSelectedStudentId} />}
-        {activeTab === 'dungeon' && <DungeonModule onStudentClick={setSelectedStudentId} />}
-        {activeTab === 'settlement' && <SettlementModule />}
+        {activeTab === 'dungeon' && <DungeonModule onStudentClick={setSelectedStudentId} setConfirmDialog={setConfirmDialog} />}
+        {activeTab === 'settlement' && <SettlementModule setConfirmDialog={setConfirmDialog} />}
+        {activeTab === 'records' && <RecordsModule />}
         {activeTab === 'settings' && <SettingsModule />}
       </main>
 
@@ -89,6 +113,13 @@ export default function MainLayout() {
         <StudentDetailModal
           student={selectedStudent}
           onClose={() => setSelectedStudentId(null)}
+        />
+      )}
+
+      {confirmDialog.show && (
+        <ConfirmDialog
+          {...confirmDialog}
+          onClose={() => setConfirmDialog(prev => ({ ...prev, show: false }))}
         />
       )}
     </div>
@@ -300,12 +331,15 @@ function AcademyModule() {
   );
 }
 
+type SetConfirmDialog = React.Dispatch<React.SetStateAction<ConfirmDialogState>>;
+
 interface ModuleProps {
   onStudentClick?: (studentId: string) => void;
+  setConfirmDialog?: SetConfirmDialog;
 }
 
-function RecruitModule({ onStudentClick }: ModuleProps) {
-  const { state, dispatch, canAfford, recruitStudent, assignStudentToRest, getMoraleLabel, getStaminaLabel, getPityThreshold, computeAdjustedProbabilities, getRecruitQualityBonus, getGuaranteedQuality } = useGame();
+function RecruitModule({ onStudentClick, setConfirmDialog }: ModuleProps) {
+  const { state, dispatch, canAfford, recruitStudent, assignStudentToRest, getMoraleLabel, getStaminaLabel, getPityThreshold, computeAdjustedProbabilities, getRecruitQualityBonus, getGuaranteedQuality, shouldConfirmAction, autoSaveIfEnabled } = useGame();
   const [showProbability, setShowProbability] = useState<StudentQuality | null>(null);
   const [gachaAnimation, setGachaAnimation] = useState<{ showing: boolean; result: GachaResult | null; phase: 'rolling' | 'reveal' }>({ showing: false, result: null, phase: 'rolling' });
   const [showHistory, setShowHistory] = useState(false);
@@ -371,7 +405,7 @@ function RecruitModule({ onStudentClick }: ModuleProps) {
     legendary: '传说',
   };
 
-  const handleRecruit = (ticketQuality: StudentQuality) => {
+  const doRecruit = (ticketQuality: StudentQuality) => {
     const ticket = tickets.find(t => t.quality === ticketQuality);
     if (!ticket || !canAfford(ticket.cost) || isFull) return;
 
@@ -379,10 +413,35 @@ function RecruitModule({ onStudentClick }: ModuleProps) {
     const result = recruitStudent(ticketQuality);
     
     if (result) {
+      if (state.autoSaveConfig.saveOnCriticalAction) {
+        autoSaveIfEnabled();
+      }
       setGachaAnimation({ showing: true, result, phase: 'rolling' });
       setTimeout(() => {
         setGachaAnimation(prev => ({ ...prev, phase: 'reveal' }));
       }, 1500);
+    }
+  };
+
+  const handleRecruit = (ticketQuality: StudentQuality) => {
+    const ticket = tickets.find(t => t.quality === ticketQuality);
+    if (!ticket || !canAfford(ticket.cost) || isFull) return;
+
+    if (shouldConfirmAction() && setConfirmDialog) {
+      setConfirmDialog({
+        show: true,
+        title: `确认${ticket.name}？`,
+        description: `将消耗以下资源进行招募：`,
+        cost: ticket.cost,
+        warning: ticketQuality === 'epic' || ticketQuality === 'legendary' ? '高消耗操作，请确认资源充足' : undefined,
+        onConfirm: () => {
+          doRecruit(ticketQuality);
+          setConfirmDialog(prev => ({ ...prev, show: false }));
+        },
+        onCancel: () => setConfirmDialog(prev => ({ ...prev, show: false })),
+      });
+    } else {
+      doRecruit(ticketQuality);
     }
   };
 
@@ -1165,10 +1224,9 @@ function CourseModule({ onStudentClick }: ModuleProps) {
   );
 }
 
-function DungeonModule({ onStudentClick }: ModuleProps) {
-  const { state, dispatch, calculateSweepRewards, canSweep } = useGame();
+function DungeonModule({ onStudentClick, setConfirmDialog }: ModuleProps) {
+  const { state, dispatch, calculateSweepRewards, canSweep, shouldConfirmAction, autoSaveIfEnabled } = useGame();
   const [selectedDungeon, setSelectedDungeon] = React.useState<string | null>(null);
-  const [showSweepConfirm, setShowSweepConfirm] = React.useState<string | null>(null);
 
   const renderStars = (stars: number, maxStars: number = 3) => {
     return (
@@ -1194,14 +1252,47 @@ function DungeonModule({ onStudentClick }: ModuleProps) {
     return { ok: true };
   };
 
-  const handleSweep = (dungeonId: string) => {
+  const doSweep = (dungeonId: string) => {
     const dungeon = state.dungeons.find(d => d.id === dungeonId);
     if (!dungeon) return;
     const sweepCheck = canSweepDungeon(dungeon);
     if (!sweepCheck.ok) return;
     
     dispatch({ type: 'SWEEP_DUNGEON', dungeonId });
-    setShowSweepConfirm(null);
+    if (state.autoSaveConfig.saveOnCriticalAction) {
+      autoSaveIfEnabled();
+    }
+  };
+
+  const handleSweepWithConfirm = (dungeonId: string) => {
+    const dungeon = state.dungeons.find(d => d.id === dungeonId);
+    if (!dungeon) return;
+
+    if (shouldConfirmAction() && setConfirmDialog) {
+      const sweepRewards = calculateSweepRewards(dungeon);
+      const rewardsText = [
+        sweepRewards.gold > 0 && `💰 ${sweepRewards.gold} 金币`,
+        sweepRewards.mana > 0 && `🔮 ${sweepRewards.mana} 魔力`,
+        sweepRewards.food > 0 && `🍖 ${sweepRewards.food} 食物`,
+        sweepRewards.reputation > 0 && `⭐ ${sweepRewards.reputation} 声望`,
+      ].filter(Boolean).join('  ');
+      
+      setConfirmDialog({
+        show: true,
+        title: `确认扫荡「${dungeon.name}」？`,
+        description: `扫荡将获得以下奖励（80%收益）：\n${rewardsText}`,
+        warning: `消耗最佳阵容体力（约${Math.ceil(dungeon.staminaCost * 0.5)}点/人）`,
+        onConfirm: () => {
+          doSweep(dungeonId);
+          setConfirmDialog(prev => ({ ...prev, show: false }));
+        },
+        onCancel: () => {
+          setConfirmDialog(prev => ({ ...prev, show: false }));
+        },
+      });
+    } else {
+      doSweep(dungeonId);
+    }
   };
 
   return (
@@ -1320,24 +1411,14 @@ function DungeonModule({ onStudentClick }: ModuleProps) {
                   挑战
                 </button>
                 {sweepable && (
-                  <>
-                    {showSweepConfirm === dungeon.id ? (
-                      <div className="sweep-confirm">
-                        <span>确认扫荡？</span>
-                        <button className="confirm-btn" onClick={() => handleSweep(dungeon.id)} disabled={!sweepCheck.ok}>确定</button>
-                        <button className="cancel-btn" onClick={() => setShowSweepConfirm(null)}>取消</button>
-                      </div>
-                    ) : (
-                      <button
-                        className="dungeon-btn sweep-btn"
-                        onClick={() => setShowSweepConfirm(dungeon.id)}
-                        disabled={!sweepCheck.ok}
-                        title={sweepCheck.reason}
-                      >
-                        ⚡ 扫荡
-                      </button>
-                    )}
-                  </>
+                  <button
+                    className="dungeon-btn sweep-btn"
+                    onClick={() => handleSweepWithConfirm(dungeon.id)}
+                    disabled={!sweepCheck.ok}
+                    title={sweepCheck.reason}
+                  >
+                    ⚡ 扫荡
+                  </button>
                 )}
               </div>
 
@@ -1973,8 +2054,8 @@ function DungeonBattle({ dungeon, students, courses, onClose, onStudentClick, on
   );
 }
 
-function SettlementModule() {
-  const { state, dispatch, getActiveSynergies, calculateSynergyBonus, calculateDailyIncome, calculateFoodConsumption, getMoraleLabel } = useGame();
+function SettlementModule({ setConfirmDialog }: ModuleProps) {
+  const { state, getActiveSynergies, calculateSynergyBonus, calculateDailyIncome, calculateFoodConsumption, getMoraleLabel, nextDayWithSave, shouldConfirmAction } = useGame();
   const [daysToAdvance, setDaysToAdvance] = React.useState(1);
 
   const libraryLevel = state.buildings.find(b => b.id === 'library')?.level || 0;
@@ -2151,6 +2232,11 @@ function SettlementModule() {
 
       <div className="advance-time">
         <h3>时间推进</h3>
+        {state.autoSaveConfig.lastAutoSave && (
+          <div className="auto-save-info">
+            💾 上次自动保存: {new Date(state.autoSaveConfig.lastAutoSave).toLocaleString('zh-CN')}
+          </div>
+        )}
         <div className="time-controls">
           <input
             type="number"
@@ -2162,8 +2248,24 @@ function SettlementModule() {
           <span>天</span>
           <button
             onClick={() => {
-              for (let i = 0; i < daysToAdvance; i++) {
-                dispatch({ type: 'NEXT_DAY' });
+              const doAdvance = () => {
+                nextDayWithSave(daysToAdvance);
+              };
+
+              if (shouldConfirmAction() && daysToAdvance > 1 && setConfirmDialog) {
+                setConfirmDialog({
+                  show: true,
+                  title: `确认推进 ${daysToAdvance} 天？`,
+                  description: `将快速推进 ${daysToAdvance} 天，期间会自动结算资源产出、食物消耗、课程进度等。`,
+                  warning: daysToAdvance > 7 ? '推进天数较多，请注意食物储备是否充足' : undefined,
+                  onConfirm: () => {
+                    doAdvance();
+                    setConfirmDialog(prev => ({ ...prev, show: false }));
+                  },
+                  onCancel: () => setConfirmDialog(prev => ({ ...prev, show: false })),
+                });
+              } else {
+                doAdvance();
               }
             }}
           >
@@ -2176,6 +2278,11 @@ function SettlementModule() {
         <p className="tip">
           ⚠️ 食物不足会导致士气大幅下降，长期低士气学员可能离开！
         </p>
+        {state.autoSaveConfig.enabled && state.autoSaveConfig.saveOnDayAdvance && (
+          <p className="tip auto-save-tip">
+            ✅ 推进时间时会自动保存游戏进度
+          </p>
+        )}
       </div>
 
       {recentLogs.length > 0 && (
@@ -2229,7 +2336,7 @@ function SettlementModule() {
 }
 
 function SettingsModule() {
-  const { state, saveGame, loadGame, dispatch, exportSave, importSave, restoreFromBackup, hasBackupAvailable, backupTime } = useGame();
+  const { state, saveGame, loadGame, dispatch, exportSave, importSave, restoreFromBackup, hasBackupAvailable, backupTime, updateAutoSaveConfig } = useGame();
   const [importText, setImportText] = React.useState('');
   const [showImport, setShowImport] = React.useState(false);
   const [message, setMessage] = React.useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
@@ -2392,6 +2499,66 @@ function SettingsModule() {
       </div>
 
       <div className="save-section">
+        <h3>⚙️ 自动保存与操作确认</h3>
+        <div className="auto-save-config">
+          <label className="config-item">
+            <input
+              type="checkbox"
+              checked={state.autoSaveConfig.enabled}
+              onChange={(e) => updateAutoSaveConfig({ enabled: e.target.checked })}
+            />
+            <span>启用自动保存</span>
+          </label>
+          <label className="config-item">
+            <input
+              type="checkbox"
+              checked={state.autoSaveConfig.saveOnDayAdvance}
+              onChange={(e) => updateAutoSaveConfig({ saveOnDayAdvance: e.target.checked })}
+              disabled={!state.autoSaveConfig.enabled}
+            />
+            <span>推进时间时自动保存</span>
+          </label>
+          <label className="config-item">
+            <input
+              type="checkbox"
+              checked={state.autoSaveConfig.saveOnCriticalAction}
+              onChange={(e) => updateAutoSaveConfig({ saveOnCriticalAction: e.target.checked })}
+              disabled={!state.autoSaveConfig.enabled}
+            />
+            <span>关键操作时自动保存（招募、扫荡等）</span>
+          </label>
+          <label className="config-item">
+            <input
+              type="checkbox"
+              checked={state.autoSaveConfig.confirmOnCriticalAction}
+              onChange={(e) => updateAutoSaveConfig({ confirmOnCriticalAction: e.target.checked })}
+            />
+            <span>关键操作前弹出确认对话框</span>
+          </label>
+          <div className="config-item">
+            <span>快照保留天数:</span>
+            <select
+              value={state.autoSaveConfig.maxSnapshots}
+              onChange={(e) => updateAutoSaveConfig({ maxSnapshots: parseInt(e.target.value) })}
+            >
+              <option value={7}>7 天</option>
+              <option value={15}>15 天</option>
+              <option value={30}>30 天</option>
+              <option value={60}>60 天</option>
+            </select>
+          </div>
+          {state.autoSaveConfig.lastAutoSave && (
+            <div className="config-item info">
+              💾 上次自动保存: {new Date(state.autoSaveConfig.lastAutoSave).toLocaleString('zh-CN')}
+            </div>
+          )}
+          <div className="config-item info">
+            📊 已记录 {state.dailySnapshots.length} 天的经营快照
+          </div>
+        </div>
+      </div>
+
+      <div className="save-section">
         <h3>存档版本信息</h3>
         <div className="version-info-grid">
           <div className="version-item">
@@ -2472,6 +2639,276 @@ function SettingsModule() {
         <p>魔法学院经营游戏 v1.2</p>
         <p>使用 React + TypeScript + Canvas API 构建</p>
       </div>
+    </div>
+  );
+}
+
+interface ConfirmDialogProps {
+  show: boolean;
+  title: string;
+  description: string;
+  warning?: string;
+  confirmText?: string;
+  cancelText?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  onClose?: () => void;
+}
+
+function ConfirmDialog({
+  title,
+  description,
+  warning,
+  confirmText = '确认',
+  cancelText = '取消',
+  onConfirm,
+  onCancel,
+}: ConfirmDialogProps) {
+  return (
+    <div className="confirm-overlay" onClick={onCancel}>
+      <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="confirm-icon">⚠️</div>
+        <h3 className="confirm-title">{title}</h3>
+        <p className="confirm-description">{description}</p>
+        {warning && (
+          <div className="confirm-warning">
+            <span className="warning-icon">⚠️</span>
+            {warning}
+          </div>
+        )}
+        <div className="confirm-actions">
+          <button className="confirm-cancel-btn" onClick={onCancel}>
+            {cancelText}
+          </button>
+          <button className="confirm-ok-btn" onClick={onConfirm}>
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecordsModule() {
+  const { state, getSnapshotForDay, getPreviousSnapshot } = useGame();
+  const [selectedDay, setSelectedDay] = React.useState<number | null>(state.dailySnapshots.length > 0 ? state.dailySnapshots[state.dailySnapshots.length - 1].day : null);
+
+  const sortedSnapshots = [...state.dailySnapshots].sort((a, b) => b.day - a.day);
+  const currentSnapshot = selectedDay !== null ? getSnapshotForDay(selectedDay) : null;
+  const prevSnapshot = selectedDay !== null ? getPreviousSnapshot(selectedDay) : null;
+
+  const formatChange = (current: number, previous: number | undefined, isGood = true) => {
+    if (previous === undefined) return <span className="change-neutral">--</span>;
+    const diff = current - previous;
+    if (diff === 0) return <span className="change-neutral">±0</span>;
+    const positive = isGood ? diff > 0 : diff < 0;
+    return (
+      <span className={positive ? 'change-positive' : 'change-negative'}>
+        {diff > 0 ? '+' : ''}{diff}
+      </span>
+    );
+  };
+
+  const formatPercentChange = (current: number, previous: number | undefined) => {
+    if (previous === undefined || previous === 0) return <span className="change-neutral">--</span>;
+    const diff = current - previous;
+    if (diff === 0) return <span className="change-neutral">±0%</span>;
+    const percent = ((diff / previous) * 100).toFixed(1);
+    return (
+      <span className={diff > 0 ? 'change-positive' : 'change-negative'}>
+        {diff > 0 ? '+' : ''}{percent}%
+      </span>
+    );
+  };
+
+  const getEventTypeLabel = (type: string) => {
+    const labels: Record<string, string> = {
+      income: '收入',
+      consumption: '消耗',
+      event: '事件',
+      student: '学员',
+      level: '等级',
+      warning: '警告',
+    };
+    return labels[type] || type;
+  };
+
+  return (
+    <div className="module records-module">
+      <h2>📊 经营记录</h2>
+
+      {state.dailySnapshots.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-icon">📊</div>
+          <p className="empty-title">暂无经营记录</p>
+          <p className="empty-desc">推进时间后会自动记录每日经营快照，方便您回顾学院发展历程</p>
+          <p className="empty-tip">💡 提示：确保在设置中开启了自动保存和快照记录功能</p>
+        </div>
+      ) : (
+        <div className="records-container">
+          <div className="records-sidebar">
+            <h3>📅 选择日期</h3>
+            <div className="snapshot-list">
+              {sortedSnapshots.map((snapshot) => (
+                <button
+                  key={snapshot.day}
+                  className={`snapshot-item ${selectedDay === snapshot.day ? 'active' : ''}`}
+                  onClick={() => setSelectedDay(snapshot.day)}
+                >
+                  <div className="snapshot-day">第 {snapshot.day} 天</div>
+                  <div className="snapshot-summary">
+                    <span>💰{snapshot.resources.gold}</span>
+                    <span>👥{snapshot.studentCount}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="records-content">
+            {currentSnapshot ? (
+              <>
+                <div className="snapshot-header">
+                  <h3>第 {currentSnapshot.day} 天经营详情</h3>
+                  <div className="snapshot-time">
+                    📅 {new Date(currentSnapshot.timestamp).toLocaleString('zh-CN')}
+                  </div>
+                </div>
+
+                <div className="snapshot-section">
+                  <h4>💰 资源状况</h4>
+                  <div className="snapshot-grid">
+                    <div className="snapshot-card">
+                      <div className="snapshot-card-label">金币</div>
+                      <div className="snapshot-card-value">{currentSnapshot.resources.gold}</div>
+                      <div className="snapshot-card-change">
+                        {prevSnapshot && formatChange(currentSnapshot.resources.gold, prevSnapshot.resources.gold, true)}
+                      </div>
+                    </div>
+                    <div className="snapshot-card">
+                      <div className="snapshot-card-label">魔力</div>
+                      <div className="snapshot-card-value">{currentSnapshot.resources.mana}</div>
+                      <div className="snapshot-card-change">
+                        {prevSnapshot && formatChange(currentSnapshot.resources.mana, prevSnapshot.resources.mana, true)}
+                      </div>
+                    </div>
+                    <div className="snapshot-card">
+                      <div className="snapshot-card-label">食物</div>
+                      <div className="snapshot-card-value">{currentSnapshot.resources.food}</div>
+                      <div className="snapshot-card-change">
+                        {prevSnapshot && formatChange(currentSnapshot.resources.food, prevSnapshot.resources.food, true)}
+                      </div>
+                    </div>
+                    <div className="snapshot-card">
+                      <div className="snapshot-card-label">声望</div>
+                      <div className="snapshot-card-value">{currentSnapshot.resources.reputation}</div>
+                      <div className="snapshot-card-change">
+                        {prevSnapshot && formatChange(currentSnapshot.resources.reputation, prevSnapshot.resources.reputation, true)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="snapshot-section">
+                  <h4>📊 收支明细</h4>
+                  <div className="snapshot-grid">
+                    <div className="snapshot-card income">
+                      <div className="snapshot-card-label">💰 当日收入金币</div>
+                      <div className="snapshot-card-value">+{currentSnapshot.income.gold}</div>
+                    </div>
+                    <div className="snapshot-card income">
+                      <div className="snapshot-card-label">🔮 当日收入魔力</div>
+                      <div className="snapshot-card-value">+{currentSnapshot.income.mana}</div>
+                    </div>
+                    <div className="snapshot-card income">
+                      <div className="snapshot-card-label">🍖 当日收入食物</div>
+                      <div className="snapshot-card-value">+{currentSnapshot.income.food}</div>
+                    </div>
+                    <div className="snapshot-card consumption">
+                      <div className="snapshot-card-label">🍖 当日食物消耗</div>
+                      <div className="snapshot-card-value">-{currentSnapshot.consumption.food}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="snapshot-section">
+                  <h4>👥 学员状况</h4>
+                  <div className="snapshot-grid">
+                    <div className="snapshot-card">
+                      <div className="snapshot-card-label">学员总数</div>
+                      <div className="snapshot-card-value">{currentSnapshot.studentCount}</div>
+                      <div className="snapshot-card-change">
+                        {prevSnapshot && formatChange(currentSnapshot.studentCount, prevSnapshot.studentCount, true)}
+                      </div>
+                    </div>
+                    <div className="snapshot-card">
+                      <div className="snapshot-card-label">📚 学习中</div>
+                      <div className="snapshot-card-value">{currentSnapshot.studyingCount}</div>
+                    </div>
+                    <div className="snapshot-card">
+                      <div className="snapshot-card-label">😴 休息中</div>
+                      <div className="snapshot-card-value">{currentSnapshot.restingCount}</div>
+                    </div>
+                    <div className="snapshot-card">
+                      <div className="snapshot-card-label">😊 平均士气</div>
+                      <div className="snapshot-card-value">{currentSnapshot.avgMorale.toFixed(1)}%</div>
+                      <div className="snapshot-card-change">
+                        {prevSnapshot && formatPercentChange(currentSnapshot.avgMorale, prevSnapshot.avgMorale)}
+                      </div>
+                    </div>
+                    <div className="snapshot-card">
+                      <div className="snapshot-card-label">⚡ 平均体力</div>
+                      <div className="snapshot-card-value">{currentSnapshot.avgStamina.toFixed(1)}%</div>
+                      <div className="snapshot-card-change">
+                        {prevSnapshot && formatPercentChange(currentSnapshot.avgStamina, prevSnapshot.avgStamina)}
+                      </div>
+                    </div>
+                    <div className="snapshot-card">
+                      <div className="snapshot-card-label">⭐ 累计经验</div>
+                      <div className="snapshot-card-value">{currentSnapshot.totalExp}</div>
+                      <div className="snapshot-card-change">
+                        {prevSnapshot && formatChange(currentSnapshot.totalExp, prevSnapshot.totalExp, true)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {currentSnapshot.events.length > 0 && (
+                  <div className="snapshot-section">
+                    <h4>📜 当日事件</h4>
+                    <div className="snapshot-events">
+                      {currentSnapshot.events.map((event, idx) => (
+                        <div key={idx} className={`snapshot-event event-${event.type}`}>
+                          <span className="event-type">[{getEventTypeLabel(event.type)}]</span>
+                          <span className="event-message">{event.message}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="snapshot-section">
+                  <h4>🏗️ 建筑等级</h4>
+                  <div className="building-levels">
+                    {Object.entries(currentSnapshot.buildingLevels).map(([buildingId, level]) => (
+                      <div key={buildingId} className="building-level-item">
+                        <span className="building-name">{buildingId}</span>
+                        <span className="building-level">Lv.{level}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="empty-state">
+                <div className="empty-icon">👆</div>
+                <p className="empty-title">请选择日期查看详情</p>
+                <p className="empty-desc">从左侧列表选择想要回看的日期</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2965,4 +3402,4 @@ function StudentDetailModal({ student, onClose }: StudentDetailModalProps) {
   );
 }
 
-export { AcademyModule, RecruitModule, CourseModule, DungeonModule, SettlementModule, SettingsModule, StudentDetailModal };
+export { AcademyModule, RecruitModule, CourseModule, DungeonModule, SettlementModule, SettingsModule, RecordsModule, StudentDetailModal, ConfirmDialog };

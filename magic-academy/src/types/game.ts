@@ -214,7 +214,7 @@ export interface Enemy {
   isBoss: boolean;
 }
 
-export const CURRENT_SAVE_VERSION = 4;
+export const CURRENT_SAVE_VERSION = 5;
 
 export interface PityCounter {
   common: number;
@@ -268,6 +268,8 @@ export interface GameState {
   currentDungeonId: number;
   gameStarted: boolean;
   dailyLogs: DailyLog[];
+  dailySnapshots: DailySnapshot[];
+  autoSaveConfig: AutoSaveConfig;
   pityCounters: PityCounter;
   gachaHistory: GachaHistory;
 }
@@ -310,7 +312,41 @@ export interface DungeonProgress {
   turnCount: number;
 }
 
-export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'settlement' | 'settings';
+export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'settlement' | 'records' | 'settings';
+
+export interface DailySnapshot {
+  day: number;
+  timestamp: number;
+  resources: Resource;
+  studentCount: number;
+  buildingLevels: Record<string, number>;
+  avgMorale: number;
+  avgStamina: number;
+  studyingCount: number;
+  restingCount: number;
+  totalExp: number;
+  events: DailyEvent[];
+  income: Resource;
+  consumption: { food: number };
+  netChange: Resource;
+}
+
+export interface AutoSaveConfig {
+  enabled: boolean;
+  saveOnDayAdvance: boolean;
+  saveOnCriticalAction: boolean;
+  maxSnapshots: number;
+  lastAutoSave: number | null;
+  confirmOnCriticalAction: boolean;
+}
+
+export interface CriticalActionConfirm {
+  action: 'reset_game' | 'spend_resources' | 'next_day' | 'recruit' | 'dungeon_challenge' | 'import_save';
+  title: string;
+  description: string;
+  cost?: Partial<Resource>;
+  warning?: string;
+}
 
 export interface DailyLog {
   day: number;
