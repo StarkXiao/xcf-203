@@ -1,4 +1,4 @@
-import type { GameState, Resource, Dungeon, Student, Building, Course, DailyEvent, Teacher } from '../types/game';
+import type { GameState, Resource, Dungeon, Student, Building, Course, DailyEvent, Teacher, SeasonSnapshot } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import {
   INITIAL_RESOURCES,
@@ -649,6 +649,7 @@ function normalizeToGameState(data: SaveData): GameState {
         settlementRank: ((data.season as Record<string, unknown>).settlementRank as 'S' | 'A' | 'B' | 'C' | 'D') || null,
         settlementRewards: ((data.season as Record<string, unknown>).settlementRewards as Partial<Resource> | undefined) || null,
         settlementClaimed: ensureBoolean((data.season as Record<string, unknown>).settlementClaimed, false),
+        initialSnapshot: (data.season as Record<string, unknown>).initialSnapshot as SeasonSnapshot | null || null,
       }
     : { ...INITIAL_SEASON_STATE };
   
@@ -667,22 +668,38 @@ function normalizeToGameState(data: SaveData): GameState {
       startedAt: ensureNumber(h.startedAt, 0),
       endedAt: ensureNumber(h.endedAt, 0),
       durationDays: ensureNumber(h.durationDays, 0),
+      rank: (['S', 'A', 'B', 'C', 'D'].includes(h.rank as string) 
+        ? h.rank 
+        : 'D') as 'S' | 'A' | 'B' | 'C' | 'D',
       finalPoints: ensureNumber(h.finalPoints, 0),
       goalsCompleted: ensureNumber(h.goalsCompleted, 0),
       totalGoals: ensureNumber(h.totalGoals, 0),
       stagesClaimed: ensureNumber(h.stagesClaimed, 0),
       totalStages: ensureNumber(h.totalStages, 0),
+      initialResources: ensureResource(
+        (h.initialResources as Partial<Resource> | undefined) || {},
+        { gold: 0, mana: 0, food: 0, reputation: 0 }
+      ),
       finalResources: ensureResource(
         (h.finalResources as Partial<Resource> | undefined) || {},
         { gold: 0, mana: 0, food: 0, reputation: 0 }
       ),
-      studentCount: ensureNumber(h.studentCount, 0),
-      buildingLevels: h.buildingLevels && typeof h.buildingLevels === 'object'
-        ? (h.buildingLevels as Record<string, number>)
+      initialStudentCount: ensureNumber(h.initialStudentCount, 0),
+      finalStudentCount: ensureNumber(h.finalStudentCount, 0),
+      initialBuildingLevels: h.initialBuildingLevels && typeof h.initialBuildingLevels === 'object'
+        ? (h.initialBuildingLevels as Record<string, number>)
         : {},
-      rank: (['S', 'A', 'B', 'C', 'D'].includes(h.rank as string) 
-        ? h.rank 
-        : 'D') as 'S' | 'A' | 'B' | 'C' | 'D',
+      finalBuildingLevels: h.finalBuildingLevels && typeof h.finalBuildingLevels === 'object'
+        ? (h.finalBuildingLevels as Record<string, number>)
+        : {},
+      coursesCompleted: ensureNumber(h.coursesCompleted, 0),
+      dungeonsCleared: ensureNumber(h.dungeonsCleared, 0),
+      recruitsDone: ensureNumber(h.recruitsDone, 0),
+      buildingUpgrades: ensureNumber(h.buildingUpgrades, 0),
+      reputationGained: ensureNumber(h.reputationGained, 0),
+      totalRewards: (h.totalRewards as Partial<Resource> | undefined) || {},
+      rankRewards: (h.rankRewards as Partial<Resource> | undefined) || {},
+      carryOverRewards: (h.carryOverRewards as Partial<Resource> | undefined) || {},
     })
   );
 

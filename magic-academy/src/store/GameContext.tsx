@@ -68,6 +68,7 @@ import {
   generateWeeklyGoals,
   getCurrentWeek,
   INITIAL_SEASON_STATE,
+  createSeasonSnapshot,
   updateSeasonGoalProgress,
   updateSeasonStageRewards,
   getCurrentSeasonStage,
@@ -1369,6 +1370,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case 'UPDATE_SEASON_GOAL_PROGRESS': {
+      if (state.season.seasonEnded) return state;
+      
       const amount = action.amount || 1;
       const { goals: updatedGoals, pointsGained } = updateSeasonGoalProgress(
         state.season.goals,
@@ -1480,16 +1483,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case 'CLAIM_SEASON_SETTLEMENT_REWARD': {
       if (!state.season.seasonSettled || state.season.settlementClaimed || !state.season.settlementRewards) return state;
       
-      const buildingLevels: Record<string, number> = {};
-      state.buildings.forEach(b => {
-        buildingLevels[b.id] = b.level;
-      });
-      
       const historyRecord = createSeasonHistory(
         state.season,
         state.resources,
-        state.students.length,
-        buildingLevels
+        state.students,
+        state.buildings,
+        state.goalProgress
       );
       
       const newSeasonHistory = addToSeasonHistory(state.seasonHistory, historyRecord);
@@ -1514,9 +1513,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       if (!state.season.seasonEnded || !state.season.settlementClaimed) return state;
       
       const newSeasonNumber = state.season.seasonNumber + 1;
-      const newSeason = initializeNewSeason(newSeasonNumber);
-      newSeason.seasonStartDay = state.day;
-      newSeason.currentDay = state.day;
+      const initialSnapshot = createSeasonSnapshot(
+        state.resources,
+        state.buildings,
+        state.students,
+        state.goalProgress
+      );
+      const newSeason = initializeNewSeason(newSeasonNumber, state.day, initialSnapshot);
       
       return {
         ...state,
@@ -2089,9 +2092,18 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         });
       }
 
-      let finalSeason = { ...state.season };
+      const finalSeason = { ...state.season };
       if (!state.season.seasonEnded) {
         finalSeason.currentDay = newDay;
+        
+        if (!finalSeason.initialSnapshot) {
+          finalSeason.initialSnapshot = createSeasonSnapshot(
+            state.resources,
+            state.buildings,
+            state.students,
+            state.goalProgress
+          );
+        }
         
         if (checkSeasonEnd(newDay, state.season.seasonStartDay, state.season.seasonDuration)) {
           finalSeason.seasonEnded = true;
@@ -2120,8 +2132,22 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         gameStarted: true,
       };
 
-    case 'RESET_GAME':
-      return { ...initialState, gameStarted: true };
+    case 'RESET_GAME': {
+      const newState = { ...initialState, gameStarted: true };
+      const initialSnapshot = createSeasonSnapshot(
+        newState.resources,
+        newState.buildings,
+        newState.students,
+        newState.goalProgress
+      );
+      return {
+        ...newState,
+        season: {
+          ...newState.season,
+          initialSnapshot,
+        },
+      };
+    }
 
     case 'ADD_DAILY_SNAPSHOT': {
       const maxSnapshots = state.autoSaveConfig.maxSnapshots;

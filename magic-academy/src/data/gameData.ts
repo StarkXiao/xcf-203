@@ -1938,7 +1938,7 @@ export const getCurrentWeek = (day: number): number => {
   return Math.floor((day - 1) / 7) + 1;
 };
 
-import type { SeasonGoal, SeasonStageReward, SeasonState, SeasonHistory, SeasonSettlement, SeasonGoalType } from '../types/game';
+import type { SeasonGoal, SeasonStageReward, SeasonState, SeasonHistory, SeasonSettlement, SeasonGoalType, SeasonSnapshot } from '../types/game';
 import { SEASON_DURATION_DAYS, MAX_SEASON_HISTORY } from '../types/game';
 
 const SEASON_NAMES = [
@@ -2136,6 +2136,30 @@ export const INITIAL_SEASON_STATE: SeasonState = {
   settlementRank: null,
   settlementRewards: null,
   settlementClaimed: false,
+  initialSnapshot: null,
+};
+
+export const createSeasonSnapshot = (
+  resources: Resource,
+  buildings: Building[],
+  students: Student[],
+  goalProgress: GoalProgress
+): SeasonSnapshot => {
+  const buildingLevels: Record<string, number> = {};
+  buildings.forEach(b => {
+    buildingLevels[b.id] = b.level;
+  });
+
+  return {
+    resources: { ...resources },
+    studentCount: students.length,
+    buildingLevels,
+    coursesCompleted: goalProgress.coursesCompleted,
+    dungeonsCleared: goalProgress.dungeonClears,
+    recruitsDone: goalProgress.recruits,
+    buildingUpgrades: goalProgress.buildingUpgrades,
+    totalReputation: resources.reputation,
+  };
 };
 
 export const updateSeasonGoalProgress = (
@@ -2235,7 +2259,7 @@ export const calculateSeasonSettlement = (
   const claimedStages = season.stageRewards.filter(s => s.claimed).length;
   const totalStages = season.stageRewards.length;
   
-  let finalRewards: Partial<Resource> = { gold: 0, mana: 0, food: 0, reputation: 0 };
+  const finalRewards: Partial<Resource> = { gold: 0, mana: 0, food: 0, reputation: 0 };
   for (const goal of season.goals) {
     if (goal.completed) {
       finalRewards.gold = (finalRewards.gold || 0) + (goal.reward.gold || 0);
@@ -2278,38 +2302,71 @@ export const checkSeasonEnd = (
 export const createSeasonHistory = (
   season: SeasonState,
   finalResources: Resource,
-  studentCount: number,
-  buildingLevels: Record<string, number>
+  students: Student[],
+  buildings: Building[],
+  goalProgress: GoalProgress
 ): SeasonHistory => {
   const rank = calculateSeasonRank(season.totalPointsEarned);
   const completedGoals = season.goals.filter(g => g.completed).length;
   const claimedStages = season.stageRewards.filter(s => s.claimed).length;
-  
+  const settlement = calculateSeasonSettlement(season);
+
+  const finalBuildingLevels: Record<string, number> = {};
+  buildings.forEach(b => {
+    finalBuildingLevels[b.id] = b.level;
+  });
+
+  const initialSnapshot = season.initialSnapshot || {
+    resources: { gold: 0, mana: 0, food: 0, reputation: 0 },
+    studentCount: 0,
+    buildingLevels: {},
+    coursesCompleted: 0,
+    dungeonsCleared: 0,
+    recruitsDone: 0,
+    buildingUpgrades: 0,
+    totalReputation: 0,
+  };
+
   return {
     seasonNumber: season.seasonNumber,
     seasonName: season.seasonName,
     startedAt: season.seasonStartDay,
     endedAt: season.currentDay,
     durationDays: season.currentDay - season.seasonStartDay,
+    rank,
     finalPoints: season.totalPointsEarned,
     goalsCompleted: completedGoals,
     totalGoals: season.goals.length,
     stagesClaimed: claimedStages,
     totalStages: season.stageRewards.length,
-    finalResources,
-    studentCount,
-    buildingLevels,
-    rank,
+    initialResources: initialSnapshot.resources,
+    finalResources: { ...finalResources },
+    initialStudentCount: initialSnapshot.studentCount,
+    finalStudentCount: students.length,
+    initialBuildingLevels: initialSnapshot.buildingLevels,
+    finalBuildingLevels,
+    coursesCompleted: goalProgress.coursesCompleted - initialSnapshot.coursesCompleted,
+    dungeonsCleared: goalProgress.dungeonClears - initialSnapshot.dungeonsCleared,
+    recruitsDone: goalProgress.recruits - initialSnapshot.recruitsDone,
+    buildingUpgrades: goalProgress.buildingUpgrades - initialSnapshot.buildingUpgrades,
+    reputationGained: finalResources.reputation - initialSnapshot.totalReputation,
+    totalRewards: settlement.finalRewards,
+    rankRewards: settlement.rankBonus,
+    carryOverRewards: settlement.carryOverBonus,
   };
 };
 
-export const initializeNewSeason = (seasonNumber: number): SeasonState => {
+export const initializeNewSeason = (
+  seasonNumber: number,
+  startDay: number,
+  initialSnapshot?: SeasonSnapshot
+): SeasonState => {
   return {
     seasonNumber,
     seasonName: getSeasonName(seasonNumber),
-    seasonStartDay: 1,
+    seasonStartDay: startDay,
     seasonDuration: SEASON_DURATION_DAYS,
-    currentDay: 1,
+    currentDay: startDay,
     seasonPoints: 0,
     totalPointsEarned: 0,
     goals: generateSeasonGoals(seasonNumber),
@@ -2320,6 +2377,7 @@ export const initializeNewSeason = (seasonNumber: number): SeasonState => {
     settlementRank: null,
     settlementRewards: null,
     settlementClaimed: false,
+    initialSnapshot: initialSnapshot || null,
   };
 };
 

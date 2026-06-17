@@ -260,6 +260,18 @@ export interface SeasonState {
   settlementRank: 'S' | 'A' | 'B' | 'C' | 'D' | null;
   settlementRewards: Partial<Resource> | null;
   settlementClaimed: boolean;
+  initialSnapshot: SeasonSnapshot | null;
+}
+
+export interface SeasonSnapshot {
+  resources: Resource;
+  studentCount: number;
+  buildingLevels: Record<string, number>;
+  coursesCompleted: number;
+  dungeonsCleared: number;
+  recruitsDone: number;
+  buildingUpgrades: number;
+  totalReputation: number;
 }
 
 export interface SeasonHistory {
@@ -268,15 +280,26 @@ export interface SeasonHistory {
   startedAt: number;
   endedAt: number;
   durationDays: number;
+  rank: 'S' | 'A' | 'B' | 'C' | 'D';
   finalPoints: number;
   goalsCompleted: number;
   totalGoals: number;
   stagesClaimed: number;
   totalStages: number;
+  initialResources: Resource;
   finalResources: Resource;
-  studentCount: number;
-  buildingLevels: Record<string, number>;
-  rank: 'S' | 'A' | 'B' | 'C' | 'D';
+  initialStudentCount: number;
+  finalStudentCount: number;
+  initialBuildingLevels: Record<string, number>;
+  finalBuildingLevels: Record<string, number>;
+  coursesCompleted: number;
+  dungeonsCleared: number;
+  recruitsDone: number;
+  buildingUpgrades: number;
+  reputationGained: number;
+  totalRewards: Partial<Resource>;
+  rankRewards: Partial<Resource>;
+  carryOverRewards: Partial<Resource>;
 }
 
 export interface SeasonSettlement {
