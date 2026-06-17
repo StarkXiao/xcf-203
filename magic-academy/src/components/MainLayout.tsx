@@ -77,11 +77,11 @@ export default function MainLayout() {
       </nav>
 
       <main className="game-content">
-        {activeTab === 'academy' && <AcademyModule onStudentClick={setSelectedStudentId} />}
+        {activeTab === 'academy' && <AcademyModule />}
         {activeTab === 'recruit' && <RecruitModule onStudentClick={setSelectedStudentId} />}
         {activeTab === 'course' && <CourseModule onStudentClick={setSelectedStudentId} />}
         {activeTab === 'dungeon' && <DungeonModule onStudentClick={setSelectedStudentId} />}
-        {activeTab === 'settlement' && <SettlementModule onStudentClick={setSelectedStudentId} />}
+        {activeTab === 'settlement' && <SettlementModule />}
         {activeTab === 'settings' && <SettingsModule />}
       </main>
 
@@ -95,7 +95,7 @@ export default function MainLayout() {
   );
 }
 
-function AcademyModule({ onStudentClick: _onStudentClick }: ModuleProps) {
+function AcademyModule() {
   const { state, dispatch, canAfford, checkPrerequisites, getActiveSynergies } = useGame();
   const activeSynergies = getActiveSynergies(state.buildings);
 
@@ -440,7 +440,7 @@ function RecruitModule({ onStudentClick }: ModuleProps) {
   );
 }
 
-function CourseModule({ onStudentClick: _onStudentClick }: ModuleProps) {
+function CourseModule({ onStudentClick }: ModuleProps) {
   const { state, assignStudentToCourse, queueCourse, removeFromQueue, reorderQueue, checkCourseConflict, canAfford } = useGame();
   const [selectedStudentForQueue, setSelectedStudentForQueue] = React.useState<string | null>(null);
   const [conflictMessage, setConflictMessage] = React.useState<string | null>(null);
@@ -486,7 +486,7 @@ function CourseModule({ onStudentClick: _onStudentClick }: ModuleProps) {
     if (!student.courseQueue || student.courseQueue.length === 0) return null;
 
     return (
-      <div className="course-queue-section">
+      <div className="course-queue-section" onClick={(e) => e.stopPropagation()}>
         <div className="queue-header">
           <span className="queue-title">📋 学习队列 ({student.courseQueue.length}门, 共{getTotalQueueDays(student)}天)</span>
         </div>
@@ -537,7 +537,7 @@ function CourseModule({ onStudentClick: _onStudentClick }: ModuleProps) {
     if (!student) return null;
 
     return (
-      <div className="queue-selector">
+      <div className="queue-selector" onClick={(e) => e.stopPropagation()}>
         <select
           className="course-select"
           onChange={(e) => {
@@ -628,7 +628,7 @@ function CourseModule({ onStudentClick: _onStudentClick }: ModuleProps) {
               const stats = getStudentStatsSummary(student);
               const progressPercent = course ? (student.courseProgress / course.duration) * 100 : 0;
               return (
-                <div key={student.id} className={`studying-item ${student.courseDaysRemaining <= 1 ? 'almost-done' : ''}`}>
+                <div key={student.id} className={`studying-item ${student.courseDaysRemaining <= 1 ? 'almost-done' : ''} clickable`} onClick={() => onStudentClick?.(student.id)} title="点击查看详情">
                   <div className="studying-main-info">
                     <span className="student-name">{student.name}</span>
                     <span className="course-name">{course?.name || '未知课程'}</span>
@@ -657,7 +657,7 @@ function CourseModule({ onStudentClick: _onStudentClick }: ModuleProps) {
           <h3>📋 待学习队列概览</h3>
           <div className="queue-overview-list">
             {studentsWithQueue.filter(s => s.status !== 'studying').map(student => (
-              <div key={student.id} className="queue-overview-item">
+              <div key={student.id} className="queue-overview-item clickable" onClick={() => onStudentClick?.(student.id)} title="点击查看详情">
                 <div className="queue-overview-header">
                   <span className="student-name">{student.name}</span>
                   <span className="student-level">Lv.{student.level}</span>
@@ -708,7 +708,7 @@ function CourseModule({ onStudentClick: _onStudentClick }: ModuleProps) {
             {availableStudents.map(student => {
               const stats = getStudentStatsSummary(student);
               return (
-                <div key={student.id} className="assignment-item">
+                <div key={student.id} className="assignment-item clickable" onClick={() => onStudentClick?.(student.id)} title="点击查看详情">
                   <div className="assignment-student-info">
                     <span className="student-name">{student.name}</span>
                     <span className="student-level">Lv.{student.level}</span>
@@ -721,7 +721,7 @@ function CourseModule({ onStudentClick: _onStudentClick }: ModuleProps) {
                   {selectedStudentForQueue === student.id ? (
                     renderQueueCourseSelector(student.id)
                   ) : (
-                    <div className="assignment-actions">
+                    <div className="assignment-actions" onClick={(e) => e.stopPropagation()}>
                       <select
                         className="course-select"
                         onChange={(e) => {
@@ -786,7 +786,7 @@ function CourseModule({ onStudentClick: _onStudentClick }: ModuleProps) {
   );
 }
 
-function DungeonModule({ onStudentClick: _onStudentClick }: ModuleProps) {
+function DungeonModule({ onStudentClick }: ModuleProps) {
   const { state, dispatch, calculateSweepRewards, canSweep } = useGame();
   const [selectedDungeon, setSelectedDungeon] = React.useState<string | null>(null);
   const [showSweepConfirm, setShowSweepConfirm] = React.useState<string | null>(null);
@@ -984,6 +984,7 @@ function DungeonModule({ onStudentClick: _onStudentClick }: ModuleProps) {
           students={state.students}
           courses={state.courses}
           onClose={() => setSelectedDungeon(null)}
+          onStudentClick={onStudentClick}
           onComplete={(result) => {
             dispatch({
               type: 'COMPLETE_DUNGEON',
@@ -1008,6 +1009,7 @@ interface DungeonBattleProps {
   students: StudentType[];
   courses: CourseType[];
   onClose: () => void;
+  onStudentClick?: (studentId: string) => void;
   onComplete: (result: {
     stars: number;
     survivingMembers: number;
@@ -1030,7 +1032,7 @@ interface BattleResultData {
   team: string[];
 }
 
-function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: DungeonBattleProps) {
+function DungeonBattle({ dungeon, students, courses, onClose, onStudentClick, onComplete }: DungeonBattleProps) {
   const { calculateBattleStars, calculateDungeonRewards, getMoraleLabel, getStaminaLabel, calculateMoraleEfficiencyMultiplier, calculateStaminaEfficiencyMultiplier } = useGame();
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const [battleStarted, setBattleStarted] = React.useState(false);
@@ -1412,7 +1414,14 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
                       }}
                     />
                     <div className="team-member-info">
-                      <div className="team-member-name">
+                      <div
+                        className="team-member-name clickable"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onStudentClick?.(student.id);
+                        }}
+                        title="点击查看详情"
+                      >
                         {student.name} (Lv.{student.level})
                         {student.skills.length > 0 && ` [${student.skills.length}技能]`}
                         {isInBestTeam && ' ⭐'}
@@ -1517,7 +1526,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
   );
 }
 
-function SettlementModule({ onStudentClick: _onStudentClick }: ModuleProps) {
+function SettlementModule() {
   const { state, dispatch, getActiveSynergies, calculateSynergyBonus, calculateDailyIncome, calculateFoodConsumption, getMoraleLabel } = useGame();
   const [daysToAdvance, setDaysToAdvance] = React.useState(1);
 

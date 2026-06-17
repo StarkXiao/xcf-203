@@ -2393,6 +2393,34 @@ body {
   box-shadow: 0 0 20px rgba(99, 102, 241, 0.3);
 }
 
+.studying-item.clickable,
+.queue-overview-item.clickable,
+.assignment-item.clickable {
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.studying-item.clickable:hover {
+  border-color: var(--primary);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+}
+
+.queue-overview-item.clickable:hover,
+.assignment-item.clickable:hover {
+  border-color: var(--primary);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
+}
+
+.team-member-name.clickable {
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.team-member-name.clickable:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
 .student-detail-overlay {
   position: fixed;
   top: 0;
