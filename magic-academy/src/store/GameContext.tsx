@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, TradeMaterialType, TradeOrderType } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -91,6 +91,22 @@ import {
   generateClubTasks,
   getClubMemberBonus,
   CLUB_REPUTATION_LEVELS,
+  TRADE_MATERIALS,
+  getTradeMaterial,
+  calculateDailyPrices,
+  INITIAL_TRADE_HARBOR_STATE,
+  calculateShipmentDuration,
+  calculateShipmentRisk,
+  calculateTradePriceBonus,
+  getTotalWarehouseUsed,
+  calculateWarehouseCapacity,
+  getTradeBuildingBonuses,
+  canPlaceBuyOrder,
+  canPlaceSellOrder,
+  generateTradeOrderId,
+  generateShipmentId,
+  getRouteInfo,
+  updateTradeHarborBonuses,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -149,7 +165,13 @@ type GameAction =
   | { type: 'ADD_CLUB_BUFF'; buff: ClubBuff; clubId: string }
   | { type: 'ADD_CLUB_CONTRIBUTION_LOG'; log: ClubContributionLog }
   | { type: 'USE_RECRUIT_TICKET'; quality: 'common' | 'rare' | 'epic' | 'legendary' }
-  | { type: 'ADD_RECRUIT_TICKET'; quality: 'common' | 'rare' | 'epic' | 'legendary'; amount: number };
+  | { type: 'ADD_RECRUIT_TICKET'; quality: 'common' | 'rare' | 'epic' | 'legendary'; amount: number }
+  | { type: 'UNLOCK_TRADE_HARBOR' }
+  | { type: 'PLACE_TRADE_ORDER'; orderType: TradeOrderType; materialId: TradeMaterialType; quantity: number; route: 'local' | 'regional' | 'intercontinental' }
+  | { type: 'CANCEL_TRADE_ORDER'; orderId: string }
+  | { type: 'COMPLETE_TRADE_SHIPMENT'; shipmentId: string }
+  | { type: 'REFRESH_TRADE_PRICES' }
+  | { type: 'UPGRADE_WAREHOUSE' };
 
 const MAX_STUDENT_CAPACITY = 20;
 
@@ -206,6 +228,7 @@ const initialState: GameState = {
   season: INITIAL_SEASON_STATE,
   seasonHistory: [],
   clubs: INITIAL_CLUBS_STATE,
+  tradeHarbor: INITIAL_TRADE_HARBOR_STATE,
 };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -1864,6 +1887,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           : i
       );
       
+      const makeRecentLogs = (extraEvents: DailyEvent[] = []) => {
+        const allEvents = [...events, ...extraEvents];
+        const dailyLog: DailyLog = { day: state.day, events: allEvents };
+        const recent = state.dailyLogs.slice(-29);
+        recent.push(dailyLog);
+        return recent;
+      };
+      
       switch (item.effect.type) {
         case 'resource_gain': {
           const target = item.effect.target as keyof typeof newResources;
@@ -1917,6 +1948,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               ? { ...c, contributionPoints: c.contributionPoints - (discountedCost.contributionPoints || 0) }
               : c
           );
+          const purchaseEvent: DailyEvent = {
+            type: 'club_shop_purchase',
+            message: `🛒 从「${club.name}」商店购买了「${item.name}」`,
+            clubId: club.id,
+            clubName: club.name,
+          };
           return {
             ...state,
             resources: newResources,
@@ -1928,7 +1965,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               ...state.recruitTickets,
               [ticketQuality]: state.recruitTickets[ticketQuality] + ticketValue,
             },
-            dailyLogs: recentLogs,
+            dailyLogs: makeRecentLogs([purchaseEvent]),
           };
         }
       }
@@ -1940,9 +1977,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         clubName: club.name,
       });
       
-      const dailyLog: DailyLog = { day: state.day, events };
-      const recentLogs = state.dailyLogs.slice(-29);
-      recentLogs.push(dailyLog);
+      const recentLogs = makeRecentLogs();
       
       return {
         ...state,
@@ -2004,6 +2039,400 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         recruitTickets: {
           ...state.recruitTickets,
           [action.quality]: state.recruitTickets[action.quality] + action.amount,
+        },
+      };
+    }
+
+    case 'UNLOCK_TRADE_HARBOR': {
+      if (state.tradeHarbor.unlocked) return state;
+      const tradeHarborBuilding = state.buildings.find(b => b.id === 'trade_harbor');
+      if (!tradeHarborBuilding || tradeHarborBuilding.level === 0) return state;
+
+      const updatedTradeHarbor = updateTradeHarborBonuses(
+        { ...state.tradeHarbor, unlocked: true },
+        state.buildings
+      );
+
+      const unlockEvent: DailyEvent = {
+        type: 'trade_harbor_upgrade',
+        message: '🏛️ 学院贸易港正式启用！开始你的商业帝国吧',
+      };
+      const dailyLog: DailyLog = { day: state.day, events: [unlockEvent] };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        tradeHarbor: updatedTradeHarbor,
+      };
+    }
+
+    case 'PLACE_TRADE_ORDER': {
+      const { orderType, materialId, quantity, route } = action;
+      if (!state.tradeHarbor.unlocked) return state;
+      if (quantity <= 0) return state;
+
+      const bonuses = getTradeBuildingBonuses(state.buildings);
+      const priceMultiplier = calculateTradePriceBonus(orderType, bonuses.priceBonus);
+      const basePrice = state.tradeHarbor.currentPrices[materialId];
+      const effectivePrice = Math.round(basePrice * priceMultiplier);
+      const totalPrice = effectivePrice * quantity;
+      const material = getTradeMaterial(materialId);
+
+      const warehouseCapacity = calculateWarehouseCapacity(state.buildings, bonuses.capacityBonus);
+
+      if (orderType === 'buy') {
+        const check = canPlaceBuyOrder(
+          materialId, quantity, state.resources.gold,
+          effectivePrice, state.tradeHarbor.materials, warehouseCapacity
+        );
+        if (!check.ok) return state;
+
+        const duration = calculateShipmentDuration(route, bonuses.transportSpeedBonus);
+        const risk = calculateShipmentRisk(route, bonuses.riskReduction);
+
+        const orderId = generateTradeOrderId();
+        const shipmentId = generateShipmentId();
+
+        const order = {
+          id: orderId,
+          type: orderType,
+          materialId,
+          quantity,
+          unitPrice: effectivePrice,
+          totalPrice,
+          createdAt: state.day,
+          fulfilledAt: null,
+          status: 'fulfilling' as const,
+          shipmentId,
+        };
+
+        const shipment = {
+          id: shipmentId,
+          orderId,
+          materialId,
+          quantity,
+          status: 'shipping' as const,
+          startDay: state.day,
+          durationDays: duration,
+          estimatedArrival: state.day + duration,
+          arrivedAt: null,
+          route,
+          risk,
+        };
+
+        const placeEvent: DailyEvent = {
+          type: 'trade_order_placed',
+          message: `📦 采购订单：${material.icon}${material.name} ×${quantity}，共${totalPrice}金币，预计${shipment.estimatedArrival}日到港`,
+          materialId,
+          materialName: material.name,
+          value: totalPrice,
+        };
+        const dailyLog: DailyLog = { day: state.day, events: [placeEvent] };
+        const recentLogs = state.dailyLogs.slice(-29);
+        recentLogs.push(dailyLog);
+
+        return {
+          ...state,
+          dailyLogs: recentLogs,
+          resources: { ...state.resources, gold: state.resources.gold - totalPrice },
+          tradeHarbor: {
+            ...state.tradeHarbor,
+            activeOrders: [...state.tradeHarbor.activeOrders, order],
+            activeShipments: [...state.tradeHarbor.activeShipments, shipment],
+            stats: {
+              ...state.tradeHarbor.stats,
+              totalTrades: state.tradeHarbor.stats.totalTrades + 1,
+              totalVolume: state.tradeHarbor.stats.totalVolume + totalPrice,
+            },
+          },
+        };
+      } else {
+        const check = canPlaceSellOrder(materialId, quantity, state.tradeHarbor.materials);
+        if (!check.ok) return state;
+
+        const duration = calculateShipmentDuration(route, bonuses.transportSpeedBonus);
+        const risk = calculateShipmentRisk(route, bonuses.riskReduction);
+
+        const orderId = generateTradeOrderId();
+        const shipmentId = generateShipmentId();
+
+        const order = {
+          id: orderId,
+          type: orderType,
+          materialId,
+          quantity,
+          unitPrice: effectivePrice,
+          totalPrice,
+          createdAt: state.day,
+          fulfilledAt: null,
+          status: 'fulfilling' as const,
+          shipmentId,
+        };
+
+        const shipment = {
+          id: shipmentId,
+          orderId,
+          materialId,
+          quantity,
+          status: 'shipping' as const,
+          startDay: state.day,
+          durationDays: duration,
+          estimatedArrival: state.day + duration,
+          arrivedAt: null,
+          route,
+          risk,
+        };
+
+        const placeEvent: DailyEvent = {
+          type: 'trade_order_placed',
+          message: `📤 销售订单：${material.icon}${material.name} ×${quantity}，总价${totalPrice}金币，预计${shipment.estimatedArrival}日回款`,
+          materialId,
+          materialName: material.name,
+          value: totalPrice,
+        };
+        const dailyLog: DailyLog = { day: state.day, events: [placeEvent] };
+        const recentLogs = state.dailyLogs.slice(-29);
+        recentLogs.push(dailyLog);
+
+        const updatedMaterials = { ...state.tradeHarbor.materials };
+        updatedMaterials[materialId] -= quantity;
+
+        return {
+          ...state,
+          dailyLogs: recentLogs,
+          tradeHarbor: {
+            ...state.tradeHarbor,
+            materials: updatedMaterials,
+            warehouse: {
+              ...state.tradeHarbor.warehouse,
+              usedCapacity: getTotalWarehouseUsed(updatedMaterials),
+            },
+            activeOrders: [...state.tradeHarbor.activeOrders, order],
+            activeShipments: [...state.tradeHarbor.activeShipments, shipment],
+            stats: {
+              ...state.tradeHarbor.stats,
+              totalTrades: state.tradeHarbor.stats.totalTrades + 1,
+              totalVolume: state.tradeHarbor.stats.totalVolume + totalPrice,
+            },
+          },
+        };
+      }
+    }
+
+    case 'CANCEL_TRADE_ORDER': {
+      const order = state.tradeHarbor.activeOrders.find(o => o.id === action.orderId);
+      if (!order || order.status === 'completed') return state;
+
+      const material = getTradeMaterial(order.materialId);
+      const penaltyPrice = Math.round(order.totalPrice * 0.3);
+
+      let newMaterials = { ...state.tradeHarbor.materials };
+      let goldRefund = 0;
+
+      if (order.type === 'buy') {
+        goldRefund = order.totalPrice - penaltyPrice;
+      } else {
+        newMaterials[order.materialId] = (newMaterials[order.materialId] || 0) + order.quantity;
+      }
+
+      const cancelEvent: DailyEvent = {
+        type: 'warning',
+        message: `❌ 取消${order.type === 'buy' ? '采购' : '销售'}订单：${material.icon}${material.name}×${order.quantity}，违约金${penaltyPrice}金币`,
+        materialId: order.materialId,
+        materialName: material.name,
+      };
+      const dailyLog: DailyLog = { day: state.day, events: [cancelEvent] };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        resources: { ...state.resources, gold: state.resources.gold + goldRefund },
+        tradeHarbor: {
+          ...state.tradeHarbor,
+          materials: newMaterials,
+          warehouse: {
+            ...state.tradeHarbor.warehouse,
+            usedCapacity: getTotalWarehouseUsed(newMaterials),
+          },
+          activeOrders: state.tradeHarbor.activeOrders.map(o =>
+            o.id === action.orderId ? { ...o, status: 'cancelled' as const } : o
+          ),
+          historyOrders: [
+            ...state.tradeHarbor.historyOrders,
+            { ...order, status: 'cancelled' as const, fulfilledAt: state.day },
+          ],
+          activeShipments: state.tradeHarbor.activeShipments.filter(s => s.orderId !== action.orderId),
+        },
+      };
+    }
+
+    case 'COMPLETE_TRADE_SHIPMENT': {
+      const shipment = state.tradeHarbor.activeShipments.find(s => s.id === action.shipmentId);
+      if (!shipment || shipment.status === 'arrived') return state;
+
+      const order = state.tradeHarbor.activeOrders.find(o => o.id === shipment.orderId);
+      if (!order) return state;
+
+      const material = getTradeMaterial(shipment.materialId);
+      const bonuses = getTradeBuildingBonuses(state.buildings);
+      const warehouseCapacity = calculateWarehouseCapacity(state.buildings, bonuses.capacityBonus);
+
+      let lossAmount = 0;
+      const riskRoll = Math.random();
+      if (riskRoll < shipment.risk) {
+        const maxLossRate = Math.min(0.4, shipment.risk * 2);
+        const lossRate = Math.random() * maxLossRate;
+        lossAmount = Math.floor(shipment.quantity * lossRate);
+      }
+
+      const actualQuantity = shipment.quantity - lossAmount;
+      let newMaterials = { ...state.tradeHarbor.materials };
+      let newGold = state.resources.gold;
+      let profitLoss = 0;
+
+      if (order.type === 'buy') {
+        const warehouseUsed = getTotalWarehouseUsed(newMaterials);
+        const spaceAvailable = Math.max(0, warehouseCapacity - warehouseUsed);
+        const finalQuantity = Math.min(actualQuantity, spaceAvailable);
+        newMaterials[shipment.materialId] = (newMaterials[shipment.materialId] || 0) + finalQuantity;
+        if (finalQuantity < actualQuantity) {
+          lossAmount += actualQuantity - finalQuantity;
+        }
+        profitLoss = -order.totalPrice;
+      } else {
+        const actualRevenue = Math.round(order.unitPrice * actualQuantity);
+        newGold += actualRevenue;
+        profitLoss = actualRevenue - order.unitPrice * order.quantity;
+      }
+
+      const completeEvents: DailyEvent[] = [];
+      if (lossAmount > 0) {
+        completeEvents.push({
+          type: 'trade_shipment_risk',
+          message: `⚠️ 运输途中损失${lossAmount}份${material.icon}${material.name}！`,
+          materialId: shipment.materialId,
+          materialName: material.name,
+          value: lossAmount,
+        });
+      }
+
+      completeEvents.push({
+        type: 'trade_shipment_arrived',
+        message: order.type === 'buy'
+          ? `🚛 到港：${material.icon}${material.name} ×${actualQuantity}已入库`
+          : `💰 回款：${material.icon}${material.name}销售回款${Math.round(order.unitPrice * actualQuantity)}金币`,
+        materialId: shipment.materialId,
+        materialName: material.name,
+      });
+
+      const dailyLog: DailyLog = { day: state.day, events: completeEvents };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+
+      const completedOrder = {
+        ...order,
+        status: 'completed' as const,
+        fulfilledAt: state.day,
+        profitLoss,
+      };
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        resources: { ...state.resources, gold: newGold },
+        tradeHarbor: {
+          ...state.tradeHarbor,
+          materials: newMaterials,
+          warehouse: {
+            ...state.tradeHarbor.warehouse,
+            usedCapacity: getTotalWarehouseUsed(newMaterials),
+          },
+          activeOrders: state.tradeHarbor.activeOrders.filter(o => o.id !== order.id),
+          historyOrders: [...state.tradeHarbor.historyOrders, completedOrder],
+          activeShipments: state.tradeHarbor.activeShipments.map(s =>
+            s.id === action.shipmentId
+              ? { ...s, status: 'arrived' as const, arrivedAt: state.day, lossAmount }
+              : s
+          ),
+          stats: {
+            ...state.tradeHarbor.stats,
+            completedBuys: order.type === 'buy' ? state.tradeHarbor.stats.completedBuys + 1 : state.tradeHarbor.stats.completedBuys,
+            completedSells: order.type === 'sell' ? state.tradeHarbor.stats.completedSells + 1 : state.tradeHarbor.stats.completedSells,
+            totalProfit: profitLoss > 0 ? state.tradeHarbor.stats.totalProfit + profitLoss : state.tradeHarbor.stats.totalProfit,
+            totalLoss: profitLoss < 0 ? state.tradeHarbor.stats.totalLoss + Math.abs(profitLoss) : state.tradeHarbor.stats.totalLoss,
+            bestTrade: profitLoss > state.tradeHarbor.stats.bestTrade ? profitLoss : state.tradeHarbor.stats.bestTrade,
+            worstTrade: profitLoss < state.tradeHarbor.stats.worstTrade ? profitLoss : state.tradeHarbor.stats.worstTrade,
+          },
+        },
+      };
+    }
+
+    case 'REFRESH_TRADE_PRICES': {
+      const { prices, trends } = calculateDailyPrices(
+        state.day,
+        state.tradeHarbor.currentPrices,
+        state.tradeHarbor.priceTrends
+      );
+      const historyRecord = { day: state.day, prices, trends };
+      const priceHistory = [...state.tradeHarbor.priceHistory, historyRecord].slice(-30);
+
+      return {
+        ...state,
+        tradeHarbor: {
+          ...state.tradeHarbor,
+          currentPrices: prices,
+          priceTrends: trends,
+          priceHistory,
+        },
+      };
+    }
+
+    case 'UPGRADE_WAREHOUSE': {
+      const cost = state.tradeHarbor.warehouse.upgradeCost;
+      if (
+        state.resources.gold < cost.gold ||
+        state.resources.mana < cost.mana ||
+        state.resources.food < cost.food ||
+        state.resources.reputation < cost.reputation
+      ) return state;
+
+      const newCapacity = state.tradeHarbor.warehouse.capacity + 50;
+      const nextUpgradeCost = {
+        gold: Math.round(cost.gold * 1.5),
+        mana: Math.round(cost.mana * 1.5),
+        food: Math.round(cost.food * 1.3),
+        reputation: Math.round(cost.reputation * 1.4),
+      };
+
+      const upgradeEvent: DailyEvent = {
+        type: 'trade_harbor_upgrade',
+        message: `📦 仓库扩容完成！容量从 ${state.tradeHarbor.warehouse.capacity} 提升到 ${newCapacity}`,
+        value: newCapacity,
+      };
+      const dailyLog: DailyLog = { day: state.day, events: [upgradeEvent] };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        resources: {
+          gold: state.resources.gold - cost.gold,
+          mana: state.resources.mana - cost.mana,
+          food: state.resources.food - cost.food,
+          reputation: state.resources.reputation - cost.reputation,
+        },
+        tradeHarbor: {
+          ...state.tradeHarbor,
+          warehouse: {
+            ...state.tradeHarbor.warehouse,
+            capacity: newCapacity,
+            upgradeCost: nextUpgradeCost,
+          },
         },
       };
     }
@@ -2499,12 +2928,123 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         });
       }
 
-      const finalResources = {
+      let finalResources = {
         gold: Math.max(0, workingResources.gold),
         mana: Math.max(0, workingResources.mana),
         food: Math.max(0, workingResources.food),
         reputation: Math.max(0, workingResources.reputation),
       };
+
+      const newDay = state.day + 1;
+
+      let newTradeHarbor = { ...state.tradeHarbor };
+      if (state.tradeHarbor.unlocked) {
+        const tradeBonuses = getTradeBuildingBonuses(state.buildings);
+        newTradeHarbor = updateTradeHarborBonuses(newTradeHarbor, state.buildings);
+
+        const { prices, trends } = calculateDailyPrices(
+          newDay,
+          newTradeHarbor.currentPrices,
+          newTradeHarbor.priceTrends
+        );
+        const historyRecord = { day: newDay, prices, trends };
+        newTradeHarbor.priceHistory = [...newTradeHarbor.priceHistory, historyRecord].slice(-30);
+        newTradeHarbor.currentPrices = prices;
+        newTradeHarbor.priceTrends = trends;
+
+        let tempMaterials = { ...newTradeHarbor.materials };
+        let tempGold = finalResources.gold;
+        const completedShipmentIds: string[] = [];
+        const completedOrderIds: string[] = [];
+
+        for (const shipment of newTradeHarbor.activeShipments) {
+          if (shipment.status !== 'shipping') continue;
+          if (newDay < shipment.estimatedArrival) continue;
+
+          const order = newTradeHarbor.activeOrders.find(o => o.id === shipment.orderId);
+          if (!order) continue;
+
+          const material = getTradeMaterial(shipment.materialId);
+          const warehouseCapacity = calculateWarehouseCapacity(state.buildings, tradeBonuses.capacityBonus);
+
+          let lossAmount = 0;
+          const riskRoll = Math.random();
+          if (riskRoll < shipment.risk) {
+            const maxLossRate = Math.min(0.4, shipment.risk * 2);
+            const lossRate = Math.random() * maxLossRate;
+            lossAmount = Math.floor(shipment.quantity * lossRate);
+          }
+
+          const actualQuantity = shipment.quantity - lossAmount;
+          let finalReceivedQuantity = actualQuantity;
+          let profitLoss = 0;
+
+          if (order.type === 'buy') {
+            const warehouseUsed = getTotalWarehouseUsed(tempMaterials);
+            const spaceAvailable = Math.max(0, warehouseCapacity - warehouseUsed);
+            finalReceivedQuantity = Math.min(actualQuantity, spaceAvailable);
+            tempMaterials[shipment.materialId] = (tempMaterials[shipment.materialId] || 0) + finalReceivedQuantity;
+            if (finalReceivedQuantity < actualQuantity) {
+              lossAmount += actualQuantity - finalReceivedQuantity;
+            }
+            profitLoss = -order.totalPrice;
+          } else {
+            const actualRevenue = Math.round(order.unitPrice * actualQuantity);
+            tempGold += actualRevenue;
+            profitLoss = actualRevenue - order.unitPrice * order.quantity;
+          }
+
+          if (lossAmount > 0) {
+            todayEvents.push({
+              type: 'trade_shipment_risk',
+              message: `⚠️ 运输途中损失${lossAmount}份${material.icon}${material.name}！`,
+              materialId: shipment.materialId,
+              materialName: material.name,
+              value: lossAmount,
+            });
+          }
+
+          todayEvents.push({
+            type: 'trade_shipment_arrived',
+            message: order.type === 'buy'
+              ? `🚛 到港：${material.icon}${material.name} ×${finalReceivedQuantity}已入库`
+              : `💰 回款：${material.icon}${material.name}销售回款${Math.round(order.unitPrice * actualQuantity)}金币`,
+            materialId: shipment.materialId,
+            materialName: material.name,
+          });
+
+          completedShipmentIds.push(shipment.id);
+          completedOrderIds.push(order.id);
+
+          newTradeHarbor.stats = {
+            ...newTradeHarbor.stats,
+            completedBuys: order.type === 'buy' ? newTradeHarbor.stats.completedBuys + 1 : newTradeHarbor.stats.completedBuys,
+            completedSells: order.type === 'sell' ? newTradeHarbor.stats.completedSells + 1 : newTradeHarbor.stats.completedSells,
+            totalProfit: profitLoss > 0 ? newTradeHarbor.stats.totalProfit + profitLoss : newTradeHarbor.stats.totalProfit,
+            totalLoss: profitLoss < 0 ? newTradeHarbor.stats.totalLoss + Math.abs(profitLoss) : newTradeHarbor.stats.totalLoss,
+            bestTrade: profitLoss > newTradeHarbor.stats.bestTrade ? profitLoss : newTradeHarbor.stats.bestTrade,
+            worstTrade: profitLoss < newTradeHarbor.stats.worstTrade ? profitLoss : newTradeHarbor.stats.worstTrade,
+          };
+
+          newTradeHarbor.historyOrders.push({
+            ...order,
+            status: 'completed',
+            fulfilledAt: newDay,
+            profitLoss,
+          });
+        }
+
+        newTradeHarbor.activeShipments = newTradeHarbor.activeShipments
+          .filter(s => !completedShipmentIds.includes(s.id));
+        newTradeHarbor.activeOrders = newTradeHarbor.activeOrders
+          .filter(o => !completedOrderIds.includes(o.id));
+        newTradeHarbor.materials = tempMaterials;
+        newTradeHarbor.warehouse = {
+          ...newTradeHarbor.warehouse,
+          usedCapacity: getTotalWarehouseUsed(tempMaterials),
+        };
+        finalResources = { ...finalResources, gold: tempGold };
+      }
 
       const dailyLog: DailyLog = {
         day: state.day,
@@ -2513,8 +3053,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
       const recentLogs = state.dailyLogs.slice(-29);
       recentLogs.push(dailyLog);
-
-      const newDay = state.day + 1;
 
       let newDailySnapshots = state.dailySnapshots;
       if (state.autoSaveConfig.saveOnDayAdvance) {
@@ -2614,7 +3152,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           message: `🌟 所有社团声望每日增长 +${dailyClubReputation}`,
         });
       }
-      
+
       return {
         ...state,
         day: newDay,
@@ -2629,6 +3167,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           clubs: updatedClubs,
           activeBuffs: updatedClubBuffs,
         },
+        tradeHarbor: newTradeHarbor,
       };
     }
 
@@ -2776,6 +3315,23 @@ interface GameContextType {
   INITIAL_CLUBS: typeof INITIAL_CLUBS;
   useRecruitTicket: (quality: 'common' | 'rare' | 'epic' | 'legendary') => boolean;
   addRecruitTicket: (quality: 'common' | 'rare' | 'epic' | 'legendary', amount: number) => void;
+  unlockTradeHarbor: () => void;
+  placeTradeOrder: (orderType: TradeOrderType, materialId: TradeMaterialType, quantity: number, route: 'local' | 'regional' | 'intercontinental') => boolean;
+  cancelTradeOrder: (orderId: string) => void;
+  completeTradeShipment: (shipmentId: string) => void;
+  refreshTradePrices: () => void;
+  upgradeWarehouse: () => boolean;
+  TRADE_MATERIALS: typeof TRADE_MATERIALS;
+  getTradeMaterial: typeof getTradeMaterial;
+  getRouteInfo: typeof getRouteInfo;
+  calculateTradePriceBonus: typeof calculateTradePriceBonus;
+  getTradeBuildingBonuses: typeof getTradeBuildingBonuses;
+  calculateWarehouseCapacity: typeof calculateWarehouseCapacity;
+  getTotalWarehouseUsed: typeof getTotalWarehouseUsed;
+  canPlaceBuyOrder: typeof canPlaceBuyOrder;
+  canPlaceSellOrder: typeof canPlaceSellOrder;
+  calculateShipmentDuration: typeof calculateShipmentDuration;
+  calculateShipmentRisk: typeof calculateShipmentRisk;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -2932,6 +3488,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
     dispatch({ type: 'ADD_STUDENT', student: newStudent });
     dispatch({ type: 'RECRUIT_STUDENT', result: gachaResult });
+    dispatch({ type: 'UPDATE_CLUB_TASK_PROGRESS', actionType: 'recruit', amount: 1 });
 
     return gachaResult;
   };
@@ -3183,7 +3740,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const joinClub = (clubId: string, studentId: string) => {
     dispatch({ type: 'JOIN_CLUB', clubId, studentId });
-    dispatch({ type: 'UPDATE_CLUB_TASK_PROGRESS', actionType: 'recruit', amount: 1 });
     autoSaveIfEnabled();
   };
 
@@ -3226,6 +3782,69 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const addRecruitTicket = (quality: 'common' | 'rare' | 'epic' | 'legendary', amount: number) => {
     dispatch({ type: 'ADD_RECRUIT_TICKET', quality, amount });
     autoSaveIfEnabled();
+  };
+
+  const unlockTradeHarbor = () => {
+    dispatch({ type: 'UNLOCK_TRADE_HARBOR' });
+    autoSaveIfEnabled();
+  };
+
+  const placeTradeOrder = (
+    orderType: TradeOrderType,
+    materialId: TradeMaterialType,
+    quantity: number,
+    route: 'local' | 'regional' | 'intercontinental'
+  ): boolean => {
+    const bonuses = getTradeBuildingBonuses(state.buildings);
+    const priceMultiplier = calculateTradePriceBonus(orderType, bonuses.priceBonus);
+    const basePrice = state.tradeHarbor.currentPrices[materialId];
+    const effectivePrice = Math.round(basePrice * priceMultiplier);
+
+    if (orderType === 'buy') {
+      const warehouseCapacity = calculateWarehouseCapacity(state.buildings, bonuses.capacityBonus);
+      const check = canPlaceBuyOrder(
+        materialId, quantity, state.resources.gold,
+        effectivePrice, state.tradeHarbor.materials, warehouseCapacity
+      );
+      if (!check.ok) return false;
+    } else {
+      const check = canPlaceSellOrder(materialId, quantity, state.tradeHarbor.materials);
+      if (!check.ok) return false;
+    }
+
+    dispatch({ type: 'PLACE_TRADE_ORDER', orderType, materialId, quantity, route });
+    autoSaveIfEnabled();
+    return true;
+  };
+
+  const cancelTradeOrder = (orderId: string) => {
+    dispatch({ type: 'CANCEL_TRADE_ORDER', orderId });
+    autoSaveIfEnabled();
+  };
+
+  const completeTradeShipment = (shipmentId: string) => {
+    dispatch({ type: 'COMPLETE_TRADE_SHIPMENT', shipmentId });
+    autoSaveIfEnabled();
+  };
+
+  const refreshTradePrices = () => {
+    dispatch({ type: 'REFRESH_TRADE_PRICES' });
+    autoSaveIfEnabled();
+  };
+
+  const upgradeWarehouse = (): boolean => {
+    const cost = state.tradeHarbor.warehouse.upgradeCost;
+    if (
+      state.resources.gold < cost.gold ||
+      state.resources.mana < cost.mana ||
+      state.resources.food < cost.food ||
+      state.resources.reputation < cost.reputation
+    ) {
+      return false;
+    }
+    dispatch({ type: 'UPGRADE_WAREHOUSE' });
+    autoSaveIfEnabled();
+    return true;
   };
 
   return (
@@ -3313,6 +3932,25 @@ export function GameProvider({ children }: { children: ReactNode }) {
       getClubMemberBonus,
       CLUB_REPUTATION_LEVELS,
       INITIAL_CLUBS,
+      useRecruitTicket,
+      addRecruitTicket,
+      unlockTradeHarbor,
+      placeTradeOrder,
+      cancelTradeOrder,
+      completeTradeShipment,
+      refreshTradePrices,
+      upgradeWarehouse,
+      TRADE_MATERIALS,
+      getTradeMaterial,
+      getRouteInfo,
+      calculateTradePriceBonus,
+      getTradeBuildingBonuses,
+      calculateWarehouseCapacity,
+      getTotalWarehouseUsed,
+      canPlaceBuyOrder,
+      canPlaceSellOrder,
+      calculateShipmentDuration,
+      calculateShipmentRisk,
     }}>
       {children}
     </GameContext.Provider>

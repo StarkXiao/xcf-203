@@ -14,6 +14,7 @@ import {
   INITIAL_STAGE_TASKS_STATE,
   INITIAL_SEASON_STATE,
   INITIAL_CLUBS_STATE,
+  INITIAL_TRADE_HARBOR_STATE,
 } from './gameData';
 
 type SaveData = Record<string, unknown>;
@@ -546,6 +547,15 @@ function normalizeToGameState(data: SaveData): GameState {
         qualityCounts: { common: 0, rare: 0, epic: 0, legendary: 0 },
       };
 
+  const recruitTickets = data.recruitTickets && typeof data.recruitTickets === 'object'
+    ? {
+        common: ensureNumber((data.recruitTickets as Record<string, unknown>).common, 0),
+        rare: ensureNumber((data.recruitTickets as Record<string, unknown>).rare, 0),
+        epic: ensureNumber((data.recruitTickets as Record<string, unknown>).epic, 0),
+        legendary: ensureNumber((data.recruitTickets as Record<string, unknown>).legendary, 0),
+      }
+    : { common: 0, rare: 0, epic: 0, legendary: 0 };
+
   const dailySnapshots = ensureArray<Record<string, unknown>>(data.dailySnapshots, []).map(
     (snap: Record<string, unknown>) => ({
       day: ensureNumber(snap.day, 1),
@@ -722,12 +732,14 @@ function normalizeToGameState(data: SaveData): GameState {
     autoSaveConfig,
     pityCounters,
     gachaHistory,
+    recruitTickets,
     goalProgress,
     weeklyGoals,
     stageTasks,
     season,
     seasonHistory,
     clubs: INITIAL_CLUBS_STATE,
+    tradeHarbor: INITIAL_TRADE_HARBOR_STATE,
   };
 }
 

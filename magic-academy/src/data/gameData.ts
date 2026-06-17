@@ -302,6 +302,72 @@ export const INITIAL_BUILDINGS: Building[] = [
       { buildingId: 'library', requiredLevel: 3 },
     ],
   },
+  {
+    id: 'trade_harbor',
+    name: '贸易港',
+    level: 0,
+    maxLevel: 10,
+    cost: { gold: 800, mana: 400, food: 60, reputation: 50 },
+    effect: { type: 'trade_price_bonus', value: 1 },
+    description: '贸易港核心建筑，买价降低/卖价提高，每级+2%',
+    requiredReputation: 100,
+    prerequisites: [
+      { buildingId: 'main_building', requiredLevel: 3 },
+    ],
+  },
+  {
+    id: 'warehouse',
+    name: '大型仓库',
+    level: 0,
+    maxLevel: 10,
+    cost: { gold: 500, mana: 200, food: 40, reputation: 30 },
+    effect: { type: 'warehouse_capacity', value: 20 },
+    description: '每级增加20点仓储容量',
+    requiredReputation: 80,
+    prerequisites: [
+      { buildingId: 'dining_hall', requiredLevel: 2 },
+    ],
+  },
+  {
+    id: 'auction_house',
+    name: '拍卖行',
+    level: 0,
+    maxLevel: 10,
+    cost: { gold: 1000, mana: 500, food: 50, reputation: 80 },
+    effect: { type: 'trade_price_bonus', value: 2 },
+    description: '提供更优的交易价格，每级买卖价差再优化+2%',
+    requiredReputation: 200,
+    prerequisites: [
+      { buildingId: 'trade_harbor', requiredLevel: 2 },
+      { buildingId: 'library', requiredLevel: 3 },
+    ],
+  },
+  {
+    id: 'caravan_hall',
+    name: '商会会馆',
+    level: 0,
+    maxLevel: 10,
+    cost: { gold: 700, mana: 350, food: 50, reputation: 60 },
+    effect: { type: 'transport_speed', value: 1 },
+    description: '每级提升运输速度10%，更快到达',
+    requiredReputation: 150,
+    prerequisites: [
+      { buildingId: 'trade_harbor', requiredLevel: 1 },
+    ],
+  },
+  {
+    id: 'guard_post',
+    name: '护卫营地',
+    level: 0,
+    maxLevel: 10,
+    cost: { gold: 600, mana: 250, food: 70, reputation: 50 },
+    effect: { type: 'trade_risk_reduction', value: 1 },
+    description: '每级降低2%运输风险，保护货物安全',
+    requiredReputation: 120,
+    prerequisites: [
+      { buildingId: 'trade_harbor', requiredLevel: 1 },
+    ],
+  },
 ];
 
 export const INITIAL_TEACHERS: Teacher[] = [
@@ -3064,4 +3130,328 @@ export const refreshClubShop = (items: ClubShopItem[]): ClubShopItem[] => {
     stock: item.maxStock,
     purchasedCount: 0,
   }));
+};
+
+import type {
+  TradeMaterial,
+  TradeMaterialType,
+  TradeHarborState,
+} from '../types/game';
+
+export const TRADE_MATERIALS: TradeMaterial[] = [
+  {
+    id: 'mana_crystal',
+    name: '魔力水晶',
+    icon: '💎',
+    description: '蕴含纯净魔力的结晶，法师们的日常消耗品',
+    basePrice: 50,
+    volatility: 0.25,
+    category: 'consumable',
+    dailyUsage: 5,
+  },
+  {
+    id: 'magic_herb',
+    name: '魔法草药',
+    icon: '🌿',
+    description: '生长在魔力充沛之地的珍稀草药，用于炼金和制药',
+    basePrice: 80,
+    volatility: 0.3,
+    category: 'consumable',
+    dailyUsage: 3,
+  },
+  {
+    id: 'dragon_scale',
+    name: '龙鳞',
+    icon: '🐉',
+    description: '从巨龙身上脱落的鳞片，坚固且蕴含魔力',
+    basePrice: 300,
+    volatility: 0.45,
+    category: 'rare',
+  },
+  {
+    id: 'star_silver',
+    name: '星辰银',
+    icon: '✨',
+    description: '由陨星中提炼的神秘金属，附魔的绝佳材料',
+    basePrice: 450,
+    volatility: 0.4,
+    category: 'rare',
+  },
+  {
+    id: 'phoenix_feather',
+    name: '凤凰羽',
+    icon: '🔥',
+    description: '传说中凤凰的羽毛，拥有强大的火焰与再生之力',
+    basePrice: 1200,
+    volatility: 0.55,
+    category: 'legendary',
+  },
+  {
+    id: 'void_essence',
+    name: '虚空精华',
+    icon: '🌌',
+    description: '从虚空裂隙中提取的神秘能量，极度稀有',
+    basePrice: 2000,
+    volatility: 0.6,
+    category: 'legendary',
+  },
+];
+
+export const getTradeMaterial = (id: TradeMaterialType): TradeMaterial => {
+  return TRADE_MATERIALS.find(m => m.id === id) || TRADE_MATERIALS[0];
+};
+
+export const calculateDailyPrices = (
+  day: number,
+  previousPrices: Record<TradeMaterialType, number>,
+  previousTrends: Record<TradeMaterialType, 'up' | 'down' | 'stable'>
+): { prices: Record<TradeMaterialType, number>; trends: Record<TradeMaterialType, 'up' | 'down' | 'stable'> } => {
+  const prices: Record<TradeMaterialType, number> = { ...previousPrices };
+  const trends: Record<TradeMaterialType, 'up' | 'down' | 'stable'> = { ...previousTrends };
+
+  for (const material of TRADE_MATERIALS) {
+    const seed = day * 1000 + material.basePrice;
+    const rand1 = Math.sin(seed + 1) * 10000 - Math.floor(Math.sin(seed + 1) * 10000);
+    const rand2 = Math.sin(seed + 2) * 10000 - Math.floor(Math.sin(seed + 2) * 10000);
+    
+    let changePercent = (rand1 - 0.5) * material.volatility * 2;
+    
+    const trendPersist = previousTrends[material.id] === 'up' ? 0.15 : previousTrends[material.id] === 'down' ? -0.15 : 0;
+    changePercent += trendPersist;
+    
+    if (rand2 < 0.08) {
+      changePercent += (rand1 > 0.5 ? 1 : -1) * material.volatility * 1.5;
+    }
+    
+    const minPrice = material.basePrice * 0.4;
+    const maxPrice = material.basePrice * 2.5;
+    const newPrice = Math.round(Math.max(minPrice, Math.min(maxPrice, previousPrices[material.id] * (1 + changePercent))));
+    
+    prices[material.id] = newPrice;
+    trends[material.id] = newPrice > previousPrices[material.id] ? 'up' : newPrice < previousPrices[material.id] ? 'down' : 'stable';
+  }
+
+  return { prices, trends };
+};
+
+export const getInitialTradePrices = (): Record<TradeMaterialType, number> => {
+  const result: Record<string, number> = {};
+  for (const material of TRADE_MATERIALS) {
+    const rand = Math.sin(material.basePrice) * 10000 - Math.floor(Math.sin(material.basePrice) * 10000);
+    const variation = (rand - 0.5) * 0.2;
+    result[material.id] = Math.round(material.basePrice * (1 + variation));
+  }
+  return result as Record<TradeMaterialType, number>;
+};
+
+export const getInitialTradeTrends = (): Record<TradeMaterialType, 'up' | 'down' | 'stable'> => {
+  return {
+    mana_crystal: 'stable',
+    magic_herb: 'stable',
+    dragon_scale: 'stable',
+    star_silver: 'stable',
+    phoenix_feather: 'stable',
+    void_essence: 'stable',
+  };
+};
+
+export const calculateShipmentDuration = (
+  route: 'local' | 'regional' | 'intercontinental',
+  speedBonus: number = 0
+): number => {
+  const baseDuration = route === 'local' ? 1 : route === 'regional' ? 3 : 5;
+  const reduction = Math.min(0.5, speedBonus * 0.1);
+  return Math.max(1, Math.ceil(baseDuration * (1 - reduction)));
+};
+
+export const calculateShipmentRisk = (
+  route: 'local' | 'regional' | 'intercontinental',
+  riskReduction: number = 0
+): number => {
+  const baseRisk = route === 'local' ? 0.02 : route === 'regional' ? 0.08 : 0.15;
+  const effectiveRisk = Math.max(0, baseRisk - riskReduction * 0.02);
+  return effectiveRisk;
+};
+
+export const calculateTradePriceBonus = (
+  type: 'buy' | 'sell',
+  priceBonus: number = 0
+): number => {
+  return type === 'buy' 
+    ? Math.max(0.8, 1 - priceBonus * 0.02) 
+    : Math.min(1.3, 1 + priceBonus * 0.02);
+};
+
+export const getTotalWarehouseUsed = (materials: Record<TradeMaterialType, number>): number => {
+  return Object.values(materials).reduce((sum, qty) => sum + qty, 0);
+};
+
+export const calculateWarehouseCapacity = (
+  buildings: Building[],
+  capacityBonus: number = 0
+): number => {
+  const baseCapacity = 100;
+  let buildingBonus = 0;
+  for (const building of buildings) {
+    if (building.effect.type === 'warehouse_capacity') {
+      buildingBonus += building.effect.value * building.level;
+    }
+  }
+  const bonusMultiplier = 1 + capacityBonus * 0.1;
+  return Math.round((baseCapacity + buildingBonus) * bonusMultiplier);
+};
+
+export const getTradeBuildingBonuses = (buildings: Building[]): {
+  capacityBonus: number;
+  priceBonus: number;
+  transportSpeedBonus: number;
+  riskReduction: number;
+} => {
+  let capacityBonus = 0;
+  let priceBonus = 0;
+  let transportSpeedBonus = 0;
+  let riskReduction = 0;
+
+  for (const building of buildings) {
+    const level = building.level;
+    switch (building.effect.type) {
+      case 'warehouse_capacity':
+        capacityBonus += level;
+        break;
+      case 'trade_price_bonus':
+        priceBonus += level;
+        break;
+      case 'transport_speed':
+        transportSpeedBonus += level;
+        break;
+      case 'trade_risk_reduction':
+        riskReduction += level;
+        break;
+    }
+  }
+
+  const synergies = getActiveSynergies(buildings);
+  for (const { synergy, totalValue } of synergies) {
+    if (synergy.effect.type === 'all_stats_bonus') {
+      capacityBonus += Math.floor(totalValue / 3);
+      priceBonus += Math.floor(totalValue / 3);
+      transportSpeedBonus += Math.floor(totalValue / 3);
+    }
+  }
+
+  return { capacityBonus, priceBonus, transportSpeedBonus, riskReduction };
+};
+
+export const canPlaceBuyOrder = (
+  _materialId: TradeMaterialType,
+  quantity: number,
+  currentGold: number,
+  unitPrice: number,
+  currentMaterials: Record<TradeMaterialType, number>,
+  maxCapacity: number
+): { ok: boolean; reason?: string } => {
+  const totalPrice = unitPrice * quantity;
+  if (currentGold < totalPrice) {
+    return { ok: false, reason: `金币不足，需要 ${totalPrice}，当前 ${currentGold}` };
+  }
+  const used = getTotalWarehouseUsed(currentMaterials);
+  if (used + quantity > maxCapacity) {
+    return { ok: false, reason: `仓库容量不足，剩余 ${maxCapacity - used}，需要 ${quantity}` };
+  }
+  return { ok: true };
+};
+
+export const canPlaceSellOrder = (
+  materialId: TradeMaterialType,
+  quantity: number,
+  currentMaterials: Record<TradeMaterialType, number>
+): { ok: boolean; reason?: string } => {
+  const available = currentMaterials[materialId] || 0;
+  if (available < quantity) {
+    return { ok: false, reason: `${getTradeMaterial(materialId).name}不足，库存 ${available}，需要 ${quantity}` };
+  }
+  return { ok: true };
+};
+
+export const generateTradeOrderId = (): string => {
+  return `order_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+};
+
+export const generateShipmentId = (): string => {
+  return `ship_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+};
+
+export const INITIAL_TRADE_HARBOR_STATE: TradeHarborState = {
+  unlocked: false,
+  warehouse: {
+    materials: {
+      mana_crystal: 0,
+      magic_herb: 0,
+      dragon_scale: 0,
+      star_silver: 0,
+      phoenix_feather: 0,
+      void_essence: 0,
+    },
+    capacity: 100,
+    usedCapacity: 0,
+    upgradeCost: { gold: 500, mana: 300, food: 50, reputation: 30 },
+  },
+  materials: {
+    mana_crystal: 10,
+    magic_herb: 5,
+    dragon_scale: 0,
+    star_silver: 0,
+    phoenix_feather: 0,
+    void_essence: 0,
+  },
+  activeOrders: [],
+  historyOrders: [],
+  activeShipments: [],
+  priceHistory: [],
+  currentPrices: getInitialTradePrices(),
+  priceTrends: getInitialTradeTrends(),
+  profitRecords: [],
+  stats: {
+    totalTrades: 0,
+    totalVolume: 0,
+    totalProfit: 0,
+    totalLoss: 0,
+    bestTrade: 0,
+    worstTrade: 0,
+    completedBuys: 0,
+    completedSells: 0,
+  },
+  capacityBonus: 0,
+  priceBonus: 0,
+  transportSpeedBonus: 0,
+  riskReduction: 0,
+};
+
+export const getRouteInfo = (route: 'local' | 'regional' | 'intercontinental'): {
+  name: string;
+  icon: string;
+  description: string;
+} => {
+  switch (route) {
+    case 'local':
+      return { name: '本地运输', icon: '🛒', description: '快速安全，但数量有限' };
+    case 'regional':
+      return { name: '跨区贸易', icon: '🚛', description: '适中的速度和风险' };
+    case 'intercontinental':
+      return { name: '远洋商队', icon: '⛵', description: '可进行大额交易，但风险较高' };
+  }
+};
+
+export const updateTradeHarborBonuses = (state: TradeHarborState, buildings: Building[]): TradeHarborState => {
+  const bonuses = getTradeBuildingBonuses(buildings);
+  const capacity = calculateWarehouseCapacity(buildings, bonuses.capacityBonus);
+  return {
+    ...state,
+    ...bonuses,
+    warehouse: {
+      ...state.warehouse,
+      capacity,
+      usedCapacity: getTotalWarehouseUsed(state.materials),
+    },
+  };
 };

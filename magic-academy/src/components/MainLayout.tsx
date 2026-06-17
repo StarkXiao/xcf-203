@@ -6,6 +6,8 @@ import './MainLayout.css';
 import SeasonPanel from './SeasonPanel';
 import ClubPanel from './ClubPanel';
 import './ClubPanel.css';
+import TradeHarborPanel from './TradeHarborPanel';
+import './TradeHarborPanel.css';
 
 interface TabConfig {
   id: TabType;
@@ -18,6 +20,7 @@ const tabs: TabConfig[] = [
   { id: 'recruit', label: '学员招募', icon: '📜' },
   { id: 'course', label: '课程安排', icon: '📚' },
   { id: 'dungeon', label: '试炼副本', icon: '⚔️' },
+  { id: 'trade', label: '贸易港', icon: '🏛️' },
   { id: 'goals', label: '目标任务', icon: '🎯' },
   { id: 'club', label: '魔法社团', icon: '🎭' },
   { id: 'season', label: '赛季系统', icon: '🏆' },
@@ -118,6 +121,7 @@ export default function MainLayout() {
         {activeTab === 'recruit' && <RecruitModule onStudentClick={setSelectedStudentId} setConfirmDialog={setConfirmDialog} />}
         {activeTab === 'course' && <CourseModule onStudentClick={setSelectedStudentId} />}
         {activeTab === 'dungeon' && <DungeonModule onStudentClick={setSelectedStudentId} setConfirmDialog={setConfirmDialog} />}
+        {activeTab === 'trade' && <TradeHarborPanel />}
         {activeTab === 'goals' && <GoalsModule />}
         {activeTab === 'club' && <ClubPanel />}
         {activeTab === 'season' && <SeasonPanel />}
@@ -377,7 +381,7 @@ interface ModuleProps {
 }
 
 function RecruitModule({ onStudentClick, setConfirmDialog }: ModuleProps) {
-  const { state, dispatch, canAfford, recruitStudent, assignStudentToRest, getMoraleLabel, getStaminaLabel, getPityThreshold, computeAdjustedProbabilities, getRecruitQualityBonus, getGuaranteedQuality, shouldConfirmAction, autoSaveIfEnabled, canAccessRecruitmentTicket, getReputationLevel } = useGame();
+  const { state, dispatch, canAfford, recruitStudent, assignStudentToRest, getMoraleLabel, getStaminaLabel, getPityThreshold, computeAdjustedProbabilities, getRecruitQualityBonus, getGuaranteedQuality, shouldConfirmAction, autoSaveIfEnabled, canAccessRecruitmentTicket, getReputationLevel, useRecruitTicket } = useGame();
   const [showProbability, setShowProbability] = useState<StudentQuality | null>(null);
   const [gachaAnimation, setGachaAnimation] = useState<{ showing: boolean; result: GachaResult | null; phase: 'rolling' | 'reveal' }>({ showing: false, result: null, phase: 'rolling' });
   const [showHistory, setShowHistory] = useState(false);
@@ -443,6 +447,23 @@ function RecruitModule({ onStudentClick, setConfirmDialog }: ModuleProps) {
     }
   };
 
+  const doRecruitWithTicket = (ticketQuality: StudentQuality) => {
+    const ticket = tickets.find(t => t.quality === ticketQuality);
+    if (!ticket || !useRecruitTicket(ticketQuality) || isFull) return;
+
+    const result = recruitStudent(ticketQuality);
+    
+    if (result) {
+      if (state.autoSaveConfig.saveOnCriticalAction) {
+        autoSaveIfEnabled();
+      }
+      setGachaAnimation({ showing: true, result, phase: 'rolling' });
+      setTimeout(() => {
+        setGachaAnimation(prev => ({ ...prev, phase: 'reveal' }));
+      }, 1500);
+    }
+  };
+
   const handleRecruit = (ticketQuality: StudentQuality) => {
     const ticket = tickets.find(t => t.quality === ticketQuality);
     if (!ticket || !canAfford(ticket.cost) || isFull) return;
@@ -462,6 +483,28 @@ function RecruitModule({ onStudentClick, setConfirmDialog }: ModuleProps) {
       });
     } else {
       doRecruit(ticketQuality);
+    }
+  };
+
+  const handleRecruitWithTicket = (ticketQuality: StudentQuality) => {
+    const ticket = tickets.find(t => t.quality === ticketQuality);
+    const ticketCount = state.recruitTickets[ticketQuality];
+    if (!ticket || ticketCount <= 0 || isFull) return;
+
+    if (shouldConfirmAction() && setConfirmDialog) {
+      setConfirmDialog({
+        show: true,
+        title: `使用${ticket.name}？`,
+        description: `将使用 1 张${ticket.name}进行招募，不消耗资源：`,
+        warning: ticketQuality === 'epic' || ticketQuality === 'legendary' ? '高价值操作，请确认' : undefined,
+        onConfirm: () => {
+          doRecruitWithTicket(ticketQuality);
+          setConfirmDialog(prev => ({ ...prev, show: false }));
+        },
+        onCancel: () => setConfirmDialog(prev => ({ ...prev, show: false })),
+      });
+    } else {
+      doRecruitWithTicket(ticketQuality);
     }
   };
 
@@ -899,13 +942,32 @@ function RecruitModule({ onStudentClick, setConfirmDialog }: ModuleProps) {
                       <span className="discount-value">品质 +{reputationLevel.bonuses.recruitQualityBonus}</span>
                     </div>
                   )}
-                  <button
-                    className={`recruit-btn ${ticket.quality} ${!canRecruit ? 'disabled' : ''}`}
-                    onClick={() => canRecruit && handleRecruit(ticket.quality)}
-                    disabled={!canRecruit}
-                  >
-                    {!hasReputationAccess ? '🔒 声望不足' : '招募'}
-                  </button>
+                  {state.recruitTickets[ticket.quality] > 0 && (
+                    <div className="ticket-info">
+                      <span className="ticket-label">🎫 招募券:</span>
+                      <span className="ticket-count" style={{ color: qualityColors[ticket.quality] }}>
+                        ×{state.recruitTickets[ticket.quality]}
+                      </span>
+                    </div>
+                  )}
+                  <div className="recruit-buttons">
+                    <button
+                      className={`recruit-btn ${ticket.quality} ${!canRecruit ? 'disabled' : ''}`}
+                      onClick={() => canRecruit && handleRecruit(ticket.quality)}
+                      disabled={!canRecruit}
+                    >
+                      {!hasReputationAccess ? '🔒 声望不足' : '招募'}
+                    </button>
+                    {state.recruitTickets[ticket.quality] > 0 && hasReputationAccess && (
+                      <button
+                        className={`recruit-btn ticket-btn ${ticket.quality}`}
+                        onClick={() => handleRecruitWithTicket(ticket.quality)}
+                        title="使用招募券，不消耗资源"
+                      >
+                        🎫 使用券
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}

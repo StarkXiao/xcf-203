@@ -4335,3 +4335,52 @@ body {
   border-radius: 0.5rem;
   border: 1px solid rgba(251, 191, 36, 0.2);
 }
+
+.ticket-info {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(99, 102, 241, 0.1);
+  border-radius: 0.5rem;
+  margin: 0.5rem 0;
+  border: 1px dashed rgba(99, 102, 241, 0.4);
+}
+
+.ticket-label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.ticket-count {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.recruit-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.recruit-buttons .recruit-btn {
+  flex: 1;
+  font-size: 0.9rem;
+  padding: 0.6rem;
+}
+
+.recruit-btn.ticket-btn {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #1e293b;
+  flex: 0.8;
+}
+
+.recruit-btn.ticket-btn:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(251, 191, 36, 0.4);
+}
+
+.recruit-btn.ticket-btn:active {
+  transform: scale(0.98);
+}

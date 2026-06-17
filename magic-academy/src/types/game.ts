@@ -37,7 +37,7 @@ export interface SynergyEffect {
 }
 
 export interface BuildingEffect {
-  type: 'student_capacity' | 'mana_capacity' | 'reputation_gain' | 'course_speed' | 'recruit_quality' | 'magic_type_bonus';
+  type: 'student_capacity' | 'mana_capacity' | 'reputation_gain' | 'course_speed' | 'recruit_quality' | 'magic_type_bonus' | 'warehouse_capacity' | 'trade_price_bonus' | 'transport_speed' | 'trade_risk_reduction';
   value: number;
   magicType?: MagicType;
 }
@@ -216,7 +216,113 @@ export interface Enemy {
   isBoss: boolean;
 }
 
-export const CURRENT_SAVE_VERSION = 9;
+export const CURRENT_SAVE_VERSION = 10;
+
+export type TradeMaterialType = 
+  | 'mana_crystal' 
+  | 'magic_herb' 
+  | 'dragon_scale' 
+  | 'star_silver' 
+  | 'phoenix_feather' 
+  | 'void_essence';
+
+export interface TradeMaterial {
+  id: TradeMaterialType;
+  name: string;
+  icon: string;
+  description: string;
+  basePrice: number;
+  volatility: number;
+  category: 'consumable' | 'rare' | 'legendary';
+  dailyUsage?: number;
+}
+
+export interface TradePriceRecord {
+  day: number;
+  prices: Record<TradeMaterialType, number>;
+  trends: Record<TradeMaterialType, 'up' | 'down' | 'stable'>;
+}
+
+export type TradeOrderStatus = 'pending' | 'fulfilling' | 'completed' | 'cancelled';
+export type TradeOrderType = 'buy' | 'sell';
+export type TradeShipmentStatus = 'loading' | 'shipping' | 'arrived';
+
+export interface TradeOrder {
+  id: string;
+  type: TradeOrderType;
+  materialId: TradeMaterialType;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  createdAt: number;
+  fulfilledAt: number | null;
+  status: TradeOrderStatus;
+  shipmentId: string | null;
+  profitLoss?: number;
+}
+
+export interface TradeShipment {
+  id: string;
+  orderId: string;
+  materialId: TradeMaterialType;
+  quantity: number;
+  status: TradeShipmentStatus;
+  startDay: number;
+  durationDays: number;
+  estimatedArrival: number;
+  arrivedAt: number | null;
+  route: 'local' | 'regional' | 'intercontinental';
+  risk: number;
+  lossAmount?: number;
+}
+
+export interface TradeWarehouse {
+  materials: Record<TradeMaterialType, number>;
+  capacity: number;
+  usedCapacity: number;
+  upgradeCost: Resource;
+}
+
+export interface TradeProfitRecord {
+  day: number;
+  orderId: string;
+  materialId: TradeMaterialType;
+  type: TradeOrderType;
+  quantity: number;
+  buyPrice: number;
+  sellPrice: number;
+  profit: number;
+}
+
+export interface TradeHarborStats {
+  totalTrades: number;
+  totalVolume: number;
+  totalProfit: number;
+  totalLoss: number;
+  bestTrade: number;
+  worstTrade: number;
+  completedBuys: number;
+  completedSells: number;
+}
+
+export interface TradeHarborState {
+  unlocked: boolean;
+  warehouse: TradeWarehouse;
+  materials: Record<TradeMaterialType, number>;
+  activeOrders: TradeOrder[];
+  historyOrders: TradeOrder[];
+  activeShipments: TradeShipment[];
+  priceHistory: TradePriceRecord[];
+  currentPrices: Record<TradeMaterialType, number>;
+  priceTrends: Record<TradeMaterialType, 'up' | 'down' | 'stable'>;
+  profitRecords: TradeProfitRecord[];
+  stats: TradeHarborStats;
+  capacityBonus: number;
+  priceBonus: number;
+  transportSpeedBonus: number;
+  riskReduction: number;
+}
+
 
 export type SeasonGoalType = 'building' | 'course' | 'dungeon' | 'recruit' | 'reputation' | 'comprehensive';
 
@@ -453,6 +559,7 @@ export interface GameState {
   season: SeasonState;
   seasonHistory: SeasonHistory[];
   clubs: ClubsState;
+  tradeHarbor: TradeHarborState;
 }
 
 export interface CourseBenefitBreakdown {
@@ -487,7 +594,7 @@ export interface DungeonProgress {
   turnCount: number;
 }
 
-export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club';
+export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade';
 
 export interface Club {
   id: string;
@@ -649,7 +756,7 @@ export interface DailyLog {
 }
 
 export interface DailyEvent {
-  type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning' | 'course_queued' | 'course_started' | 'queue_empty' | 'course_conflict' | 'hp_heal' | 'hp_natural_recovery' | 'battle_injury' | 'cannot_battle_injured' | 'club_task_complete' | 'club_joined' | 'club_shop_purchase' | 'club_level_up' | 'club_reputation_gain';
+  type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning' | 'course_queued' | 'course_started' | 'queue_empty' | 'course_conflict' | 'hp_heal' | 'hp_natural_recovery' | 'battle_injury' | 'cannot_battle_injured' | 'club_task_complete' | 'club_joined' | 'club_shop_purchase' | 'club_level_up' | 'club_reputation_gain' | 'trade_order_placed' | 'trade_order_completed' | 'trade_shipment_arrived' | 'trade_price_changed' | 'trade_shipment_risk' | 'trade_harbor_upgrade';
   message: string;
   value?: number;
   studentId?: string;
@@ -658,6 +765,8 @@ export interface DailyEvent {
   courseName?: string;
   clubId?: string;
   clubName?: string;
+  materialId?: string;
+  materialName?: string;
 }
 
 export const MORALE_MAX = 100;
