@@ -45,6 +45,11 @@ import {
   calculateCourseBenefit,
   calculateEnhancedSkillDamage,
   formatBenefitBreakdown,
+  calculateHpEfficiencyMultiplier,
+  calculateDailyHpRecovery,
+  calculateHealCost,
+  initializeStudentHp,
+  recalculateStudentMaxHp,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -68,10 +73,12 @@ type GameAction =
   | { type: 'REORDER_QUEUE'; studentId: string; fromIndex: number; toIndex: number }
   | { type: 'START_NEXT_COURSE'; studentId: string }
   | { type: 'START_DUNGEON'; dungeonId: string }
-  | { type: 'COMPLETE_DUNGEON'; dungeonId: string; stars: number; survivingMembers: number; totalMembers: number; averageHpPercent: number; totalTurns: number; team: string[] }
+  | { type: 'COMPLETE_DUNGEON'; dungeonId: string; stars: number; survivingMembers: number; totalMembers: number; averageHpPercent: number; totalTurns: number; team: string[]; studentHpMap: Record<string, { current: number; max: number }> }
   | { type: 'SWEEP_DUNGEON'; dungeonId: string }
   | { type: 'SAVE_BEST_TEAM'; dungeonId: string; team: string[] }
   | { type: 'UNLOCK_SWEEP'; dungeonId: string }
+  | { type: 'HEAL_STUDENT'; studentId: string; hpAmount: number; cost: Resource }
+  | { type: 'HEAL_ALL_STUDENTS' }
   | { type: 'NEXT_DAY' }
   | { type: 'LOAD_GAME'; state: GameState }
   | { type: 'RESET_GAME' };
@@ -717,6 +724,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const isFirstClear = !dungeon.firstCleared;
       const rewards = action.stars > 0 ? calculateDungeonRewards(dungeon, action.stars, isFirstClear) : { gold: 0, mana: 0, food: 0, reputation: 0 };
       const victory = action.stars > 0;
+      const battleEvents: DailyEvent[] = [];
 
       const updatedStudents = state.students.map(s => {
         if (!action.team.includes(s.id)) return s;
@@ -732,6 +740,39 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           moraleDelta = 5;
         } else {
           moraleDelta = 15;
+        }
+
+        const hpData = action.studentHpMap[s.id];
+        let newCurrentHp = s.currentHp;
+        let newMaxHp = s.maxHp;
+        
+        if (hpData) {
+          newMaxHp = hpData.max;
+          newCurrentHp = Math.max(0, hpData.current);
+          
+          const hpPercent = newMaxHp > 0 ? newCurrentHp / newMaxHp : 0;
+          if (hpPercent < 0.5) {
+            battleEvents.push({
+              type: 'battle_injury',
+              message: `🩹 ${s.name} 在战斗中受伤，HP: ${newCurrentHp}/${newMaxHp} (${Math.round(hpPercent * 100)}%)`,
+              studentId: s.id,
+              studentName: s.name,
+              value: newCurrentHp,
+            });
+            moraleDelta -= 5;
+            staminaDelta -= 5;
+          }
+          
+          if (newCurrentHp <= 0) {
+            moraleDelta -= 10;
+            staminaDelta -= 15;
+            battleEvents.push({
+              type: 'battle_injury',
+              message: `💔 ${s.name} 在战斗中倒下了！需要治疗恢复`,
+              studentId: s.id,
+              studentName: s.name,
+            });
+          }
         }
 
         if (action.averageHpPercent < 0.3) {
@@ -755,6 +796,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
         return {
           ...s,
+          currentHp: newCurrentHp,
+          maxHp: newMaxHp,
           morale: clamp(s.morale + moraleDelta, 0, 100),
           stamina: clamp(s.stamina + staminaDelta, 0, 100),
           status: 'idle' as const,
@@ -762,10 +805,16 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         };
       });
 
+      const recentLogs = state.dailyLogs.slice(-29);
+      if (battleEvents.length > 0) {
+        recentLogs.push({ day: state.day, events: battleEvents });
+      }
+
       if (action.stars <= 0) {
         return {
           ...state,
           students: updatedStudents,
+          dailyLogs: recentLogs,
           dungeons: state.dungeons.map(d =>
             d.id === action.dungeonId ? {
               ...d,
@@ -782,6 +831,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return {
         ...state,
         students: updatedStudents,
+        dailyLogs: recentLogs,
         resources: {
           gold: state.resources.gold + rewards.gold,
           mana: state.resources.mana + rewards.mana,
@@ -865,6 +915,98 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
+    case 'HEAL_STUDENT': {
+      const student = state.students.find(s => s.id === action.studentId);
+      if (!student) return state;
+      if (student.currentHp >= student.maxHp) return state;
+      
+      if (state.resources.gold < action.cost.gold ||
+          state.resources.mana < action.cost.mana ||
+          state.resources.food < action.cost.food ||
+          state.resources.reputation < action.cost.reputation) {
+        return state;
+      }
+
+      const newHp = Math.min(student.currentHp + action.hpAmount, student.maxHp);
+      const actualHealed = newHp - student.currentHp;
+      const actualCost = calculateHealCost(actualHealed);
+
+      const healEvent: DailyEvent = {
+        type: 'hp_heal',
+        message: `💚 ${student.name} 接受治疗，恢复 ${actualHealed} HP (${newHp}/${student.maxHp})`,
+        studentId: student.id,
+        studentName: student.name,
+        value: actualHealed,
+      };
+
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push({ day: state.day, events: [healEvent] });
+
+      return {
+        ...state,
+        resources: {
+          gold: state.resources.gold - actualCost.gold,
+          mana: state.resources.mana - actualCost.mana,
+          food: state.resources.food - actualCost.food,
+          reputation: state.resources.reputation - actualCost.reputation,
+        },
+        students: state.students.map(s =>
+          s.id === action.studentId ? { ...s, currentHp: newHp } : s
+        ),
+        dailyLogs: recentLogs,
+      };
+    }
+
+    case 'HEAL_ALL_STUDENTS': {
+      const injuredStudents = state.students.filter(s => s.currentHp < s.maxHp);
+      if (injuredStudents.length === 0) return state;
+
+      let totalGoldCost = 0;
+      let totalManaCost = 0;
+      let totalFoodCost = 0;
+      const healEvents: DailyEvent[] = [];
+
+      const updatedStudents = state.students.map(s => {
+        if (s.currentHp >= s.maxHp) return s;
+        const hpToHeal = s.maxHp - s.currentHp;
+        const cost = calculateHealCost(hpToHeal);
+        totalGoldCost += cost.gold;
+        totalManaCost += cost.mana;
+        totalFoodCost += cost.food;
+        
+        healEvents.push({
+          type: 'hp_heal',
+          message: `💚 ${s.name} 恢复 ${hpToHeal} HP，已满血`,
+          studentId: s.id,
+          studentName: s.name,
+          value: hpToHeal,
+        });
+        
+        return { ...s, currentHp: s.maxHp };
+      });
+
+      if (state.resources.gold < totalGoldCost ||
+          state.resources.mana < totalManaCost ||
+          state.resources.food < totalFoodCost) {
+        return state;
+      }
+
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push({ day: state.day, events: healEvents });
+
+      return {
+        ...state,
+        resources: {
+          gold: state.resources.gold - totalGoldCost,
+          mana: state.resources.mana - totalManaCost,
+          food: state.resources.food - totalFoodCost,
+          reputation: state.resources.reputation,
+        },
+        students: updatedStudents,
+        dailyLogs: recentLogs,
+      };
+    }
+
     case 'NEXT_DAY': {
       const todayEvents: DailyEvent[] = [];
       const libraryLevel = state.buildings.find(b => b.id === 'library')?.level || 0;
@@ -920,8 +1062,20 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       for (const student of state.students) {
         const moraleChange = calculateDailyMoraleChange(student, hasEnoughFood, dormitoryLevel);
         const staminaChange = calculateDailyStaminaChange(student, diningHallLevel);
+        const hpRecovery = calculateDailyHpRecovery(student, dormitoryLevel);
         const newMorale = clamp(student.morale + moraleChange, 0, 100);
         const newStamina = clamp(student.stamina + staminaChange, 0, 100);
+        let newCurrentHp = student.maxHp > 0 ? Math.min(student.currentHp + hpRecovery, student.maxHp) : student.currentHp;
+
+        if (hpRecovery > 0) {
+          todayEvents.push({
+            type: 'hp_natural_recovery',
+            message: `💚 ${student.name} 自然恢复 ${hpRecovery} HP (${newCurrentHp}/${student.maxHp})`,
+            value: hpRecovery,
+            studentId: student.id,
+            studentName: student.name,
+          });
+        }
 
         if (moraleChange !== 0 && Math.abs(moraleChange) >= 10) {
           todayEvents.push({
@@ -945,23 +1099,43 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           continue;
         }
 
+        if (newCurrentHp <= 0) {
+          updatedStudents.push({
+            ...student,
+            currentHp: Math.max(1, newCurrentHp),
+            morale: newMorale,
+            stamina: newStamina,
+            status: 'resting' as const,
+          });
+          todayEvents.push({
+            type: 'warning',
+            message: `⚠️ ${student.name} HP耗尽，强制进入休息状态恢复`,
+            studentId: student.id,
+            studentName: student.name,
+          });
+          continue;
+        }
+
         if (student.status === 'resting') {
-          if (newMorale >= 70 && newStamina >= 80) {
+          const hpFull = newCurrentHp >= student.maxHp;
+          if (newMorale >= 70 && newStamina >= 80 && hpFull) {
             updatedStudents.push({
               ...student,
+              currentHp: newCurrentHp,
               morale: newMorale,
               stamina: newStamina,
               status: 'idle' as const,
             });
             todayEvents.push({
               type: 'rest',
-              message: `${student.name} 休息完毕，精力充沛！`,
+              message: `${student.name} 休息完毕，状态全满，精力充沛！`,
               studentId: student.id,
               studentName: student.name,
             });
           } else {
             updatedStudents.push({
               ...student,
+              currentHp: newCurrentHp,
               morale: newMorale,
               stamina: newStamina,
             });
@@ -972,13 +1146,24 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         if (student.assignedCourse && student.status === 'studying') {
           const course = state.courses.find(c => c.id === student.assignedCourse);
           if (!course) {
-            updatedStudents.push({ ...student, morale: newMorale, stamina: newStamina });
+            updatedStudents.push({ ...student, currentHp: newCurrentHp, morale: newMorale, stamina: newStamina });
             continue;
           }
 
           const moraleMult = calculateMoraleEfficiencyMultiplier(newMorale);
           const staminaMult = calculateStaminaEfficiencyMultiplier(newStamina);
-          const efficiencyMult = moraleMult * staminaMult;
+          const hpMult = calculateHpEfficiencyMultiplier(newCurrentHp, student.maxHp);
+          const efficiencyMult = moraleMult * staminaMult * hpMult;
+          
+          if (hpMult < 1) {
+            todayEvents.push({
+              type: 'warning',
+              message: `🩹 ${student.name} 受伤导致学习效率 ×${hpMult.toFixed(2)}`,
+              studentId: student.id,
+              studentName: student.name,
+              value: Math.round(hpMult * 100),
+            });
+          }
 
           const baseCourseSpeed = calculateCourseSpeed(1, student);
           const courseSpeed = baseCourseSpeed * efficiencyMult;
@@ -1169,6 +1354,20 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               }
             }
 
+            let finalMaxHp = student.maxHp;
+            let finalCurrentHp = newCurrentHp;
+            if (finalLevel > student.level || newSkills.length > student.skills.length) {
+              const recalculated = recalculateStudentMaxHp({
+                ...student,
+                level: finalLevel,
+                skills: newSkills,
+                maxHp: student.maxHp,
+                currentHp: newCurrentHp,
+              });
+              finalMaxHp = recalculated.maxHp;
+              finalCurrentHp = recalculated.currentHp;
+            }
+
             updatedStudents.push({
               ...student,
               status: newStatus,
@@ -1179,6 +1378,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               exp: finalExp,
               level: finalLevel,
               skills: newSkills,
+              currentHp: finalCurrentHp,
+              maxHp: finalMaxHp,
               morale: newMorale,
               stamina: newStamina,
               growthRecords: newGrowthRecords,
@@ -1199,12 +1400,26 @@ function gameReducer(state: GameState, action: GameAction): GameState {
                 });
               }
             }
+            let progressingMaxHp = student.maxHp;
+            let progressingCurrentHp = newCurrentHp;
+            if (newLevel > student.level) {
+              const recalculated = recalculateStudentMaxHp({
+                ...student,
+                level: newLevel,
+                maxHp: student.maxHp,
+                currentHp: newCurrentHp,
+              });
+              progressingMaxHp = recalculated.maxHp;
+              progressingCurrentHp = recalculated.currentHp;
+            }
             updatedStudents.push({
               ...student,
               courseProgress: newProgress,
               courseDaysRemaining: daysRemaining,
               exp: newExp,
               level: newLevel,
+              currentHp: progressingCurrentHp,
+              maxHp: progressingMaxHp,
               morale: newMorale,
               stamina: newStamina,
             });
@@ -1212,7 +1427,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         } else if (student.status === 'idle' && student.courseQueue.length > 0) {
           const nextQueued = student.courseQueue[0];
           const nextCourse = state.courses.find(c => c.id === nextQueued.courseId);
-          let updatedStudent = { ...student, morale: newMorale, stamina: newStamina };
+          let updatedStudent = { ...student, currentHp: newCurrentHp, morale: newMorale, stamina: newStamina };
           
           if (nextCourse) {
             const canAffordNext = workingResources.gold >= nextCourse.cost.gold &&
@@ -1268,6 +1483,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         } else {
           updatedStudents.push({
             ...student,
+            currentHp: newCurrentHp,
             morale: newMorale,
             stamina: newStamina,
           });
@@ -1408,6 +1624,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const studentName = generateStudentName();
     const studentId = `student_${state.currentStudentId}`;
     
+    const baseHp = initializeStudentHp({ level: initialLevel, skills: [] });
+    
     const newStudent: StudentType = {
       id: studentId,
       name: studentName,
@@ -1426,6 +1644,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       traits: traits,
       morale: INITIAL_STUDENT_MORALE,
       stamina: INITIAL_STUDENT_STAMINA,
+      currentHp: baseHp.currentHp,
+      maxHp: baseHp.maxHp,
       recruitmentInfo: {
         recruitedAt: state.day,
         recruitmentQuality: resultQuality,

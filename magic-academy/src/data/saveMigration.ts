@@ -8,6 +8,7 @@ import {
   INITIAL_TEACHERS,
   INITIAL_STUDENT_MORALE,
   INITIAL_STUDENT_STAMINA,
+  initializeStudentHp,
 } from './gameData';
 
 type SaveData = Record<string, unknown>;
@@ -94,14 +95,22 @@ function ensureStudent(s: Partial<Student> & Record<string, unknown>): Student {
         initialPotential: 1,
       };
 
+  const skills = ensureArray(s.skills, []);
+  const level = clampNumber(s.level, 1, 999, 1);
+  const defaultHp = initializeStudentHp({ level, skills });
+  const rawMaxHp = typeof s.maxHp === 'number' && !isNaN(s.maxHp) ? s.maxHp : defaultHp.maxHp;
+  const rawCurrentHp = typeof s.currentHp === 'number' && !isNaN(s.currentHp) ? s.currentHp : defaultHp.currentHp;
+  const maxHp = Math.max(1, rawMaxHp);
+  const currentHp = clampNumber(rawCurrentHp, 0, maxHp, maxHp);
+
   return {
     id: ensureString(s.id, `student_recovered_${Math.random().toString(36).slice(2, 8)}`),
     name: ensureString(s.name, '未知学员'),
-    level: clampNumber(s.level, 1, 999, 1),
+    level,
     exp: clampNumber(s.exp, 0, Infinity, 0),
     magicType: (['fire', 'water', 'earth', 'wind', 'light', 'dark'].includes(s.magicType as string)
       ? s.magicType : 'fire') as Student['magicType'],
-    skills: ensureArray(s.skills, []),
+    skills,
     status: (['idle', 'studying', 'training', 'resting'].includes(s.status as string)
       ? s.status : 'idle') as Student['status'],
     assignedBuilding: s.assignedBuilding === null ? null : ensureString(s.assignedBuilding, null as unknown as string) || null,
@@ -115,6 +124,8 @@ function ensureStudent(s: Partial<Student> & Record<string, unknown>): Student {
     traits: ensureArray(s.traits, []),
     morale: clampNumber(s.morale, 0, 100, INITIAL_STUDENT_MORALE),
     stamina: clampNumber(s.stamina, 0, 100, INITIAL_STUDENT_STAMINA),
+    currentHp,
+    maxHp,
     recruitmentInfo,
     growthRecords: ensureArray(s.growthRecords, []),
     courseHistory: ensureArray(s.courseHistory, []),
@@ -322,10 +333,35 @@ function migrateV2ToV3(ctx: MigrationContext): SaveData {
   return data;
 }
 
+function migrateV3ToV4(ctx: MigrationContext): SaveData {
+  const data = { ...ctx.data };
+
+  if (Array.isArray(data.students)) {
+    data.students = (data.students as Array<Record<string, unknown>>).map((s: Record<string, unknown>) => {
+      const level = typeof s.level === 'number' && !isNaN(s.level) ? Math.max(1, s.level) : 1;
+      const skills = Array.isArray(s.skills) ? s.skills : [];
+      const defaultHp = initializeStudentHp({ level, skills });
+      
+      if (typeof s.maxHp !== 'number' || isNaN(s.maxHp)) {
+        s.maxHp = defaultHp.maxHp;
+      }
+      if (typeof s.currentHp !== 'number' || isNaN(s.currentHp)) {
+        s.currentHp = defaultHp.currentHp;
+      }
+      s.currentHp = Math.max(0, Math.min(s.currentHp as number, s.maxHp as number));
+      return s;
+    });
+  }
+
+  data.saveVersion = 4;
+  return data;
+}
+
 const MIGRATION_CHAIN: Record<number, MigrationStep> = {
   0: migrateV0ToV1,
   1: migrateV1ToV2,
   2: migrateV2ToV3,
+  3: migrateV3ToV4,
 };
 
 export function migrateSave(rawData: SaveData): GameState {

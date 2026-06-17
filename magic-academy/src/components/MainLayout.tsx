@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useGame } from '../store/GameContext';
 import type { TabType, Dungeon as DungeonType, Student as StudentType, Course as CourseType, DailyEvent, GachaResult, StudentQuality } from '../types/game';
-import { getStudentStatsSummary, calculateExpGain, calculateSynergyBonus } from '../data/gameData';
+import { getStudentStatsSummary, calculateExpGain, calculateSynergyBonus, isStudentBattleReady, calculateHpEfficiencyMultiplier, HP_BATTLE_THRESHOLD, calculateHealCost, getMaxHealableHp } from '../data/gameData';
 import './MainLayout.css';
 
 interface TabConfig {
@@ -701,6 +701,18 @@ function RecruitModule({ onStudentClick }: ModuleProps) {
                         <div className="bar-fill stamina-fill" style={{ width: `${student.stamina}%`, background: staminaInfo.color }}></div>
                       </div>
                     </div>
+                    {(() => {
+                      const hpPercent = student.maxHp > 0 ? (student.currentHp / student.maxHp) * 100 : 0;
+                      const hpColor = hpPercent > 50 ? '#4CAF50' : hpPercent > 25 ? '#FF9800' : '#f44336';
+                      return (
+                        <div className="hp-bar-wrapper">
+                          <div className="hp-label" style={{ color: hpColor }}>❤️ {student.currentHp}/{student.maxHp}</div>
+                          <div className="bar-bg">
+                            <div className="bar-fill hp-fill" style={{ width: `${hpPercent}%`, background: hpColor }}></div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div className="student-status">
                     {student.status === 'idle' && '🟢 空闲'}
@@ -1174,10 +1186,10 @@ function DungeonModule({ onStudentClick }: ModuleProps) {
     const halfStamina = Math.ceil(dungeon.staminaCost * 0.5);
     const availableMembers = dungeon.bestTeam.filter(id => {
       const s = state.students.find(st => st.id === id);
-      return s && s.status === 'idle' && s.stamina >= halfStamina;
+      return s && s.status === 'idle' && s.stamina >= halfStamina && isStudentBattleReady(s).ok;
     });
     if (availableMembers.length === 0) {
-      return { ok: false, reason: `最佳阵容体力不足（需${halfStamina}/人）` };
+      return { ok: false, reason: `最佳阵容体力或HP不足` };
     }
     return { ok: true };
   };
@@ -1210,7 +1222,8 @@ function DungeonModule({ onStudentClick }: ModuleProps) {
             s.level >= dungeon.requiredLevel && 
             s.status === 'idle' && 
             s.stamina >= dungeon.staminaCost &&
-            s.morale >= 15
+            s.morale >= 15 &&
+            isStudentBattleReady(s).ok
           ).length;
           const canChallenge = battleReadyCount > 0;
           const sweepable = canSweep(dungeon);
@@ -1331,7 +1344,7 @@ function DungeonModule({ onStudentClick }: ModuleProps) {
               {!canChallenge && (
                 <div className="dungeon-locked">
                   {battleReadyCount === 0 && eligibleCount > 0
-                    ? `无符合条件的学员（需Lv.${dungeon.requiredLevel}+、体力≥${dungeon.staminaCost}、士气≥15%）`
+                    ? `无符合条件的学员（需Lv.${dungeon.requiredLevel}+、体力≥${dungeon.staminaCost}、士气≥15%、HP≥${Math.round(HP_BATTLE_THRESHOLD * 100)}%）`
                     : `需要 Lv.${dungeon.requiredLevel}+ 学员 (${eligibleCount}/${state.students.length} 人等级达标)`}
                 </div>
               )}
@@ -1362,6 +1375,7 @@ function DungeonModule({ onStudentClick }: ModuleProps) {
               averageHpPercent: result.averageHpPercent,
               totalTurns: result.totalTurns,
               team: result.team,
+              studentHpMap: result.studentHpMap,
             });
             setSelectedDungeon(null);
           }}
@@ -1384,6 +1398,7 @@ interface DungeonBattleProps {
     averageHpPercent: number;
     totalTurns: number;
     team: string[];
+    studentHpMap: Record<string, { current: number; max: number }>;
   }) => void;
 }
 
@@ -1397,6 +1412,7 @@ interface BattleResultData {
   rewards: { gold: number; mana: number; food: number; reputation: number };
   isFirstClear: boolean;
   team: string[];
+  studentHpMap: Record<string, { current: number; max: number }>;
 }
 
 function DungeonBattle({ dungeon, students, courses, onClose, onStudentClick, onComplete }: DungeonBattleProps) {
@@ -1462,6 +1478,10 @@ function DungeonBattle({ dungeon, students, courses, onClose, onStudentClick, on
     if (student.morale < 15) {
       return { ok: false, reason: `士气过低(${student.morale}%)拒绝出战` };
     }
+    const hpReady = isStudentBattleReady(student);
+    if (!hpReady.ok) {
+      return hpReady;
+    }
     return { ok: true };
   }, [courses, dungeon.staminaCost]);
 
@@ -1507,6 +1527,22 @@ function DungeonBattle({ dungeon, students, courses, onClose, onStudentClick, on
     const currentHp = playerTeam.reduce((sum, p) => sum + Math.max(0, p.hp), 0);
     const averageHpPercent = totalHp > 0 ? currentHp / totalHp : 0;
 
+    const studentHpMap: Record<string, { current: number; max: number }> = {};
+    playerTeam.forEach(p => {
+      studentHpMap[p.id] = {
+        current: Math.max(0, Math.floor(p.hp)),
+        max: p.maxHp,
+      };
+    });
+    teamIds.forEach(id => {
+      if (!studentHpMap[id]) {
+        const origStudent = students.find(s => s.id === id);
+        if (origStudent) {
+          studentHpMap[id] = { current: 0, max: origStudent.maxHp };
+        }
+      }
+    });
+
     const stars = victory ? calculateBattleStars(dungeon, survivingMembers, totalMembers, averageHpPercent) : 0;
     const isFirstClear = !dungeon.firstCleared;
     const rewards = calculateDungeonRewards(dungeon, stars, isFirstClear);
@@ -1521,8 +1557,9 @@ function DungeonBattle({ dungeon, students, courses, onClose, onStudentClick, on
       rewards,
       isFirstClear,
       team: teamIds,
+      studentHpMap,
     };
-  }, [dungeon, calculateBattleStars, calculateDungeonRewards]);
+  }, [dungeon, calculateBattleStars, calculateDungeonRewards, students]);
 
   const startBattle = () => {
     if (selectedTeam.length === 0) return;
@@ -1533,8 +1570,8 @@ function DungeonBattle({ dungeon, students, courses, onClose, onStudentClick, on
     battleRef.current = {
       playerTeam: validTeam.map(s => ({ 
         ...s, 
-        hp: 100 + s.level * 20 + s.skills.length * 10,
-        maxHp: 100 + s.level * 20 + s.skills.length * 10
+        hp: s.currentHp,
+        maxHp: s.maxHp,
       })),
       enemyTeam: generateEnemies(1),
       currentWave: 1,
@@ -1566,6 +1603,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onStudentClick, on
       averageHpPercent: battleResult.averageHpPercent,
       totalTurns: battleResult.totalTurns,
       team: battleResult.team,
+      studentHpMap: battleResult.studentHpMap,
     });
   }, [battleResult]);
 
@@ -1796,6 +1834,9 @@ function DungeonBattle({ dungeon, students, courses, onClose, onStudentClick, on
                       <div className="team-member-stats">
                         <span style={{ color: moraleInfo.color }}>😊{student.morale}%</span>
                         <span style={{ color: staminaInfo.color }}>⚡{student.stamina}%</span>
+                        <span style={{ color: student.currentHp / student.maxHp > 0.5 ? '#4CAF50' : student.currentHp / student.maxHp > 0.3 ? '#FF9800' : '#f44336' }}>
+                          ❤️{student.currentHp}/{student.maxHp}
+                        </span>
                         <span>需体力:{dungeon.staminaCost}</span>
                       </div>
                       {isDisabled && battleCheck.reason && (
@@ -1814,7 +1855,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onStudentClick, on
               })}
             </div>
             <div className="battle-hint">
-              <p>💡 提示: 士气和体力会影响战斗伤害(±80%~+32%)，注意让学员休息恢复</p>
+              <p>💡 提示: 士气和体力会影响战斗伤害，HP低于{Math.round(HP_BATTLE_THRESHOLD * 100)}%无法出战，注意治疗和休息恢复</p>
             </div>
             <div className="battle-actions">
               <button onClick={startBattle} disabled={selectedTeam.length === 0}>开始战斗</button>
@@ -1854,6 +1895,25 @@ function DungeonBattle({ dungeon, students, courses, onClose, onStudentClick, on
                   </div>
                 </div>
                 
+                <div className="result-hp-list">
+                  <h5>队员战后状态:</h5>
+                  {battleResult.team.map(id => {
+                    const hpData = battleResult.studentHpMap[id];
+                    const s = students.find(st => st.id === id);
+                    if (!hpData || !s) return null;
+                    const hpPercent = hpData.max > 0 ? hpData.current / hpData.max : 0;
+                    const hpColor = hpPercent > 0.5 ? '#4CAF50' : hpPercent > 0.25 ? '#FF9800' : '#f44336';
+                    return (
+                      <div key={id} className="hp-row">
+                        <span>{s.name}</span>
+                        <span style={{ color: hpColor }}>
+                          {hpData.current <= 0 ? '💔 倒下' : `❤️ ${hpData.current}/${hpData.max}`}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                
                 <div className="result-rewards">
                   <h5>获得奖励:</h5>
                   <div className="reward-list">
@@ -1873,10 +1933,30 @@ function DungeonBattle({ dungeon, students, courses, onClose, onStudentClick, on
             )}
             
             {!battleResult.victory && (
-              <div className="defeat-hint">
-                <p>学员们需要更多训练！</p>
-                <p>建议: 提升等级、学习更多技能、搭配更强阵容</p>
-              </div>
+              <>
+                <div className="result-hp-list">
+                  <h5>队员战后状态:</h5>
+                  {battleResult.team.map(id => {
+                    const hpData = battleResult.studentHpMap[id];
+                    const s = students.find(st => st.id === id);
+                    if (!hpData || !s) return null;
+                    const hpPercent = hpData.max > 0 ? hpData.current / hpData.max : 0;
+                    const hpColor = hpPercent > 0.5 ? '#4CAF50' : hpPercent > 0.25 ? '#FF9800' : '#f44336';
+                    return (
+                      <div key={id} className="hp-row">
+                        <span>{s.name}</span>
+                        <span style={{ color: hpColor }}>
+                          {hpData.current <= 0 ? '💔 倒下' : `❤️ ${hpData.current}/${hpData.max}`}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="defeat-hint">
+                  <p>学员们需要更多训练！</p>
+                  <p>建议: 提升等级、学习更多技能、搭配更强阵容，记得治疗受伤学员</p>
+                </div>
+              </>
             )}
             
             <button className="confirm-result-btn" onClick={handleConfirmResult}>
@@ -1935,6 +2015,10 @@ function SettlementModule() {
       case 'study': return '📚';
       case 'course_complete': return '🎓';
       case 'warning': return '⚡';
+      case 'battle_injury': return '🩹';
+      case 'hp_natural_recovery': return '💚';
+      case 'hp_heal': return '💊';
+      case 'course_started': return '📚';
       default: return '📌';
     }
   };
@@ -2401,7 +2485,8 @@ type DetailTab = 'overview' | 'skills' | 'growth' | 'history';
 
 function StudentDetailModal({ student, onClose }: StudentDetailModalProps) {
   const [activeTab, setActiveTab] = React.useState<DetailTab>('overview');
-  const { getMoraleLabel, getStaminaLabel } = useGame();
+  const [healAmount, setHealAmount] = React.useState<number>(20);
+  const { getMoraleLabel, getStaminaLabel, dispatch, canAfford } = useGame();
 
   const qualityColors: Record<string, string> = {
     common: '#9e9e9e',
@@ -2515,6 +2600,20 @@ function StudentDetailModal({ student, onClose }: StudentDetailModalProps) {
               <div className="bar-fill stamina-fill" style={{ width: `${student.stamina}%`, background: staminaInfo.color }}></div>
             </div>
           </div>
+          <div className="status-bar-item">
+            {(() => {
+              const hpPercent = student.maxHp > 0 ? (student.currentHp / student.maxHp) * 100 : 0;
+              const hpColor = hpPercent > 50 ? '#4CAF50' : hpPercent > 25 ? '#FF9800' : '#f44336';
+              return (
+                <>
+                  <div className="status-bar-label" style={{ color: hpColor }}>❤️ HP {student.currentHp}/{student.maxHp}</div>
+                  <div className="bar-bg">
+                    <div className="bar-fill hp-fill" style={{ width: `${hpPercent}%`, background: hpColor }}></div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
         </div>
 
         <div className="detail-tabs">
@@ -2576,6 +2675,75 @@ function StudentDetailModal({ student, onClose }: StudentDetailModalProps) {
                     </div>
                   )}
                 </div>
+              </div>
+
+              <div className="detail-section">
+                <h4>💚 治疗恢复</h4>
+                {(() => {
+                  const maxHealable = getMaxHealableHp(student);
+                  const actualHealAmount = Math.min(healAmount, maxHealable);
+                  const healCost = calculateHealCost(actualHealAmount);
+                  const canAffordHeal = maxHealable > 0 && canAfford(healCost);
+                  const hpEfficiency = calculateHpEfficiencyMultiplier(student.currentHp, student.maxHp);
+
+                  return (
+                    <div className="heal-section">
+                      {maxHealable <= 0 ? (
+                        <p className="empty-text">学员已满血，无需治疗</p>
+                      ) : (
+                        <>
+                          <div className="heal-info">
+                            {hpEfficiency < 1 && (
+                              <p className="heal-warning">
+                                ⚠️ 当前 HP 导致学习效率 ×{hpEfficiency.toFixed(2)}，建议尽快治疗
+                              </p>
+                            )}
+                            <p>可恢复: <strong>{maxHealable}</strong> HP</p>
+                          </div>
+                          
+                          <div className="heal-controls">
+                            <label>治疗量: {actualHealAmount} HP</label>
+                            <input
+                              type="range"
+                              min="1"
+                              max={Math.max(1, maxHealable)}
+                              value={Math.min(healAmount, maxHealable)}
+                              onChange={(e) => setHealAmount(parseInt(e.target.value))}
+                              disabled={maxHealable <= 0}
+                            />
+                            <div className="heal-cost">
+                              <span>消耗:</span>
+                              {healCost.gold > 0 && <span>💰{healCost.gold}</span>}
+                              {healCost.mana > 0 && <span>🔮{healCost.mana}</span>}
+                              {healCost.food > 0 && <span>🍖{healCost.food}</span>}
+                            </div>
+                          </div>
+
+                          <div className="heal-actions">
+                            <button
+                              className="heal-btn"
+                              onClick={() => dispatch({ type: 'HEAL_STUDENT', studentId: student.id, hpAmount: actualHealAmount, cost: healCost })}
+                              disabled={!canAffordHeal}
+                            >
+                              💚 治疗 ({actualHealAmount} HP)
+                            </button>
+                            <button
+                              className="heal-all-btn"
+                              onClick={() => setHealAmount(maxHealable)}
+                              disabled={maxHealable <= 0}
+                            >
+                              📋 全额治疗
+                            </button>
+                          </div>
+
+                          {!canAffordHeal && maxHealable > 0 && (
+                            <p className="heal-warning">资源不足，无法治疗</p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="detail-section">

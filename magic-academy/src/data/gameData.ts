@@ -1,4 +1,18 @@
-import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown } from '../types/game';
+import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student } from '../types/game';
+import {
+  HP_BATTLE_THRESHOLD,
+  HP_COURSE_EFFICIENCY_THRESHOLD,
+  HP_BASE_REST_RECOVERY,
+  HP_BASE_DAILY_RECOVERY,
+  HEAL_MANA_PER_HP,
+  HEAL_GOLD_PER_HP,
+  HEAL_FOOD_PER_HP,
+  HEAL_INSTANT_MANA_COST,
+  HEAL_INSTANT_GOLD_COST,
+  HEAL_INSTANT_FOOD_COST,
+} from '../types/game';
+
+export { HP_BATTLE_THRESHOLD };
 
 export const INITIAL_RESOURCES: Resource = {
   gold: 1000,
@@ -1401,3 +1415,104 @@ export const formatBenefitBreakdown = (breakdown: CourseBenefitBreakdown): strin
   
   return parts.join(' | ');
 };
+
+export const calculateMaxHp = (student: { level: number; skills: { id: string }[] }): number => {
+  return 100 + student.level * 20 + student.skills.length * 10;
+};
+
+export const getHpLabel = (currentHp: number, maxHp: number): { label: string; color: string } => {
+  if (maxHp <= 0) return { label: '未知', color: '#999' };
+  const percent = currentHp / maxHp;
+  if (percent >= 0.8) return { label: '状态良好', color: '#4CAF50' };
+  if (percent >= 0.5) return { label: '轻伤', color: '#FFC107' };
+  if (percent >= 0.3) return { label: '重伤', color: '#FF9800' };
+  if (percent > 0) return { label: '濒死', color: '#f44336' };
+  return { label: '已倒下', color: '#d32f2f' };
+};
+
+export const calculateHpEfficiencyMultiplier = (currentHp: number, maxHp: number): number => {
+  if (maxHp <= 0) return 1;
+  const percent = currentHp / maxHp;
+  if (percent >= HP_COURSE_EFFICIENCY_THRESHOLD) return 1;
+  if (percent >= 0.3) return 0.7;
+  if (percent > 0) return 0.4;
+  return 0;
+};
+
+export const calculateDailyHpRecovery = (
+  student: { status: string; currentHp: number; maxHp: number },
+  dormitoryLevel: number = 1
+): number => {
+  if (student.currentHp >= student.maxHp) return 0;
+  
+  let recovery = HP_BASE_DAILY_RECOVERY;
+  
+  if (student.status === 'resting') {
+    recovery = HP_BASE_REST_RECOVERY + dormitoryLevel * 5;
+  }
+  
+  return Math.min(recovery, student.maxHp - student.currentHp);
+};
+
+export const calculateHealCost = (hpToHeal: number): Resource => {
+  return {
+    gold: hpToHeal * HEAL_GOLD_PER_HP,
+    mana: hpToHeal * HEAL_MANA_PER_HP,
+    food: hpToHeal * HEAL_FOOD_PER_HP,
+    reputation: 0,
+  };
+};
+
+export const calculateInstantHealCost = (student: { currentHp: number; maxHp: number }): Resource => {
+  const hpToHeal = Math.max(0, student.maxHp - student.currentHp);
+  const baseCost = calculateHealCost(hpToHeal);
+  return {
+    gold: baseCost.gold + HEAL_INSTANT_GOLD_COST,
+    mana: baseCost.mana + HEAL_INSTANT_MANA_COST,
+    food: baseCost.food + HEAL_INSTANT_FOOD_COST,
+    reputation: 0,
+  };
+};
+
+export const isStudentInjured = (student: { currentHp: number; maxHp: number }): boolean => {
+  if (student.maxHp <= 0) return false;
+  return student.currentHp < student.maxHp;
+};
+
+export const isStudentBadlyInjured = (student: { currentHp: number; maxHp: number }): boolean => {
+  if (student.maxHp <= 0) return false;
+  const percent = student.currentHp / student.maxHp;
+  return percent < HP_BATTLE_THRESHOLD;
+};
+
+export const canStudentBattleByHp = (student: { currentHp: number; maxHp: number }): { ok: boolean; reason?: string } => {
+  if (student.maxHp <= 0) return { ok: false, reason: 'HP数据异常' };
+  if (student.currentHp <= 0) return { ok: false, reason: 'HP为0，已倒下无法出战' };
+  const percent = student.currentHp / student.maxHp;
+  if (percent < HP_BATTLE_THRESHOLD) {
+    return { ok: false, reason: `重伤（HP ${Math.round(percent * 100)}%），需治疗后出战` };
+  }
+  return { ok: true };
+};
+
+export const initializeStudentHp = (student: { level: number; skills: { id: string }[] }): { currentHp: number; maxHp: number } => {
+  const maxHp = calculateMaxHp(student);
+  return { currentHp: maxHp, maxHp };
+};
+
+export const recalculateStudentMaxHp = (student: Student): Student => {
+  const newMaxHp = calculateMaxHp(student);
+  const hpRatio = student.maxHp > 0 ? student.currentHp / student.maxHp : 1;
+  const newCurrentHp = Math.min(Math.floor(newMaxHp * hpRatio), newMaxHp);
+  return {
+    ...student,
+    maxHp: newMaxHp,
+    currentHp: Math.max(1, newCurrentHp),
+  };
+};
+
+export const getMaxHealableHp = (student: { currentHp: number; maxHp: number }): number => {
+  return Math.max(0, student.maxHp - student.currentHp);
+};
+
+export const isStudentBattleReady = canStudentBattleByHp;

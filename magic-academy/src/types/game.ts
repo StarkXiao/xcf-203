@@ -59,6 +59,8 @@ export interface Student {
   traits: Trait[];
   morale: number;
   stamina: number;
+  currentHp: number;
+  maxHp: number;
   recruitmentInfo: RecruitmentInfo;
   growthRecords: GrowthRecord[];
   courseHistory: CourseHistoryEntry[];
@@ -212,7 +214,7 @@ export interface Enemy {
   isBoss: boolean;
 }
 
-export const CURRENT_SAVE_VERSION = 3;
+export const CURRENT_SAVE_VERSION = 4;
 
 export interface PityCounter {
   common: number;
@@ -298,6 +300,7 @@ export interface BattleResult {
   totalTurns: number;
   rewards: Resource;
   isFirstClear: boolean;
+  studentHpMap: Record<string, { current: number; max: number }>;
 }
 
 export interface DungeonProgress {
@@ -315,7 +318,7 @@ export interface DailyLog {
 }
 
 export interface DailyEvent {
-  type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning' | 'course_queued' | 'course_started' | 'queue_empty' | 'course_conflict';
+  type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning' | 'course_queued' | 'course_started' | 'queue_empty' | 'course_conflict' | 'hp_heal' | 'hp_natural_recovery' | 'battle_injury' | 'cannot_battle_injured';
   message: string;
   value?: number;
   studentId?: string;
@@ -330,3 +333,14 @@ export const STAMINA_MAX = 100;
 export const STAMINA_MIN = 0;
 export const MORALE_LEAVE_THRESHOLD = 10;
 export const FOOD_CONSUMPTION_PER_STUDENT = 1;
+
+export const HP_BATTLE_THRESHOLD = 0.3;
+export const HP_COURSE_EFFICIENCY_THRESHOLD = 0.5;
+export const HP_BASE_REST_RECOVERY = 20;
+export const HP_BASE_DAILY_RECOVERY = 5;
+export const HEAL_MANA_PER_HP = 3;
+export const HEAL_GOLD_PER_HP = 5;
+export const HEAL_FOOD_PER_HP = 2;
+export const HEAL_INSTANT_MANA_COST = 5;
+export const HEAL_INSTANT_GOLD_COST = 10;
+export const HEAL_INSTANT_FOOD_COST = 3;
