@@ -1065,7 +1065,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         const hpRecovery = calculateDailyHpRecovery(student, dormitoryLevel);
         const newMorale = clamp(student.morale + moraleChange, 0, 100);
         const newStamina = clamp(student.stamina + staminaChange, 0, 100);
-        let newCurrentHp = student.maxHp > 0 ? Math.min(student.currentHp + hpRecovery, student.maxHp) : student.currentHp;
+        const newCurrentHp = student.maxHp > 0 ? Math.min(student.currentHp + hpRecovery, student.maxHp) : student.currentHp;
 
         if (hpRecovery > 0) {
           todayEvents.push({
