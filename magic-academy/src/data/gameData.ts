@@ -134,6 +134,151 @@ export const INITIAL_BUILDINGS: Building[] = [
       },
     ],
   },
+  {
+    id: 'fire_temple',
+    name: '火焰神殿',
+    level: 1,
+    maxLevel: 10,
+    cost: { gold: 400, mana: 250, food: 30, reputation: 15 },
+    effect: { type: 'magic_type_bonus', value: 15, magicType: 'fire' },
+    description: '火系课程经验+15%',
+    prerequisites: [
+      { buildingId: 'library', requiredLevel: 2 },
+    ],
+  },
+  {
+    id: 'water_temple',
+    name: '水之圣殿',
+    level: 1,
+    maxLevel: 10,
+    cost: { gold: 400, mana: 250, food: 30, reputation: 15 },
+    effect: { type: 'magic_type_bonus', value: 15, magicType: 'water' },
+    description: '水系课程经验+15%',
+    prerequisites: [
+      { buildingId: 'library', requiredLevel: 2 },
+    ],
+  },
+  {
+    id: 'earth_temple',
+    name: '大地神殿',
+    level: 1,
+    maxLevel: 10,
+    cost: { gold: 400, mana: 250, food: 30, reputation: 15 },
+    effect: { type: 'magic_type_bonus', value: 15, magicType: 'earth' },
+    description: '土系课程经验+15%',
+    prerequisites: [
+      { buildingId: 'library', requiredLevel: 2 },
+    ],
+  },
+  {
+    id: 'wind_temple',
+    name: '风之圣殿',
+    level: 1,
+    maxLevel: 10,
+    cost: { gold: 400, mana: 250, food: 30, reputation: 15 },
+    effect: { type: 'magic_type_bonus', value: 15, magicType: 'wind' },
+    description: '风系课程经验+15%',
+    prerequisites: [
+      { buildingId: 'library', requiredLevel: 2 },
+    ],
+  },
+  {
+    id: 'light_temple',
+    name: '光明圣殿',
+    level: 1,
+    maxLevel: 10,
+    cost: { gold: 500, mana: 300, food: 35, reputation: 25 },
+    effect: { type: 'magic_type_bonus', value: 20, magicType: 'light' },
+    description: '光系课程经验+20%',
+    prerequisites: [
+      { buildingId: 'library', requiredLevel: 3 },
+    ],
+  },
+  {
+    id: 'dark_temple',
+    name: '暗影圣殿',
+    level: 1,
+    maxLevel: 10,
+    cost: { gold: 500, mana: 300, food: 35, reputation: 25 },
+    effect: { type: 'magic_type_bonus', value: 20, magicType: 'dark' },
+    description: '暗系课程经验+20%',
+    prerequisites: [
+      { buildingId: 'library', requiredLevel: 3 },
+    ],
+  },
+];
+
+export const INITIAL_TEACHERS: Teacher[] = [
+  {
+    id: 'teacher_fire',
+    name: '炎龙大师',
+    magicType: 'fire',
+    level: 5,
+    expBonus: 0.25,
+    skillBonus: 0.15,
+    description: '精通火焰魔法的传奇法师，对火系学员有额外加成',
+    salary: { gold: 50, mana: 30, food: 10, reputation: 5 },
+  },
+  {
+    id: 'teacher_water',
+    name: '潮汐贤者',
+    magicType: 'water',
+    level: 5,
+    expBonus: 0.25,
+    skillBonus: 0.15,
+    description: '掌控水之力量的智者，擅长培养水系魔法师',
+    salary: { gold: 50, mana: 30, food: 10, reputation: 5 },
+  },
+  {
+    id: 'teacher_earth',
+    name: '岩石守护者',
+    magicType: 'earth',
+    level: 5,
+    expBonus: 0.25,
+    skillBonus: 0.15,
+    description: '坚如磐石的大地守护者，土系魔法专家',
+    salary: { gold: 50, mana: 30, food: 10, reputation: 5 },
+  },
+  {
+    id: 'teacher_wind',
+    name: '疾风行者',
+    magicType: 'wind',
+    level: 5,
+    expBonus: 0.25,
+    skillBonus: 0.15,
+    description: '来去如风的风系大师，速度与技巧并重',
+    salary: { gold: 50, mana: 30, food: 10, reputation: 5 },
+  },
+  {
+    id: 'teacher_light',
+    name: '圣光大主教',
+    magicType: 'light',
+    level: 6,
+    expBonus: 0.30,
+    skillBonus: 0.20,
+    description: '神圣力量的传承者，光系魔法权威',
+    salary: { gold: 80, mana: 50, food: 15, reputation: 10 },
+  },
+  {
+    id: 'teacher_dark',
+    name: '深渊领主',
+    magicType: 'dark',
+    level: 6,
+    expBonus: 0.30,
+    skillBonus: 0.20,
+    description: '掌握暗影奥秘的神秘者，暗系魔法大宗师',
+    salary: { gold: 80, mana: 50, food: 15, reputation: 10 },
+  },
+  {
+    id: 'teacher_arcane',
+    name: '奥术智者',
+    magicType: 'fire',
+    level: 8,
+    expBonus: 0.20,
+    skillBonus: 0.25,
+    description: '精通所有魔法的奥术大师，全属性均衡加成',
+    salary: { gold: 120, mana: 80, food: 20, reputation: 15 },
+  },
 ];
 
 export const INITIAL_COURSES: Course[] = [
@@ -155,6 +300,7 @@ export const INITIAL_COURSES: Course[] = [
     effect: { type: 'skill_unlock', value: 1 },
     requiredLevel: 3,
     magicType: 'fire',
+    assignedTeacher: 'teacher_fire',
   },
   {
     id: 'water_magic',
@@ -165,6 +311,7 @@ export const INITIAL_COURSES: Course[] = [
     effect: { type: 'skill_unlock', value: 1 },
     requiredLevel: 3,
     magicType: 'water',
+    assignedTeacher: 'teacher_water',
   },
   {
     id: 'earth_magic',
@@ -175,6 +322,7 @@ export const INITIAL_COURSES: Course[] = [
     effect: { type: 'skill_unlock', value: 1 },
     requiredLevel: 3,
     magicType: 'earth',
+    assignedTeacher: 'teacher_earth',
   },
   {
     id: 'wind_magic',
@@ -185,6 +333,29 @@ export const INITIAL_COURSES: Course[] = [
     effect: { type: 'skill_unlock', value: 1 },
     requiredLevel: 3,
     magicType: 'wind',
+    assignedTeacher: 'teacher_wind',
+  },
+  {
+    id: 'light_magic',
+    name: '光明魔法',
+    level: 2,
+    duration: 5,
+    cost: { gold: 120, mana: 80, food: 15, reputation: 8 },
+    effect: { type: 'skill_unlock', value: 1 },
+    requiredLevel: 3,
+    magicType: 'light',
+    assignedTeacher: 'teacher_light',
+  },
+  {
+    id: 'dark_magic',
+    name: '暗影魔法',
+    level: 2,
+    duration: 5,
+    cost: { gold: 120, mana: 80, food: 15, reputation: 8 },
+    effect: { type: 'skill_unlock', value: 1 },
+    requiredLevel: 3,
+    magicType: 'dark',
+    assignedTeacher: 'teacher_dark',
   },
   {
     id: 'advanced_magic',
@@ -194,6 +365,73 @@ export const INITIAL_COURSES: Course[] = [
     cost: { gold: 200, mana: 120, food: 25, reputation: 10 },
     effect: { type: 'exp_gain', value: 50 },
     requiredLevel: 5,
+    assignedTeacher: 'teacher_arcane',
+  },
+  {
+    id: 'master_fire',
+    name: '火焰专精',
+    level: 4,
+    duration: 10,
+    cost: { gold: 350, mana: 200, food: 30, reputation: 15 },
+    effect: { type: 'exp_gain', value: 80 },
+    requiredLevel: 8,
+    magicType: 'fire',
+    assignedTeacher: 'teacher_fire',
+  },
+  {
+    id: 'master_water',
+    name: '水系专精',
+    level: 4,
+    duration: 10,
+    cost: { gold: 350, mana: 200, food: 30, reputation: 15 },
+    effect: { type: 'exp_gain', value: 80 },
+    requiredLevel: 8,
+    magicType: 'water',
+    assignedTeacher: 'teacher_water',
+  },
+  {
+    id: 'master_earth',
+    name: '大地专精',
+    level: 4,
+    duration: 10,
+    cost: { gold: 350, mana: 200, food: 30, reputation: 15 },
+    effect: { type: 'exp_gain', value: 80 },
+    requiredLevel: 8,
+    magicType: 'earth',
+    assignedTeacher: 'teacher_earth',
+  },
+  {
+    id: 'master_wind',
+    name: '风系专精',
+    level: 4,
+    duration: 10,
+    cost: { gold: 350, mana: 200, food: 30, reputation: 15 },
+    effect: { type: 'exp_gain', value: 80 },
+    requiredLevel: 8,
+    magicType: 'wind',
+    assignedTeacher: 'teacher_wind',
+  },
+  {
+    id: 'master_light',
+    name: '光明专精',
+    level: 4,
+    duration: 10,
+    cost: { gold: 380, mana: 220, food: 30, reputation: 20 },
+    effect: { type: 'exp_gain', value: 90 },
+    requiredLevel: 8,
+    magicType: 'light',
+    assignedTeacher: 'teacher_light',
+  },
+  {
+    id: 'master_dark',
+    name: '暗影专精',
+    level: 4,
+    duration: 10,
+    cost: { gold: 380, mana: 220, food: 30, reputation: 20 },
+    effect: { type: 'exp_gain', value: 90 },
+    requiredLevel: 8,
+    magicType: 'dark',
+    assignedTeacher: 'teacher_dark',
   },
 ];
 
@@ -982,4 +1220,184 @@ export const computeAdjustedProbabilities = (
   }
 
   return { adjusted, base: baseProbabilities };
+};
+
+export const calculateMagicTypeMatchBonus = (
+  studentMagicType: MagicType,
+  courseMagicType?: MagicType
+): { match: boolean; bonus: number } => {
+  if (!courseMagicType) {
+    return { match: false, bonus: 0 };
+  }
+  const match = studentMagicType === courseMagicType;
+  const bonus = match ? 0.30 : 0;
+  return { match, bonus };
+};
+
+export const calculateTeacherBonus = (
+  course: Course,
+  teachers: Teacher[],
+  courseMagicType?: MagicType
+): { teacher?: Teacher; expBonus: number; skillBonus: number } => {
+  if (!course.assignedTeacher) {
+    return { expBonus: 0, skillBonus: 0 };
+  }
+  
+  const teacher = teachers.find(t => t.id === course.assignedTeacher);
+  if (!teacher) {
+    return { expBonus: 0, skillBonus: 0 };
+  }
+  
+  let expBonus = teacher.expBonus;
+  let skillBonus = teacher.skillBonus;
+  
+  if (courseMagicType && teacher.magicType === courseMagicType) {
+    expBonus *= 1.2;
+    skillBonus *= 1.2;
+  }
+  
+  return { teacher, expBonus, skillBonus };
+};
+
+export const calculateBuildingMagicBonus = (
+  buildings: Building[],
+  courseMagicType?: MagicType
+): { bonus: number; contributingBuildings: string[] } => {
+  if (!courseMagicType) {
+    return { bonus: 0, contributingBuildings: [] };
+  }
+  
+  let totalBonus = 0;
+  const contributingBuildings: string[] = [];
+  
+  const libraryLevel = buildings.find(b => b.id === 'library')?.level || 0;
+  const efficiencyBonus = calculateSynergyBonus(buildings, 'efficiency');
+  totalBonus += libraryLevel * 0.05 + efficiencyBonus * 0.01;
+  
+  for (const building of buildings) {
+    if (building.effect.type === 'magic_type_bonus' && 
+        building.effect.magicType === courseMagicType) {
+      const levelBonus = building.effect.value * building.level * 0.01;
+      totalBonus += levelBonus;
+      contributingBuildings.push(building.name);
+    }
+  }
+  
+  return { bonus: totalBonus, contributingBuildings };
+};
+
+export const calculateCourseBenefit = (
+  baseExp: number,
+  student: { magicType: MagicType; potential: number; traits: Trait[] },
+  course: Course,
+  buildings: Building[],
+  teachers: Teacher[]
+): CourseBenefitBreakdown => {
+  const magicTypeResult = calculateMagicTypeMatchBonus(student.magicType, course.magicType);
+  const teacherResult = calculateTeacherBonus(course, teachers, course.magicType);
+  const buildingResult = calculateBuildingMagicBonus(buildings, course.magicType);
+  
+  const traitBonus = student.traits
+    .filter(t => t.effects.some(e => e.type === 'exp_bonus'))
+    .reduce((sum, t) => {
+      const effect = t.effects.find(e => e.type === 'exp_bonus');
+      return sum + (effect?.value || 0);
+    }, 0);
+  
+  const learningSpeedTraitBonus = student.traits
+    .filter(t => t.effects.some(e => e.type === 'learning_speed'))
+    .reduce((sum, t) => {
+      const effect = t.effects.find(e => e.type === 'learning_speed');
+      return sum + (effect?.value || 0);
+    }, 0);
+  
+  const totalTraitBonus = traitBonus + learningSpeedTraitBonus;
+  
+  const additiveMultiplier = 
+    magicTypeResult.bonus + 
+    teacherResult.expBonus + 
+    buildingResult.bonus + 
+    totalTraitBonus;
+  
+  const totalMultiplier = student.potential * (1 + additiveMultiplier);
+  const totalExp = Math.floor(baseExp * totalMultiplier);
+  
+  return {
+    baseExp,
+    magicTypeMatchBonus: magicTypeResult.bonus,
+    teacherBonus: teacherResult.expBonus,
+    buildingBonus: buildingResult.bonus,
+    traitBonus: totalTraitBonus,
+    potentialMultiplier: student.potential,
+    totalExp,
+    magicTypeMatch: magicTypeResult.match,
+    matchedTeacher: teacherResult.teacher,
+    contributingBuildings: buildingResult.contributingBuildings,
+  };
+};
+
+export const calculateEnhancedSkillDamage = (
+  baseDamage: number,
+  student: { potential: number; traits: Trait[]; magicType: MagicType },
+  course: Course,
+  teachers: Teacher[]
+): number => {
+  let multiplier = 1;
+  
+  multiplier += (student.potential - 1) * 0.5;
+  
+  const allStatsBonus = student.traits
+    .filter(t => t.effects.some(e => e.type === 'all_stats'))
+    .reduce((sum, t) => {
+      const effect = t.effects.find(e => e.type === 'all_stats');
+      return sum + (effect?.value || 0);
+    }, 0);
+  multiplier += allStatsBonus;
+  
+  const skillDamageBonus = student.traits
+    .filter(t => t.effects.some(e => e.type === 'skill_damage'))
+    .reduce((sum, t) => {
+      const effect = t.effects.find(e => e.type === 'skill_damage');
+      return sum + (effect?.value || 0);
+    }, 0);
+  multiplier += skillDamageBonus;
+  
+  if (course.magicType) {
+    const magicAffinityBonus = student.traits
+      .filter(t => t.effects.some(e => e.type === 'magic_affinity' && e.magicType === course.magicType))
+      .reduce((sum, t) => {
+        const effect = t.effects.find(e => e.type === 'magic_affinity' && e.magicType === course.magicType);
+        return sum + (effect?.value || 0);
+      }, 0);
+    multiplier += magicAffinityBonus;
+    
+    if (student.magicType === course.magicType) {
+      multiplier += 0.15;
+    }
+  }
+  
+  const teacherResult = calculateTeacherBonus(course, teachers, course.magicType);
+  multiplier += teacherResult.skillBonus;
+  
+  return Math.floor(baseDamage * multiplier);
+};
+
+export const formatBenefitBreakdown = (breakdown: CourseBenefitBreakdown): string => {
+  const parts: string[] = [];
+  
+  if (breakdown.magicTypeMatch) {
+    parts.push(`✨ 系别匹配 +${Math.round(breakdown.magicTypeMatchBonus * 100)}%`);
+  }
+  if (breakdown.matchedTeacher) {
+    parts.push(`👨‍🏫 ${breakdown.matchedTeacher.name} +${Math.round(breakdown.teacherBonus * 100)}%`);
+  }
+  if (breakdown.contributingBuildings.length > 0) {
+    parts.push(`🏛️ ${breakdown.contributingBuildings.join('+')} +${Math.round(breakdown.buildingBonus * 100)}%`);
+  }
+  if (breakdown.traitBonus > 0) {
+    parts.push(`💪 特质 +${Math.round(breakdown.traitBonus * 100)}%`);
+  }
+  parts.push(`⭐ 潜力 ×${breakdown.potentialMultiplier.toFixed(2)}`);
+  
+  return parts.join(' | ');
 };

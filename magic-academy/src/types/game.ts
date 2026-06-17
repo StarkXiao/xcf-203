@@ -36,8 +36,9 @@ export interface SynergyEffect {
 }
 
 export interface BuildingEffect {
-  type: 'student_capacity' | 'mana_capacity' | 'reputation_gain' | 'course_speed' | 'recruit_quality';
+  type: 'student_capacity' | 'mana_capacity' | 'reputation_gain' | 'course_speed' | 'recruit_quality' | 'magic_type_bonus';
   value: number;
+  magicType?: MagicType;
 }
 
 export interface Student {
@@ -158,6 +159,18 @@ export interface Course {
   effect: CourseEffect;
   requiredLevel: number;
   magicType?: MagicType;
+  assignedTeacher?: string | null;
+}
+
+export interface Teacher {
+  id: string;
+  name: string;
+  magicType: MagicType;
+  level: number;
+  expBonus: number;
+  skillBonus: number;
+  description: string;
+  salary: Resource;
 }
 
 export interface CourseEffect {
@@ -199,7 +212,7 @@ export interface Enemy {
   isBoss: boolean;
 }
 
-export const CURRENT_SAVE_VERSION = 2;
+export const CURRENT_SAVE_VERSION = 3;
 
 export interface PityCounter {
   common: number;
@@ -246,6 +259,7 @@ export interface GameState {
   students: Student[];
   courses: Course[];
   dungeons: Dungeon[];
+  teachers: Teacher[];
   day: number;
   maxStudents: number;
   currentStudentId: number;
@@ -254,6 +268,19 @@ export interface GameState {
   dailyLogs: DailyLog[];
   pityCounters: PityCounter;
   gachaHistory: GachaHistory;
+}
+
+export interface CourseBenefitBreakdown {
+  baseExp: number;
+  magicTypeMatchBonus: number;
+  teacherBonus: number;
+  buildingBonus: number;
+  traitBonus: number;
+  potentialMultiplier: number;
+  totalExp: number;
+  magicTypeMatch: boolean;
+  matchedTeacher?: Teacher;
+  contributingBuildings: string[];
 }
 
 export interface RecruitmentTicket {

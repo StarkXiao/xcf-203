@@ -1,12 +1,13 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
   INITIAL_BUILDINGS, 
   INITIAL_COURSES, 
   INITIAL_DUNGEONS, 
+  INITIAL_TEACHERS,
   generateStudentName, 
   getRandomMagicType,
   generateTraits,
@@ -40,6 +41,12 @@ import {
   getProbabilities,
   computeAdjustedProbabilities,
   getGuaranteedQuality,
+  calculateMagicTypeMatchBonus,
+  calculateTeacherBonus,
+  calculateBuildingMagicBonus,
+  calculateCourseBenefit,
+  calculateEnhancedSkillDamage,
+  formatBenefitBreakdown,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -80,6 +87,7 @@ const initialState: GameState = {
   students: [],
   courses: INITIAL_COURSES,
   dungeons: INITIAL_DUNGEONS,
+  teachers: INITIAL_TEACHERS,
   day: 1,
   maxStudents: MAX_STUDENT_CAPACITY,
   currentStudentId: 1,
@@ -262,14 +270,39 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const course = state.courses.find(c => c.id === action.courseId);
       if (!course) return state;
       
-      const todayEvents: DailyEvent[] = [{
-        type: 'course_complete',
-        message: `🎓 ${state.students.find(s => s.id === action.studentId)?.name} 完成了「${course.name}」！`,
-        studentId: action.studentId,
-        studentName: state.students.find(s => s.id === action.studentId)?.name,
-        courseId: course.id,
-        courseName: course.name,
-      }];
+      const student = state.students.find(s => s.id === action.studentId);
+      const todayEvents: DailyEvent[] = [];
+      
+      let benefitBreakdown: CourseBenefitBreakdown | null = null;
+      if (student && course.effect.type === 'exp_gain') {
+        benefitBreakdown = calculateCourseBenefit(
+          course.effect.value,
+          student,
+          course,
+          state.buildings,
+          state.teachers
+        );
+        
+        const benefitText = formatBenefitBreakdown(benefitBreakdown);
+        todayEvents.push({
+          type: 'course_complete',
+          message: `🎓 ${student.name} 完成了「${course.name}」！获得${benefitBreakdown.totalExp}经验。${benefitText}`,
+          studentId: action.studentId,
+          studentName: student.name,
+          courseId: course.id,
+          courseName: course.name,
+          value: benefitBreakdown.totalExp,
+        });
+      } else if (student) {
+        todayEvents.push({
+          type: 'course_complete',
+          message: `🎓 ${student.name} 完成了「${course.name}」！`,
+          studentId: action.studentId,
+          studentName: student.name,
+          courseId: course.id,
+          courseName: course.name,
+        });
+      }
       
       let newState = {
         ...state,
@@ -281,9 +314,18 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             let leveledUp = false;
             let skillUnlocked = false;
             const newGrowthRecords = [...s.growthRecords];
-            const expGained = course.effect.type === 'exp_gain' ? calculateExpGain(course.effect.value, s) : 0;
+            let expGained = 0;
             
             if (course.effect.type === 'exp_gain') {
+              const breakdown = calculateCourseBenefit(
+                course.effect.value,
+                s,
+                course,
+                state.buildings,
+                state.teachers
+              );
+              expGained = breakdown.totalExp;
+              
               newExp += expGained;
               const oldLevel = s.level;
               while (newExp >= newLevel * 100) {
@@ -304,7 +346,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               const skillId = `skill_${s.id}_${course.magicType}`;
               if (!newSkills.find(sk => sk.id === skillId)) {
                 const baseDamage = 20 + s.level * 5;
-                const finalDamage = calculateSkillDamage(baseDamage, s, { type: course.magicType });
+                const finalDamage = calculateEnhancedSkillDamage(baseDamage, s, course, state.teachers);
                 const newSkill = {
                   id: skillId,
                   name: `${course.magicType}魔法`,
@@ -315,12 +357,22 @@ function gameReducer(state: GameState, action: GameAction): GameState {
                 };
                 newSkills = [...newSkills, newSkill];
                 skillUnlocked = true;
+                
+                const skillBonusText: string[] = [];
+                if (s.magicType === course.magicType) {
+                  skillBonusText.push('系别匹配+15%');
+                }
+                const teacherResult = calculateTeacherBonus(course, state.teachers, course.magicType);
+                if (teacherResult.teacher) {
+                  skillBonusText.push(`${teacherResult.teacher.name}+${Math.round(teacherResult.skillBonus * 100)}%`);
+                }
+                
                 newGrowthRecords.push({
                   id: `growth_${s.id}_skill_${Date.now()}`,
                   type: 'skill_unlock',
                   day: state.day,
-                  description: `解锁新技能: ${newSkill.name}`,
-                  details: { skillName: newSkill.name, damage: finalDamage },
+                  description: `解锁新技能: ${newSkill.name} (伤害:${finalDamage})${skillBonusText.length > 0 ? ` [${skillBonusText.join(' ')}]` : ''}`,
+                  details: { skillName: newSkill.name, damage: finalDamage, bonuses: skillBonusText },
                 });
               }
             }
@@ -353,9 +405,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         }),
       };
       
-      const student = newState.students.find(s => s.id === action.studentId);
-      if (student && student.courseQueue && student.courseQueue.length > 0) {
-        const nextQueued = student.courseQueue[0];
+      const updatedStudent = newState.students.find(s => s.id === action.studentId);
+      if (updatedStudent && updatedStudent.courseQueue && updatedStudent.courseQueue.length > 0) {
+        const nextQueued = updatedStudent.courseQueue[0];
         const nextCourse = newState.courses.find(c => c.id === nextQueued.courseId);
         if (nextCourse) {
           const canAffordNext = newState.resources.gold >= nextCourse.cost.gold &&
@@ -363,7 +415,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             newState.resources.food >= nextCourse.cost.food &&
             newState.resources.reputation >= nextCourse.cost.reputation;
           
-          if (canAffordNext && nextCourse.requiredLevel <= student.level) {
+          if (canAffordNext && nextCourse.requiredLevel <= updatedStudent.level) {
             newState = {
               ...newState,
               resources: {
@@ -388,9 +440,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             };
             todayEvents.push({
               type: 'course_started',
-              message: `📚 ${student.name} 自动开始「${nextCourse.name}」！`,
-              studentId: student.id,
-              studentName: student.name,
+              message: `📚 ${updatedStudent.name} 自动开始「${nextCourse.name}」！`,
+              studentId: updatedStudent.id,
+              studentName: updatedStudent.name,
               courseId: nextCourse.id,
               courseName: nextCourse.name,
             });
@@ -398,8 +450,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             todayEvents.push({
               type: 'warning',
               message: `⚠️ 资源不足，无法自动开始「${nextCourse.name}」，已从队列移除`,
-              studentId: student.id,
-              studentName: student.name,
+              studentId: updatedStudent.id,
+              studentName: updatedStudent.name,
               courseId: nextCourse.id,
               courseName: nextCourse.name,
             });
@@ -412,12 +464,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
                 return s;
               }),
             };
-          } else if (nextCourse.requiredLevel > student.level) {
+          } else if (nextCourse.requiredLevel > updatedStudent.level) {
             todayEvents.push({
               type: 'warning',
-              message: `⚠️ ${student.name} 等级不足(Lv.${student.level}/Lv.${nextCourse.requiredLevel})，无法开始「${nextCourse.name}」，已从队列移除`,
-              studentId: student.id,
-              studentName: student.name,
+              message: `⚠️ ${updatedStudent.name} 等级不足(Lv.${updatedStudent.level}/Lv.${nextCourse.requiredLevel})，无法开始「${nextCourse.name}」，已从队列移除`,
+              studentId: updatedStudent.id,
+              studentName: updatedStudent.name,
               courseId: nextCourse.id,
               courseName: nextCourse.name,
             });
@@ -432,12 +484,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             };
           }
         }
-      } else if (student && (!student.courseQueue || student.courseQueue.length === 0)) {
+      } else if (updatedStudent && (!updatedStudent.courseQueue || updatedStudent.courseQueue.length === 0)) {
         todayEvents.push({
           type: 'queue_empty',
-          message: `📭 ${student.name} 的学习队列为空`,
-          studentId: student.id,
-          studentName: student.name,
+          message: `📭 ${updatedStudent.name} 的学习队列为空`,
+          studentId: updatedStudent.id,
+          studentName: updatedStudent.name,
         });
       }
       
@@ -936,8 +988,15 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           const newProgress = student.courseProgress + courseSpeed;
           const daysRemaining = student.courseDaysRemaining - courseSpeed;
 
-          const baseDailyExp = 10 * baseExpMultiplier * efficiencyMult;
-          const dailyExp = calculateExpGain(baseDailyExp, student);
+          const dailyBaseExp = 10 * baseExpMultiplier * efficiencyMult;
+          const dailyBreakdown = calculateCourseBenefit(
+            dailyBaseExp,
+            student,
+            course,
+            state.buildings,
+            state.teachers
+          );
+          const dailyExp = dailyBreakdown.totalExp;
           let newExp = student.exp + dailyExp;
           let newLevel = student.level;
 
@@ -947,8 +1006,21 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           }
 
           if (daysRemaining <= 0) {
-            const baseFinalExp = course.effect.type === 'exp_gain' ? course.effect.value : 0;
-            const finalExpGain = calculateExpGain(baseFinalExp * efficiencyMult, student);
+            const baseFinalExp = course.effect.type === 'exp_gain' ? course.effect.value * efficiencyMult : 0;
+            let finalExpGain = 0;
+            let finalBreakdown: CourseBenefitBreakdown | null = null;
+            
+            if (baseFinalExp > 0) {
+              finalBreakdown = calculateCourseBenefit(
+                baseFinalExp,
+                student,
+                course,
+                state.buildings,
+                state.teachers
+              );
+              finalExpGain = finalBreakdown.totalExp;
+            }
+            
             let finalExp = newExp + finalExpGain;
             let finalLevel = newLevel;
             let newSkills = student.skills;
@@ -982,7 +1054,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               const skillId = `skill_${student.id}_${course.magicType}`;
               if (!newSkills.find(sk => sk.id === skillId)) {
                 const baseDamage = 20 + finalLevel * 5;
-                const finalDamage = calculateSkillDamage(baseDamage, student, { type: course.magicType });
+                const finalDamage = calculateEnhancedSkillDamage(baseDamage, student, course, state.teachers);
                 const newSkill = {
                   id: skillId,
                   name: `${course.magicType}魔法`,
@@ -993,12 +1065,22 @@ function gameReducer(state: GameState, action: GameAction): GameState {
                 };
                 newSkills = [...newSkills, newSkill];
                 skillUnlocked = true;
+                
+                const skillBonusText: string[] = [];
+                if (student.magicType === course.magicType) {
+                  skillBonusText.push('系别匹配+15%');
+                }
+                const teacherResult = calculateTeacherBonus(course, state.teachers, course.magicType);
+                if (teacherResult.teacher) {
+                  skillBonusText.push(`${teacherResult.teacher.name}+${Math.round(teacherResult.skillBonus * 100)}%`);
+                }
+                
                 newGrowthRecords.push({
                   id: `growth_${student.id}_skill_${Date.now()}`,
                   type: 'skill_unlock',
                   day: state.day,
-                  description: `解锁新技能: ${newSkill.name}`,
-                  details: { skillName: newSkill.name, damage: finalDamage },
+                  description: `解锁新技能: ${newSkill.name} (伤害:${finalDamage})${skillBonusText.length > 0 ? ` [${skillBonusText.join(' ')}]` : ''}`,
+                  details: { skillName: newSkill.name, damage: finalDamage, bonuses: skillBonusText },
                 });
               }
             }
@@ -1015,14 +1097,28 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             };
 
             completedCourses.push({ studentId: student.id, studentName: student.name, courseName: course.name });
-            todayEvents.push({
-              type: 'course_complete',
-              message: `🎓 ${student.name} 完成了「${course.name}」！`,
-              studentId: student.id,
-              studentName: student.name,
-              courseId: course.id,
-              courseName: course.name,
-            });
+            
+            if (finalBreakdown && finalBreakdown.totalExp > 0) {
+              const benefitText = formatBenefitBreakdown(finalBreakdown);
+              todayEvents.push({
+                type: 'course_complete',
+                message: `🎓 ${student.name} 完成了「${course.name}」！获得${finalBreakdown.totalExp}经验。${benefitText}`,
+                studentId: student.id,
+                studentName: student.name,
+                courseId: course.id,
+                courseName: course.name,
+                value: finalBreakdown.totalExp,
+              });
+            } else {
+              todayEvents.push({
+                type: 'course_complete',
+                message: `🎓 ${student.name} 完成了「${course.name}」！`,
+                studentId: student.id,
+                studentName: student.name,
+                courseId: course.id,
+                courseName: course.name,
+              });
+            }
 
             if (newCourseQueue.length > 0) {
               const nextQueued = newCourseQueue[0];
@@ -1264,6 +1360,12 @@ interface GameContextType {
   getRecruitQualityBonus: typeof getRecruitQualityBonus;
   computeAdjustedProbabilities: typeof computeAdjustedProbabilities;
   getGuaranteedQuality: typeof getGuaranteedQuality;
+  calculateMagicTypeMatchBonus: typeof calculateMagicTypeMatchBonus;
+  calculateTeacherBonus: typeof calculateTeacherBonus;
+  calculateBuildingMagicBonus: typeof calculateBuildingMagicBonus;
+  calculateCourseBenefit: typeof calculateCourseBenefit;
+  calculateEnhancedSkillDamage: typeof calculateEnhancedSkillDamage;
+  formatBenefitBreakdown: typeof formatBenefitBreakdown;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -1516,6 +1618,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
       getRecruitQualityBonus,
       computeAdjustedProbabilities,
       getGuaranteedQuality,
+      calculateMagicTypeMatchBonus,
+      calculateTeacherBonus,
+      calculateBuildingMagicBonus,
+      calculateCourseBenefit,
+      calculateEnhancedSkillDamage,
+      formatBenefitBreakdown,
     }}>
       {children}
     </GameContext.Provider>
