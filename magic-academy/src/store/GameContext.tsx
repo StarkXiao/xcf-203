@@ -20,7 +20,20 @@ import {
   calculateDungeonRewards,
   calculateSweepRewards,
   canSweep,
+  INITIAL_STUDENT_MORALE,
+  INITIAL_STUDENT_STAMINA,
+  clamp,
+  calculateFoodConsumption,
+  calculateMoraleEfficiencyMultiplier,
+  calculateStaminaEfficiencyMultiplier,
+  calculateDailyMoraleChange,
+  calculateDailyStaminaChange,
+  shouldStudentLeave,
+  calculateDailyIncome,
+  getMoraleLabel,
+  getStaminaLabel,
 } from '../data/gameData';
+import type { DailyLog, DailyEvent } from '../types/game';
 
 type GameAction =
   | { type: 'ADD_RESOURCE'; resource: Partial<Resource> }
@@ -31,6 +44,7 @@ type GameAction =
   | { type: 'UPDATE_STUDENT'; student: StudentType }
   | { type: 'ASSIGN_STUDENT_TO_BUILDING'; studentId: string; buildingId: string | null }
   | { type: 'ASSIGN_STUDENT_TO_COURSE'; studentId: string; courseId: string | null; courseDuration: number }
+  | { type: 'ASSIGN_STUDENT_TO_REST'; studentId: string }
   | { type: 'COMPLETE_COURSE'; studentId: string; courseId: string }
   | { type: 'START_DUNGEON'; dungeonId: string }
   | { type: 'COMPLETE_DUNGEON'; dungeonId: string; stars: number; survivingMembers: number; totalMembers: number; averageHpPercent: number; totalTurns: number; team: string[] }
@@ -54,6 +68,7 @@ const initialState: GameState = {
   currentStudentId: 1,
   currentDungeonId: 100,
   gameStarted: false,
+  dailyLogs: [],
 };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -146,6 +161,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ...state,
         students: state.students.map(s =>
           s.id === action.studentId ? { ...s, assignedCourse: action.courseId, status: 'studying' as const, courseProgress: 0, courseDaysRemaining: action.courseDuration } : s
+        ),
+      };
+
+    case 'ASSIGN_STUDENT_TO_REST':
+      return {
+        ...state,
+        students: state.students.map(s =>
+          s.id === action.studentId ? { ...s, assignedBuilding: null, assignedCourse: null, status: 'resting' as const, courseProgress: 0, courseDaysRemaining: 0 } : s
         ),
       };
 
@@ -294,41 +317,140 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case 'NEXT_DAY': {
+      const todayEvents: DailyEvent[] = [];
       const libraryLevel = state.buildings.find(b => b.id === 'library')?.level || 0;
+      const dormitoryLevel = state.buildings.find(b => b.id === 'dormitory')?.level || 0;
+      const diningHallLevel = state.buildings.find(b => b.id === 'dining_hall')?.level || 0;
       const efficiencyBonus = calculateSynergyBonus(state.buildings, 'efficiency');
       const baseExpMultiplier = 1 + libraryLevel * 0.1 + efficiencyBonus * 0.01;
-      
-      const updatedStudents = state.students.map(student => {
+
+      const dailyIncome = calculateDailyIncome(state.buildings);
+      todayEvents.push({
+        type: 'income',
+        message: `每日产出: +${dailyIncome.gold}金币, +${dailyIncome.mana}魔力, +${dailyIncome.food}食物, +${dailyIncome.reputation}声望`,
+      });
+
+      const studentCount = state.students.length;
+      const foodNeeded = calculateFoodConsumption(studentCount);
+      const hasEnoughFood = state.resources.food + dailyIncome.food >= foodNeeded;
+      const actualFoodConsumed = Math.min(foodNeeded, state.resources.food + dailyIncome.food);
+
+      if (!hasEnoughFood) {
+        const shortage = foodNeeded - actualFoodConsumed;
+        todayEvents.push({
+          type: 'food_shortage',
+          message: `⚠️ 食物短缺！需要${foodNeeded}，仅有${state.resources.food + dailyIncome.food}，缺${shortage}份`,
+          value: shortage,
+        });
+      } else {
+        todayEvents.push({
+          type: 'food_consumed',
+          message: `消耗${actualFoodConsumed}份食物供养${studentCount}名学员`,
+          value: actualFoodConsumed,
+        });
+      }
+
+      const lowMoraleTracker: Record<string, number> = {};
+      state.students.forEach(s => {
+        if (s.morale < 20) {
+          lowMoraleTracker[s.id] = (lowMoraleTracker[s.id] || 0) + 1;
+        }
+      });
+
+      const completedCourses: { studentId: string; studentName: string; courseName: string }[] = [];
+      const leftStudents: { id: string; name: string }[] = [];
+
+      const updatedStudents: StudentType[] = [];
+      for (const student of state.students) {
+        const moraleChange = calculateDailyMoraleChange(student, hasEnoughFood, dormitoryLevel);
+        const staminaChange = calculateDailyStaminaChange(student, diningHallLevel);
+        let newMorale = clamp(student.morale + moraleChange, 0, 100);
+        let newStamina = clamp(student.stamina + staminaChange, 0, 100);
+
+        if (moraleChange !== 0 && Math.abs(moraleChange) >= 10) {
+          todayEvents.push({
+            type: 'morale_change',
+            message: `${student.name} 士气${moraleChange > 0 ? '+' : ''}${moraleChange}`,
+            value: moraleChange,
+            studentId: student.id,
+            studentName: student.name,
+          });
+        }
+
+        const consecutiveLowDays = lowMoraleTracker[student.id] || 0;
+        if (shouldStudentLeave(newMorale, consecutiveLowDays)) {
+          leftStudents.push({ id: student.id, name: student.name });
+          todayEvents.push({
+            type: 'student_left',
+            message: `😢 ${student.name} 因士气过低离开了学院！`,
+            studentId: student.id,
+            studentName: student.name,
+          });
+          continue;
+        }
+
+        if (student.status === 'resting') {
+          if (newMorale >= 70 && newStamina >= 80) {
+            updatedStudents.push({
+              ...student,
+              morale: newMorale,
+              stamina: newStamina,
+              status: 'idle' as const,
+            });
+            todayEvents.push({
+              type: 'rest',
+              message: `${student.name} 休息完毕，精力充沛！`,
+              studentId: student.id,
+              studentName: student.name,
+            });
+          } else {
+            updatedStudents.push({
+              ...student,
+              morale: newMorale,
+              stamina: newStamina,
+            });
+          }
+          continue;
+        }
+
         if (student.assignedCourse && student.status === 'studying') {
           const course = state.courses.find(c => c.id === student.assignedCourse);
-          if (!course) return student;
-          
-          const courseSpeed = calculateCourseSpeed(1, student);
+          if (!course) {
+            updatedStudents.push({ ...student, morale: newMorale, stamina: newStamina });
+            continue;
+          }
+
+          const moraleMult = calculateMoraleEfficiencyMultiplier(newMorale);
+          const staminaMult = calculateStaminaEfficiencyMultiplier(newStamina);
+          const efficiencyMult = moraleMult * staminaMult;
+
+          const baseCourseSpeed = calculateCourseSpeed(1, student);
+          const courseSpeed = baseCourseSpeed * efficiencyMult;
           const newProgress = student.courseProgress + courseSpeed;
           const daysRemaining = student.courseDaysRemaining - courseSpeed;
-          
-          const baseDailyExp = 10 * baseExpMultiplier;
+
+          const baseDailyExp = 10 * baseExpMultiplier * efficiencyMult;
           const dailyExp = calculateExpGain(baseDailyExp, student);
           let newExp = student.exp + dailyExp;
           let newLevel = student.level;
-          
+
           while (newExp >= newLevel * 100) {
             newExp -= newLevel * 100;
             newLevel++;
           }
-          
+
           if (daysRemaining <= 0) {
             const baseFinalExp = course.effect.type === 'exp_gain' ? course.effect.value : 0;
-            const finalExpGain = calculateExpGain(baseFinalExp, student);
+            const finalExpGain = calculateExpGain(baseFinalExp * efficiencyMult, student);
             let finalExp = newExp + finalExpGain;
             let finalLevel = newLevel;
             let newSkills = student.skills;
-            
+
             while (finalExp >= finalLevel * 100) {
               finalExp -= finalLevel * 100;
               finalLevel++;
             }
-            
+
             if (course.effect.type === 'skill_unlock' && course.magicType) {
               const skillId = `skill_${student.id}_${course.magicType}`;
               if (!newSkills.find(sk => sk.id === skillId)) {
@@ -344,8 +466,16 @@ function gameReducer(state: GameState, action: GameAction): GameState {
                 }];
               }
             }
-            
-            return {
+
+            completedCourses.push({ studentId: student.id, studentName: student.name, courseName: course.name });
+            todayEvents.push({
+              type: 'course_complete',
+              message: `🎓 ${student.name} 完成了「${course.name}」！`,
+              studentId: student.id,
+              studentName: student.name,
+            });
+
+            updatedStudents.push({
               ...student,
               status: 'idle' as const,
               assignedCourse: null,
@@ -354,33 +484,57 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               exp: finalExp,
               level: finalLevel,
               skills: newSkills,
-            };
+              morale: newMorale,
+              stamina: newStamina,
+            });
+          } else {
+            updatedStudents.push({
+              ...student,
+              courseProgress: newProgress,
+              courseDaysRemaining: daysRemaining,
+              exp: newExp,
+              level: newLevel,
+              morale: newMorale,
+              stamina: newStamina,
+            });
           }
-          
-          return {
+        } else {
+          updatedStudents.push({
             ...student,
-            courseProgress: newProgress,
-            courseDaysRemaining: daysRemaining,
-            exp: newExp,
-            level: newLevel,
-          };
+            morale: newMorale,
+            stamina: newStamina,
+          });
         }
-        return student;
-      });
-      
-      const diningHallLevel = state.buildings.find(b => b.id === 'dining_hall')?.level || 0;
-      const reputationGain = state.buildings.find(b => b.id === 'dining_hall')?.effect.value || 0;
-      const reputationBonus = calculateSynergyBonus(state.buildings, 'reputation');
-      const totalReputationBonus = 5 + reputationGain * diningHallLevel + reputationBonus;
-      
+      }
+
+      const finalFood = Math.max(0, state.resources.food + dailyIncome.food - actualFoodConsumed);
+      const finalReputation = Math.max(0, state.resources.reputation + dailyIncome.reputation - leftStudents.length * 5);
+
+      if (leftStudents.length > 0) {
+        todayEvents.push({
+          type: 'warning',
+          message: `共${leftStudents.length}名学员离开，声望-${leftStudents.length * 5}`,
+        });
+      }
+
+      const dailyLog: DailyLog = {
+        day: state.day,
+        events: todayEvents,
+      };
+
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+
       return {
         ...state,
         day: state.day + 1,
         students: updatedStudents,
+        dailyLogs: recentLogs,
         resources: {
-          ...state.resources,
-          food: Math.max(0, state.resources.food - Math.ceil(state.students.length * 0.5)),
-          reputation: state.resources.reputation + totalReputationBonus,
+          gold: state.resources.gold + dailyIncome.gold,
+          mana: state.resources.mana + dailyIncome.mana,
+          food: finalFood,
+          reputation: finalReputation,
         },
       };
     }
@@ -407,9 +561,16 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           },
         };
       });
+      const migratedStudents = (saved.students || []).map((s: any) => ({
+        ...s,
+        morale: s.morale ?? INITIAL_STUDENT_MORALE,
+        stamina: s.stamina ?? INITIAL_STUDENT_STAMINA,
+      }));
       return {
         ...saved,
         dungeons: migratedDungeons,
+        students: migratedStudents,
+        dailyLogs: saved.dailyLogs ?? [],
       };
     }
 
@@ -428,6 +589,7 @@ interface GameContextType {
   setActiveTab: (tab: TabType) => void;
   canAfford: (cost: Partial<Resource>) => boolean;
   recruitStudent: (quality: 'common' | 'rare' | 'epic' | 'legendary') => void;
+  assignStudentToRest: (studentId: string) => void;
   saveGame: () => void;
   loadGame: () => void;
   checkPrerequisites: typeof checkPrerequisites;
@@ -437,6 +599,12 @@ interface GameContextType {
   calculateDungeonRewards: typeof calculateDungeonRewards;
   calculateSweepRewards: typeof calculateSweepRewards;
   canSweep: typeof canSweep;
+  calculateDailyIncome: typeof calculateDailyIncome;
+  calculateFoodConsumption: typeof calculateFoodConsumption;
+  getMoraleLabel: (morale: number) => { label: string; color: string };
+  getStaminaLabel: (stamina: number) => { label: string; color: string };
+  calculateMoraleEfficiencyMultiplier: typeof calculateMoraleEfficiencyMultiplier;
+  calculateStaminaEfficiencyMultiplier: typeof calculateStaminaEfficiencyMultiplier;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -488,8 +656,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
       quality: quality,
       potential: potential,
       traits: traits,
+      morale: INITIAL_STUDENT_MORALE,
+      stamina: INITIAL_STUDENT_STAMINA,
     };
     dispatch({ type: 'ADD_STUDENT', student: newStudent });
+  };
+
+  const assignStudentToRest = (studentId: string) => {
+    dispatch({ type: 'ASSIGN_STUDENT_TO_REST', studentId });
   };
 
   const saveGame = () => {
@@ -515,7 +689,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       activeTab, 
       setActiveTab, 
       canAfford, 
-      recruitStudent, 
+      recruitStudent,
+      assignStudentToRest,
       saveGame, 
       loadGame,
       checkPrerequisites,
@@ -525,6 +700,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
       calculateDungeonRewards,
       calculateSweepRewards,
       canSweep,
+      calculateDailyIncome,
+      calculateFoodConsumption,
+      getMoraleLabel,
+      getStaminaLabel,
+      calculateMoraleEfficiencyMultiplier,
+      calculateStaminaEfficiencyMultiplier,
     }}>
       {children}
     </GameContext.Provider>

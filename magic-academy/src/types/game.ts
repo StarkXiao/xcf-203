@@ -55,6 +55,8 @@ export interface Student {
   quality: StudentQuality;
   potential: number;
   traits: Trait[];
+  morale: number;
+  stamina: number;
 }
 
 export type StudentQuality = 'common' | 'rare' | 'epic' | 'legendary';
@@ -158,6 +160,7 @@ export interface GameState {
   currentStudentId: number;
   currentDungeonId: number;
   gameStarted: boolean;
+  dailyLogs: DailyLog[];
 }
 
 export interface RecruitmentTicket {
@@ -185,3 +188,23 @@ export interface DungeonProgress {
 }
 
 export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'settlement' | 'settings';
+
+export interface DailyLog {
+  day: number;
+  events: DailyEvent[];
+}
+
+export interface DailyEvent {
+  type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning';
+  message: string;
+  value?: number;
+  studentId?: string;
+  studentName?: string;
+}
+
+export const MORALE_MAX = 100;
+export const MORALE_MIN = 0;
+export const STAMINA_MAX = 100;
+export const STAMINA_MIN = 0;
+export const MORALE_LEAVE_THRESHOLD = 10;
+export const FOOD_CONSUMPTION_PER_STUDENT = 1;

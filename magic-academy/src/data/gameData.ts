@@ -709,3 +709,115 @@ export const calculateSweepRewards = (dungeon: Dungeon): Resource => {
 export const canSweep = (dungeon: Dungeon): boolean => {
   return dungeon.firstCleared && dungeon.bestStars >= 3;
 };
+
+export const INITIAL_STUDENT_MORALE = 80;
+export const INITIAL_STUDENT_STAMINA = 100;
+
+export const clamp = (value: number, min: number, max: number): number => {
+  return Math.max(min, Math.min(max, value));
+};
+
+export const calculateFoodConsumption = (studentCount: number): number => {
+  return Math.ceil(studentCount * 1);
+};
+
+export const calculateMoraleEfficiencyMultiplier = (morale: number): number => {
+  if (morale >= 80) return 1.2;
+  if (morale >= 60) return 1.0;
+  if (morale >= 40) return 0.8;
+  if (morale >= 20) return 0.5;
+  return 0.2;
+};
+
+export const calculateStaminaEfficiencyMultiplier = (stamina: number): number => {
+  if (stamina >= 80) return 1.1;
+  if (stamina >= 60) return 1.0;
+  if (stamina >= 40) return 0.9;
+  if (stamina >= 20) return 0.7;
+  return 0.4;
+};
+
+export const calculateDailyMoraleChange = (
+  student: { status: string; morale: number },
+  hasFood: boolean,
+  dormitoryLevel: number
+): number => {
+  let change = 0;
+
+  if (!hasFood) {
+    change -= 25;
+  } else if (student.status === 'resting') {
+    change += 15 + dormitoryLevel * 2;
+  } else if (student.status === 'studying') {
+    change -= 5;
+  } else {
+    change += 3 + dormitoryLevel;
+  }
+
+  if (student.morale < 30) {
+    change += 2;
+  }
+
+  return change;
+};
+
+export const calculateDailyStaminaChange = (
+  student: { status: string; stamina: number },
+  diningHallLevel: number
+): number => {
+  let change = 0;
+
+  if (student.status === 'resting') {
+    change += 30 + diningHallLevel * 3;
+  } else if (student.status === 'studying') {
+    change -= 15;
+  } else if (student.status === 'training') {
+    change -= 20;
+  } else {
+    change += 10 + diningHallLevel;
+  }
+
+  if (student.stamina < 30) {
+    change += 5;
+  }
+
+  return change;
+};
+
+export const shouldStudentLeave = (morale: number, consecutiveLowDays: number): boolean => {
+  if (morale <= 5) return true;
+  if (morale < 15 && consecutiveLowDays >= 3) return true;
+  return false;
+};
+
+export const getMoraleLabel = (morale: number): { label: string; color: string } => {
+  if (morale >= 80) return { label: '热情高涨', color: '#4CAF50' };
+  if (morale >= 60) return { label: '状态良好', color: '#8BC34A' };
+  if (morale >= 40) return { label: '一般', color: '#FFC107' };
+  if (morale >= 20) return { label: '低落', color: '#FF9800' };
+  return { label: '濒临崩溃', color: '#f44336' };
+};
+
+export const getStaminaLabel = (stamina: number): { label: string; color: string } => {
+  if (stamina >= 80) return { label: '精力充沛', color: '#2196F3' };
+  if (stamina >= 60) return { label: '良好', color: '#03A9F4' };
+  if (stamina >= 40) return { label: '有些疲惫', color: '#FFC107' };
+  if (stamina >= 20) return { label: '疲惫', color: '#FF9800' };
+  return { label: '精疲力竭', color: '#f44336' };
+};
+
+export const calculateDailyIncome = (
+  buildings: Building[]
+): { gold: number; mana: number; food: number; reputation: number } => {
+  const diningHallLevel = buildings.find(b => b.id === 'dining_hall')?.level || 0;
+  const manaTowerLevel = buildings.find(b => b.id === 'mana_tower')?.level || 0;
+  const mainBuildingLevel = buildings.find(b => b.id === 'main_building')?.level || 0;
+  const reputationBonus = calculateSynergyBonus(buildings, 'reputation');
+
+  return {
+    gold: 50 + diningHallLevel * 5 + mainBuildingLevel * 3,
+    mana: 30 + manaTowerLevel * 10,
+    food: 10 + diningHallLevel * 3,
+    reputation: 5 + diningHallLevel * 2 + reputationBonus,
+  };
+};

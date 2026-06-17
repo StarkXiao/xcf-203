@@ -1,6 +1,6 @@
 import React from 'react';
 import { useGame } from '../store/GameContext';
-import type { TabType, Dungeon as DungeonType, Student as StudentType, Course as CourseType } from '../types/game';
+import type { TabType, Dungeon as DungeonType, Student as StudentType, Course as CourseType, DailyEvent } from '../types/game';
 import { getStudentStatsSummary, calculateExpGain, calculateSynergyBonus } from '../data/gameData';
 import './MainLayout.css';
 
@@ -215,7 +215,7 @@ function AcademyModule() {
 }
 
 function RecruitModule() {
-  const { state, dispatch, canAfford, recruitStudent } = useGame();
+  const { state, dispatch, canAfford, recruitStudent, assignStudentToRest, getMoraleLabel, getStaminaLabel } = useGame();
   const getCapacity = () => {
     const baseCapacity = 10;
     const buildingBonus = state.buildings.reduce((acc, b) => {
@@ -287,6 +287,8 @@ function RecruitModule() {
                 legendary: '传说',
               };
               const stats = getStudentStatsSummary(student);
+              const moraleInfo = getMoraleLabel(student.morale);
+              const staminaInfo = getStaminaLabel(student.stamina);
               return (
                 <div key={student.id} className="student-card" style={{ borderColor: qualityColors[student.quality] || '#9e9e9e' }}>
                   <div className="student-header">
@@ -314,6 +316,20 @@ function RecruitModule() {
                   <div className="student-exp">
                     经验: {student.exp}/{student.level * 100}
                   </div>
+                  <div className="student-morale-stamina">
+                    <div className="morale-bar-wrapper">
+                      <div className="morale-label" style={{ color: moraleInfo.color }}>😊 {moraleInfo.label} {student.morale}%</div>
+                      <div className="bar-bg">
+                        <div className="bar-fill morale-fill" style={{ width: `${student.morale}%`, background: moraleInfo.color }}></div>
+                      </div>
+                    </div>
+                    <div className="stamina-bar-wrapper">
+                      <div className="stamina-label" style={{ color: staminaInfo.color }}>⚡ {staminaInfo.label} {student.stamina}%</div>
+                      <div className="bar-bg">
+                        <div className="bar-fill stamina-fill" style={{ width: `${student.stamina}%`, background: staminaInfo.color }}></div>
+                      </div>
+                    </div>
+                  </div>
                   <div className="student-status">
                     {student.status === 'idle' && '🟢 空闲'}
                     {student.status === 'studying' && course && (
@@ -322,7 +338,7 @@ function RecruitModule() {
                       </span>
                     )}
                     {student.status === 'training' && '⚔️ 训练'}
-                    {student.status === 'resting' && '😴 休息'}
+                    {student.status === 'resting' && '😴 休息中...'}
                   </div>
                   {student.traits.length > 0 && (
                     <div className="student-traits">
@@ -338,6 +354,20 @@ function RecruitModule() {
                       技能: {student.skills.map(s => `${s.name}(${s.damage}伤害)`).join(', ')}
                     </div>
                   )}
+                  <div className="student-actions">
+                    {student.status === 'idle' && (
+                      <button 
+                        className="rest-btn"
+                        onClick={() => assignStudentToRest(student.id)}
+                        title="让学员休息以恢复士气和体力"
+                      >
+                        😴 安排休息
+                      </button>
+                    )}
+                    {student.status === 'resting' && (
+                      <span className="resting-hint">休息中，状态恢复后自动空闲</span>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -1162,7 +1192,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
 }
 
 function SettlementModule() {
-  const { state, dispatch, getActiveSynergies, calculateSynergyBonus } = useGame();
+  const { state, dispatch, getActiveSynergies, calculateSynergyBonus, calculateDailyIncome, calculateFoodConsumption, getMoraleLabel } = useGame();
   const [daysToAdvance, setDaysToAdvance] = React.useState(1);
 
   const libraryLevel = state.buildings.find(b => b.id === 'library')?.level || 0;
@@ -1175,19 +1205,78 @@ function SettlementModule() {
   const capacityBonus = calculateSynergyBonus(state.buildings, 'capacity');
   const activeSynergies = getActiveSynergies(state.buildings);
 
-  const dailyIncome = {
-    gold: 50 + diningHallLevel * 5,
-    mana: 30 + manaTowerLevel * 10,
-    food: 10 + diningHallLevel * 3,
-    reputation: 5 + diningHallLevel * 2 + reputationBonus,
-  };
-
-  const foodConsumption = Math.ceil(state.students.length * 0.5);
+  const dailyIncome = calculateDailyIncome(state.buildings);
+  const foodConsumption = calculateFoodConsumption(state.students.length);
   const studyingCount = state.students.filter(s => s.status === 'studying').length;
+  const restingCount = state.students.filter(s => s.status === 'resting').length;
+  const avgMorale = state.students.length > 0
+    ? Math.round(state.students.reduce((sum, s) => sum + s.morale, 0) / state.students.length)
+    : 0;
+  const avgStamina = state.students.length > 0
+    ? Math.round(state.students.reduce((sum, s) => sum + s.stamina, 0) / state.students.length)
+    : 0;
+  const lowMoraleCount = state.students.filter(s => s.morale < 30).length;
+  const recentLogs = state.dailyLogs.slice(-5).reverse();
+
+  const moraleInfo = avgMorale > 0 ? getMoraleLabel(avgMorale) : { label: '-', color: '#999' };
+  const netFood = dailyIncome.food - foodConsumption;
+  const foodDaysLeft = foodConsumption > 0 ? Math.floor(state.resources.food / foodConsumption) : Infinity;
+
+  const getEventIcon = (type: DailyEvent['type']) => {
+    switch (type) {
+      case 'income': return '💰';
+      case 'food_consumed': return '🍖';
+      case 'food_shortage': return '⚠️';
+      case 'morale_change': return '😊';
+      case 'student_left': return '😢';
+      case 'rest': return '😴';
+      case 'study': return '📚';
+      case 'course_complete': return '🎓';
+      case 'warning': return '⚡';
+      default: return '📌';
+    }
+  };
 
   return (
     <div className="module settlement-module">
       <h2>💰 资源结算</h2>
+
+      {state.students.length > 0 && (
+        <div className="student-status-overview">
+          <h3>📊 学员状态概览</h3>
+          <div className="status-overview-grid">
+            <div className="overview-item">
+              <span>👥 总学员</span>
+              <span>{state.students.length}</span>
+            </div>
+            <div className="overview-item">
+              <span>📚 学习中</span>
+              <span className="studying">{studyingCount}</span>
+            </div>
+            <div className="overview-item">
+              <span>😴 休息中</span>
+              <span className="resting">{restingCount}</span>
+            </div>
+            <div className="overview-item">
+              <span>😊 平均士气</span>
+              <span style={{ color: moraleInfo.color }}>{avgMorale}% ({moraleInfo.label})</span>
+            </div>
+            <div className="overview-item">
+              <span>⚡ 平均体力</span>
+              <span>{avgStamina}%</span>
+            </div>
+            <div className="overview-item">
+              <span>😟 低士气</span>
+              <span className={lowMoraleCount > 0 ? 'warning-text' : ''}>{lowMoraleCount}人</span>
+            </div>
+          </div>
+          <div className="efficiency-info">
+            <p>📖 士气效率: 高士气+20% ~ 低士气-80%</p>
+            <p>⚡ 体力效率: 充沛+10% ~ 精疲力竭-60%</p>
+            <p>😴 休息恢复: 士气+15+2×宿舍等级/天，体力+30+3×餐厅等级/天</p>
+          </div>
+        </div>
+      )}
 
       {activeSynergies.length > 0 && (
         <div className="synergy-overview">
@@ -1222,18 +1311,34 @@ function SettlementModule() {
           </div>
           <div className="production-item">
             <span>🍖 食物</span>
-            <span>+{dailyIncome.food} -{foodConsumption} = {dailyIncome.food - foodConsumption}</span>
+            <span className={netFood >= 0 ? 'positive' : 'negative'}>
+              +{dailyIncome.food} -{foodConsumption} = {netFood >= 0 ? '+' : ''}{netFood}
+            </span>
           </div>
           <div className="production-item">
             <span>⭐ 声望</span>
             <span className="positive">+{dailyIncome.reputation}</span>
           </div>
         </div>
+
+        {state.students.length > 0 && (
+          <div className="food-warning">
+            {netFood < 0 && (
+              <p className="danger">⚠️ 食物入不敷出！每天短缺 {Math.abs(netFood)} 份，请尽快补充或减少学员</p>
+            )}
+            {foodDaysLeft < 5 && foodDaysLeft !== Infinity && foodDaysLeft >= 0 && (
+              <p className="warning-text">⚠️ 按当前消耗速度，食物仅够 {foodDaysLeft} 天！</p>
+            )}
+            {netFood >= 0 && foodConsumption > 0 && (
+              <p className="safe">✅ 食物供应充足，按当前速度可持续供应</p>
+            )}
+          </div>
+        )}
         
         <div className="production-bonus">
           <p>📚 图书馆 Lv.{libraryLevel}: 课程经验 +{libraryLevel * 10}%</p>
-          <p>🏠 宿舍 Lv.{dormitoryLevel}: 容量 +{dormitoryLevel * 4}</p>
-          <p>🍽️ 餐厅 Lv.{diningHallLevel}: 产出 +{diningHallLevel * 5}金币, +{diningHallLevel * 3}食物</p>
+          <p>🏠 宿舍 Lv.{dormitoryLevel}: 容量 +{dormitoryLevel * 4}，休息士气恢复 +{dormitoryLevel * 2}</p>
+          <p>🍽️ 餐厅 Lv.{diningHallLevel}: 产出 +{diningHallLevel * 5}金币, +{diningHallLevel * 3}食物，体力恢复 +{diningHallLevel * 3}</p>
           <p>🔮 魔力塔 Lv.{manaTowerLevel}: 魔力 +{manaTowerLevel * 10}</p>
           {efficiencyBonus > 0 && (
             <p className="synergy-text">✨ 联动效率: 课程经验额外 +{efficiencyBonus}%</p>
@@ -1249,6 +1354,11 @@ function SettlementModule() {
         {studyingCount > 0 && (
           <div className="studying-status">
             <p>📖 {studyingCount} 名学员正在上课，推进时间可获得经验</p>
+          </div>
+        )}
+        {restingCount > 0 && (
+          <div className="resting-status">
+            <p>😴 {restingCount} 名学员正在休息恢复状态</p>
           </div>
         )}
       </div>
@@ -1267,23 +1377,41 @@ function SettlementModule() {
           <button
             onClick={() => {
               for (let i = 0; i < daysToAdvance; i++) {
-                dispatch({ type: 'ADD_RESOURCE', resource: dailyIncome });
                 dispatch({ type: 'NEXT_DAY' });
               }
             }}
-            disabled={state.resources.food < foodConsumption * daysToAdvance}
           >
             推进 {daysToAdvance} 天
           </button>
         </div>
-        <p className="warning">
-          {state.resources.food < foodConsumption * daysToAdvance &&
-            `食物不足！需要 ${foodConsumption * daysToAdvance}，当前 ${state.resources.food}`}
+        <p className="tip">
+          💡 推进时间会自动结算资源产出、食物消耗、士气/体力变化、课程进度等
         </p>
         <p className="tip">
-          💡 推进时间会让正在上课的学员获得经验，课程完成后学员会自动结课
+          ⚠️ 食物不足会导致士气大幅下降，长期低士气学员可能离开！
         </p>
       </div>
+
+      {recentLogs.length > 0 && (
+        <div className="daily-logs-section">
+          <h3>📜 最近结算日志</h3>
+          <div className="daily-logs">
+            {recentLogs.map((log, idx) => (
+              <div key={idx} className="daily-log-item">
+                <div className="log-day">第 {log.day} 天</div>
+                <div className="log-events">
+                  {log.events.map((event, eIdx) => (
+                    <div key={eIdx} className={`log-event event-${event.type}`}>
+                      <span className="event-icon">{getEventIcon(event.type)}</span>
+                      <span className="event-message">{event.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="current-resources">
         <h3>当前资源</h3>
