@@ -216,7 +216,7 @@ export interface Enemy {
   isBoss: boolean;
 }
 
-export const CURRENT_SAVE_VERSION = 8;
+export const CURRENT_SAVE_VERSION = 9;
 
 export type SeasonGoalType = 'building' | 'course' | 'dungeon' | 'recruit' | 'reputation' | 'comprehensive';
 
@@ -449,6 +449,7 @@ export interface GameState {
   stageTasks: StageTasksState;
   season: SeasonState;
   seasonHistory: SeasonHistory[];
+  clubs: ClubsState;
 }
 
 export interface CourseBenefitBreakdown {
@@ -483,7 +484,127 @@ export interface DungeonProgress {
   turnCount: number;
 }
 
-export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'goals' | 'settlement' | 'records' | 'settings' | 'season';
+export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club';
+
+export interface Club {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  primaryMagicType: MagicType | 'mixed';
+  focus: 'combat' | 'research' | 'support' | 'balanced';
+  level: number;
+  maxLevel: number;
+  reputation: number;
+  contributionPoints: number;
+  totalContributionPoints: number;
+  members: string[];
+  maxMembers: number;
+  buildingBonus: string[];
+  unlocked: boolean;
+  requiredReputation: number;
+  requiredBuildingLevel?: { buildingId: string; level: number }[];
+  createdAt: number;
+}
+
+export interface ClubTask {
+  id: string;
+  clubId: string;
+  name: string;
+  description: string;
+  type: 'course' | 'dungeon' | 'recruit' | 'building' | 'daily' | 'special';
+  target: number;
+  current: number;
+  reward: Partial<Resource> & { contributionPoints?: number };
+  duration?: number;
+  daysRemaining?: number;
+  assignedStudents?: string[];
+  maxAssignees?: number;
+  requiredLevel?: number;
+  requiredMagicType?: MagicType;
+  completed: boolean;
+  claimed: boolean;
+  unlocked: boolean;
+  prerequisiteTaskId?: string;
+  difficulty: 'easy' | 'normal' | 'hard' | 'legendary';
+}
+
+export interface ClubShopItem {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  cost: { contributionPoints: number } & Partial<Resource>;
+  effect: ClubShopEffect;
+  requiredClubLevel: number;
+  requiredClubReputation?: number;
+  stock: number;
+  maxStock: number;
+  purchaseLimit: number;
+  purchasedCount: number;
+  category: 'resource' | 'buff' | 'consumable' | 'unlock';
+}
+
+export interface ClubShopEffect {
+  type: 'resource_gain' | 'stat_buff' | 'student_buff' | 'building_buff' | 'unlock_content' | 'recruit_ticket' | 'reputation_boost';
+  value: number;
+  target?: string;
+  duration?: number;
+  quality?: StudentQuality;
+}
+
+export interface ClubReputationLevel {
+  level: number;
+  name: string;
+  minReputation: number;
+  description: string;
+  bonuses: {
+    taskRewardBonus: number;
+    shopDiscount: number;
+    maxMembersBonus: number;
+    contributionGainBonus: number;
+    dailyReputationBonus: number;
+  };
+}
+
+export interface ClubContributionLog {
+  id: string;
+  clubId: string;
+  studentId?: string;
+  studentName?: string;
+  type: 'task_complete' | 'shop_purchase' | 'donation' | 'level_up' | 'reputation_gain';
+  amount: number;
+  day: number;
+  description: string;
+  timestamp: number;
+}
+
+export interface ClubBuff {
+  id: string;
+  clubId: string;
+  name: string;
+  description: string;
+  effect: ClubBuffEffect;
+  remainingDays: number;
+  totalDays: number;
+  source: string;
+}
+
+export interface ClubBuffEffect {
+  type: 'exp_bonus' | 'course_speed' | 'damage_bonus' | 'resource_gain' | 'reputation_gain' | 'stamina_regen' | 'morale_regen';
+  value: number;
+  target?: string;
+}
+
+export interface ClubsState {
+  clubs: Club[];
+  tasks: ClubTask[];
+  shopItems: ClubShopItem[];
+  contributionLogs: ClubContributionLog[];
+  activeBuffs: ClubBuff[];
+  totalContributionEarned: number;
+  shopRefreshDay: number;
+}
 
 export interface DailySnapshot {
   day: number;
@@ -525,13 +646,15 @@ export interface DailyLog {
 }
 
 export interface DailyEvent {
-  type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning' | 'course_queued' | 'course_started' | 'queue_empty' | 'course_conflict' | 'hp_heal' | 'hp_natural_recovery' | 'battle_injury' | 'cannot_battle_injured';
+  type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning' | 'course_queued' | 'course_started' | 'queue_empty' | 'course_conflict' | 'hp_heal' | 'hp_natural_recovery' | 'battle_injury' | 'cannot_battle_injured' | 'club_task_complete' | 'club_joined' | 'club_shop_purchase' | 'club_level_up' | 'club_reputation_gain';
   message: string;
   value?: number;
   studentId?: string;
   studentName?: string;
   courseId?: string;
   courseName?: string;
+  clubId?: string;
+  clubName?: string;
 }
 
 export const MORALE_MAX = 100;

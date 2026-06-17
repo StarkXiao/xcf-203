@@ -4,6 +4,8 @@ import type { TabType, Dungeon as DungeonType, Student as StudentType, Course as
 import { getStudentStatsSummary, calculateExpGain, calculateSynergyBonus, isStudentBattleReady, calculateHpEfficiencyMultiplier, HP_BATTLE_THRESHOLD, calculateHealCost, getMaxHealableHp, RECRUITMENT_TICKETS } from '../data/gameData';
 import './MainLayout.css';
 import SeasonPanel from './SeasonPanel';
+import ClubPanel from './ClubPanel';
+import './ClubPanel.css';
 
 interface TabConfig {
   id: TabType;
@@ -17,6 +19,7 @@ const tabs: TabConfig[] = [
   { id: 'course', label: '课程安排', icon: '📚' },
   { id: 'dungeon', label: '试炼副本', icon: '⚔️' },
   { id: 'goals', label: '目标任务', icon: '🎯' },
+  { id: 'club', label: '魔法社团', icon: '🎭' },
   { id: 'season', label: '赛季系统', icon: '🏆' },
   { id: 'settlement', label: '资源结算', icon: '💰' },
   { id: 'records', label: '经营记录', icon: '📊' },
@@ -116,6 +119,7 @@ export default function MainLayout() {
         {activeTab === 'course' && <CourseModule onStudentClick={setSelectedStudentId} />}
         {activeTab === 'dungeon' && <DungeonModule onStudentClick={setSelectedStudentId} setConfirmDialog={setConfirmDialog} />}
         {activeTab === 'goals' && <GoalsModule />}
+        {activeTab === 'club' && <ClubPanel />}
         {activeTab === 'season' && <SeasonPanel />}
         {activeTab === 'settlement' && <SettlementModule setConfirmDialog={setConfirmDialog} />}
         {activeTab === 'records' && <RecordsModule />}

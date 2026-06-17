@@ -1,4 +1,4 @@
-import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType } from '../types/game';
+import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState } from '../types/game';
 import {
   HP_BATTLE_THRESHOLD,
   HP_COURSE_EFFICIENCY_THRESHOLD,
@@ -2390,4 +2390,678 @@ export const addToSeasonHistory = (
     return updated.slice(0, MAX_SEASON_HISTORY);
   }
   return updated;
+};
+
+export const CLUB_REPUTATION_LEVELS: ClubReputationLevel[] = [
+  {
+    level: 1,
+    name: '初创社团',
+    minReputation: 0,
+    description: '刚刚成立的社团，一切都在起步阶段',
+    bonuses: { taskRewardBonus: 0, shopDiscount: 0, maxMembersBonus: 0, contributionGainBonus: 0, dailyReputationBonus: 1 },
+  },
+  {
+    level: 2,
+    name: '小有名气',
+    minReputation: 50,
+    description: '在学院内有一定知名度的社团',
+    bonuses: { taskRewardBonus: 0.1, shopDiscount: 0.05, maxMembersBonus: 2, contributionGainBonus: 0.1, dailyReputationBonus: 3 },
+  },
+  {
+    level: 3,
+    name: '知名社团',
+    minReputation: 150,
+    description: '学院内广为人知的优秀社团',
+    bonuses: { taskRewardBonus: 0.2, shopDiscount: 0.1, maxMembersBonus: 4, contributionGainBonus: 0.2, dailyReputationBonus: 6 },
+  },
+  {
+    level: 4,
+    name: '精英社团',
+    minReputation: 350,
+    description: '汇聚学院精英的顶尖社团',
+    bonuses: { taskRewardBonus: 0.35, shopDiscount: 0.15, maxMembersBonus: 6, contributionGainBonus: 0.35, dailyReputationBonus: 10 },
+  },
+  {
+    level: 5,
+    name: '传奇社团',
+    minReputation: 700,
+    description: '载入学院史册的传奇社团',
+    bonuses: { taskRewardBonus: 0.5, shopDiscount: 0.25, maxMembersBonus: 10, contributionGainBonus: 0.5, dailyReputationBonus: 16 },
+  },
+  {
+    level: 6,
+    name: '神话社团',
+    minReputation: 1200,
+    description: '传说中才存在的神话级社团',
+    bonuses: { taskRewardBonus: 0.75, shopDiscount: 0.35, maxMembersBonus: 15, contributionGainBonus: 0.75, dailyReputationBonus: 25 },
+  },
+];
+
+export const getClubReputationLevel = (reputation: number): ClubReputationLevel => {
+  let currentLevel = CLUB_REPUTATION_LEVELS[0];
+  for (const level of CLUB_REPUTATION_LEVELS) {
+    if (reputation >= level.minReputation) {
+      currentLevel = level;
+    } else {
+      break;
+    }
+  }
+  return currentLevel;
+};
+
+export const getClubReputationProgress = (reputation: number): { current: ClubReputationLevel; next: ClubReputationLevel | null; progress: number } => {
+  const current = getClubReputationLevel(reputation);
+  const currentIndex = CLUB_REPUTATION_LEVELS.findIndex(l => l.level === current.level);
+  const next = currentIndex + 1 < CLUB_REPUTATION_LEVELS.length ? CLUB_REPUTATION_LEVELS[currentIndex + 1] : null;
+  
+  let progress = 1;
+  if (next) {
+    const range = next.minReputation - current.minReputation;
+    const earned = reputation - current.minReputation;
+    progress = Math.min(1, earned / range);
+  }
+  
+  return { current, next, progress };
+};
+
+export const INITIAL_CLUBS: Club[] = [
+  {
+    id: 'fire_society',
+    name: '烈焰社',
+    description: '专注于火焰魔法研究与实战的社团，成员擅长爆发性输出',
+    icon: '🔥',
+    primaryMagicType: 'fire',
+    focus: 'combat',
+    level: 1,
+    maxLevel: 10,
+    reputation: 0,
+    contributionPoints: 0,
+    totalContributionPoints: 0,
+    members: [],
+    maxMembers: 8,
+    buildingBonus: ['fire_temple'],
+    unlocked: true,
+    requiredReputation: 0,
+    createdAt: 1,
+  },
+  {
+    id: 'water_society',
+    name: '潮汐社',
+    description: '研究水系魔法的社团，精通治疗与控制魔法',
+    icon: '💧',
+    primaryMagicType: 'water',
+    focus: 'support',
+    level: 1,
+    maxLevel: 10,
+    reputation: 0,
+    contributionPoints: 0,
+    totalContributionPoints: 0,
+    members: [],
+    maxMembers: 8,
+    buildingBonus: ['water_temple'],
+    unlocked: true,
+    requiredReputation: 0,
+    createdAt: 1,
+  },
+  {
+    id: 'earth_society',
+    name: '磐石社',
+    description: '土系魔法专精社团，以防御和持久力著称',
+    icon: '🏔️',
+    primaryMagicType: 'earth',
+    focus: 'combat',
+    level: 1,
+    maxLevel: 10,
+    reputation: 0,
+    contributionPoints: 0,
+    totalContributionPoints: 0,
+    members: [],
+    maxMembers: 8,
+    buildingBonus: ['earth_temple'],
+    unlocked: true,
+    requiredReputation: 0,
+    createdAt: 1,
+  },
+  {
+    id: 'wind_society',
+    name: '疾风社',
+    description: '风系魔法研究社，追求速度与敏捷的极致',
+    icon: '🌪️',
+    primaryMagicType: 'wind',
+    focus: 'balanced',
+    level: 1,
+    maxLevel: 10,
+    reputation: 0,
+    contributionPoints: 0,
+    totalContributionPoints: 0,
+    members: [],
+    maxMembers: 8,
+    buildingBonus: ['wind_temple'],
+    unlocked: true,
+    requiredReputation: 0,
+    createdAt: 1,
+  },
+  {
+    id: 'light_society',
+    name: '圣光社',
+    description: '光明魔法的虔诚信徒，擅长治愈与驱散黑暗',
+    icon: '✨',
+    primaryMagicType: 'light',
+    focus: 'support',
+    level: 1,
+    maxLevel: 10,
+    reputation: 0,
+    contributionPoints: 0,
+    totalContributionPoints: 0,
+    members: [],
+    maxMembers: 10,
+    buildingBonus: ['light_temple'],
+    unlocked: false,
+    requiredReputation: 200,
+    requiredBuildingLevel: [{ buildingId: 'library', level: 3 }],
+    createdAt: 1,
+  },
+  {
+    id: 'dark_society',
+    name: '暗影社',
+    description: '探索暗影奥秘的神秘社团，精通诅咒与暗杀',
+    icon: '🌙',
+    primaryMagicType: 'dark',
+    focus: 'combat',
+    level: 1,
+    maxLevel: 10,
+    reputation: 0,
+    contributionPoints: 0,
+    totalContributionPoints: 0,
+    members: [],
+    maxMembers: 10,
+    buildingBonus: ['dark_temple'],
+    unlocked: false,
+    requiredReputation: 200,
+    requiredBuildingLevel: [{ buildingId: 'library', level: 3 }],
+    createdAt: 1,
+  },
+  {
+    id: 'arcane_society',
+    name: '奥术研究会',
+    description: '研究所有魔法派系的综合性社团，追求魔法真谛',
+    icon: '📚',
+    primaryMagicType: 'mixed',
+    focus: 'research',
+    level: 1,
+    maxLevel: 10,
+    reputation: 0,
+    contributionPoints: 0,
+    totalContributionPoints: 0,
+    members: [],
+    maxMembers: 12,
+    buildingBonus: ['library', 'mana_tower'],
+    unlocked: false,
+    requiredReputation: 400,
+    requiredBuildingLevel: [{ buildingId: 'library', level: 5 }, { buildingId: 'mana_tower', level: 5 }],
+    createdAt: 1,
+  },
+];
+
+export const generateClubTasks = (clubId: string, clubLevel: number = 1): ClubTask[] => {
+  const difficultyMultiplier = 1 + (clubLevel - 1) * 0.2;
+  
+  const tasks: ClubTask[] = [
+    {
+      id: `${clubId}_daily_study_1`,
+      clubId,
+      name: '日常研修',
+      description: '社团成员完成任意课程累计5次',
+      type: 'course',
+      target: Math.ceil(5 * difficultyMultiplier),
+      current: 0,
+      reward: { gold: 100, mana: 50, contributionPoints: 20 },
+      completed: false,
+      claimed: false,
+      unlocked: true,
+      difficulty: 'easy',
+    },
+    {
+      id: `${clubId}_daily_dungeon_1`,
+      clubId,
+      name: '联合征讨',
+      description: '社团成员挑战地牢累计3次',
+      type: 'dungeon',
+      target: Math.ceil(3 * difficultyMultiplier),
+      current: 0,
+      reward: { gold: 200, mana: 100, reputation: 10, contributionPoints: 35 },
+      completed: false,
+      claimed: false,
+      unlocked: true,
+      difficulty: 'normal',
+    },
+    {
+      id: `${clubId}_daily_recruit_1`,
+      clubId,
+      name: '招募新血',
+      description: '招募新学员加入社团累计2人',
+      type: 'recruit',
+      target: Math.ceil(2 * difficultyMultiplier),
+      current: 0,
+      reward: { gold: 150, food: 30, contributionPoints: 25 },
+      completed: false,
+      claimed: false,
+      unlocked: true,
+      difficulty: 'easy',
+    },
+    {
+      id: `${clubId}_daily_building_1`,
+      clubId,
+      name: '设施升级',
+      description: '升级关联建筑累计2次',
+      type: 'building',
+      target: 2,
+      current: 0,
+      reward: { gold: 300, mana: 200, contributionPoints: 40 },
+      completed: false,
+      claimed: false,
+      unlocked: clubLevel >= 2,
+      prerequisiteTaskId: `${clubId}_daily_study_1`,
+      difficulty: 'normal',
+    },
+    {
+      id: `${clubId}_special_course`,
+      clubId,
+      name: '精英特训',
+      description: '完成高级魔法专精课程累计3次',
+      type: 'special',
+      target: 3,
+      current: 0,
+      reward: { gold: 800, mana: 500, reputation: 30, contributionPoints: 100 },
+      completed: false,
+      claimed: false,
+      unlocked: clubLevel >= 3,
+      requiredLevel: 5,
+      difficulty: 'hard',
+    },
+    {
+      id: `${clubId}_special_dungeon`,
+      clubId,
+      name: '深渊探索',
+      description: '获得地牢三星评价累计2次',
+      type: 'special',
+      target: 2,
+      current: 0,
+      reward: { gold: 1000, mana: 600, reputation: 50, contributionPoints: 150 },
+      completed: false,
+      claimed: false,
+      unlocked: clubLevel >= 4,
+      difficulty: 'hard',
+    },
+    {
+      id: `${clubId}_legendary`,
+      clubId,
+      name: '传奇挑战',
+      description: '完成所有日常任务并挑战巨龙巢穴',
+      type: 'special',
+      target: 1,
+      current: 0,
+      reward: { gold: 3000, mana: 2000, reputation: 150, food: 200, contributionPoints: 500 },
+      completed: false,
+      claimed: false,
+      unlocked: clubLevel >= 5,
+      difficulty: 'legendary',
+    },
+  ];
+  
+  return tasks;
+};
+
+export const INITIAL_CLUB_SHOP_ITEMS: ClubShopItem[] = [
+  {
+    id: 'shop_gold_small',
+    name: '小额金币袋',
+    description: '获得500金币',
+    icon: '💰',
+    cost: { contributionPoints: 50 },
+    effect: { type: 'resource_gain', value: 500, target: 'gold' },
+    requiredClubLevel: 1,
+    stock: 10,
+    maxStock: 10,
+    purchaseLimit: 5,
+    purchasedCount: 0,
+    category: 'resource',
+  },
+  {
+    id: 'shop_mana_small',
+    name: '魔力水晶',
+    description: '获得300魔力',
+    icon: '💎',
+    cost: { contributionPoints: 40 },
+    effect: { type: 'resource_gain', value: 300, target: 'mana' },
+    requiredClubLevel: 1,
+    stock: 10,
+    maxStock: 10,
+    purchaseLimit: 5,
+    purchasedCount: 0,
+    category: 'resource',
+  },
+  {
+    id: 'shop_food_small',
+    name: '魔法食材包',
+    description: '获得100食物',
+    icon: '🍰',
+    cost: { contributionPoints: 30 },
+    effect: { type: 'resource_gain', value: 100, target: 'food' },
+    requiredClubLevel: 1,
+    stock: 15,
+    maxStock: 15,
+    purchaseLimit: 10,
+    purchasedCount: 0,
+    category: 'resource',
+  },
+  {
+    id: 'shop_reputation_small',
+    name: '声望徽章',
+    description: '获得20点学院声望',
+    icon: '🏅',
+    cost: { contributionPoints: 100, reputation: 10 },
+    effect: { type: 'reputation_boost', value: 20 },
+    requiredClubLevel: 2,
+    stock: 5,
+    maxStock: 5,
+    purchaseLimit: 3,
+    purchasedCount: 0,
+    category: 'resource',
+  },
+  {
+    id: 'shop_exp_buff',
+    name: '经验增幅卷轴',
+    description: '3天内所有学员经验获取+20%',
+    icon: '📜',
+    cost: { contributionPoints: 200 },
+    effect: { type: 'stat_buff', value: 0.2, target: 'exp_bonus', duration: 3 },
+    requiredClubLevel: 2,
+    stock: 3,
+    maxStock: 3,
+    purchaseLimit: 2,
+    purchasedCount: 0,
+    category: 'buff',
+  },
+  {
+    id: 'shop_stamina_potion',
+    name: '体力恢复药水',
+    description: '全体学员体力恢复50点',
+    icon: '🧪',
+    cost: { contributionPoints: 80 },
+    effect: { type: 'stat_buff', value: 50, target: 'stamina_regen' },
+    requiredClubLevel: 2,
+    stock: 8,
+    maxStock: 8,
+    purchaseLimit: 5,
+    purchasedCount: 0,
+    category: 'consumable',
+  },
+  {
+    id: 'shop_morale_potion',
+    name: '士气鼓舞药剂',
+    description: '全体学员士气恢复30点',
+    icon: '🎺',
+    cost: { contributionPoints: 70 },
+    effect: { type: 'stat_buff', value: 30, target: 'morale_regen' },
+    requiredClubLevel: 2,
+    stock: 8,
+    maxStock: 8,
+    purchaseLimit: 5,
+    purchasedCount: 0,
+    category: 'consumable',
+  },
+  {
+    id: 'shop_rare_ticket',
+    name: '稀有招募券',
+    description: '获得一张稀有招募券',
+    icon: '🎫',
+    cost: { contributionPoints: 300, gold: 200 },
+    effect: { type: 'recruit_ticket', value: 1, quality: 'rare' },
+    requiredClubLevel: 3,
+    requiredClubReputation: 100,
+    stock: 3,
+    maxStock: 3,
+    purchaseLimit: 2,
+    purchasedCount: 0,
+    category: 'unlock',
+  },
+  {
+    id: 'shop_course_speed_buff',
+    name: '时间加速法阵',
+    description: '5天内课程完成速度+30%',
+    icon: '⏰',
+    cost: { contributionPoints: 400, mana: 200 },
+    effect: { type: 'stat_buff', value: 0.3, target: 'course_speed', duration: 5 },
+    requiredClubLevel: 3,
+    requiredClubReputation: 150,
+    stock: 2,
+    maxStock: 2,
+    purchaseLimit: 1,
+    purchasedCount: 0,
+    category: 'buff',
+  },
+  {
+    id: 'shop_epic_ticket',
+    name: '史诗招募券',
+    description: '获得一张史诗招募券',
+    icon: '🎟️',
+    cost: { contributionPoints: 800, gold: 500, reputation: 30 },
+    effect: { type: 'recruit_ticket', value: 1, quality: 'epic' },
+    requiredClubLevel: 4,
+    requiredClubReputation: 300,
+    stock: 2,
+    maxStock: 2,
+    purchaseLimit: 1,
+    purchasedCount: 0,
+    category: 'unlock',
+  },
+  {
+    id: 'shop_damage_buff',
+    name: '战神祝福',
+    description: '7天内学员技能伤害+25%',
+    icon: '⚔️',
+    cost: { contributionPoints: 600, mana: 300 },
+    effect: { type: 'stat_buff', value: 0.25, target: 'damage_bonus', duration: 7 },
+    requiredClubLevel: 4,
+    requiredClubReputation: 250,
+    stock: 2,
+    maxStock: 2,
+    purchaseLimit: 1,
+    purchasedCount: 0,
+    category: 'buff',
+  },
+  {
+    id: 'shop_legendary_ticket',
+    name: '传说招募券',
+    description: '获得一张传说招募券',
+    icon: '👑',
+    cost: { contributionPoints: 2000, gold: 1500, reputation: 100 },
+    effect: { type: 'recruit_ticket', value: 1, quality: 'legendary' },
+    requiredClubLevel: 5,
+    requiredClubReputation: 600,
+    stock: 1,
+    maxStock: 1,
+    purchaseLimit: 1,
+    purchasedCount: 0,
+    category: 'unlock',
+  },
+];
+
+export const generateAllClubTasks = (clubs: Club[]): ClubTask[] => {
+  let allTasks: ClubTask[] = [];
+  for (const club of clubs) {
+    allTasks = [...allTasks, ...generateClubTasks(club.id, club.level)];
+  }
+  return allTasks;
+};
+
+export const INITIAL_CLUBS_STATE: ClubsState = {
+  clubs: INITIAL_CLUBS,
+  tasks: generateAllClubTasks(INITIAL_CLUBS),
+  shopItems: INITIAL_CLUB_SHOP_ITEMS,
+  contributionLogs: [],
+  activeBuffs: [],
+  totalContributionEarned: 0,
+  shopRefreshDay: 1,
+};
+
+export const canUnlockClub = (club: Club, reputation: number, buildings: Building[]): { canUnlock: boolean; requirements: { type: string; current: number; required: number; name: string }[] } => {
+  const requirements: { type: string; current: number; required: number; name: string }[] = [];
+  
+  requirements.push({
+    type: 'reputation',
+    current: reputation,
+    required: club.requiredReputation,
+    name: '学院声望',
+  });
+  
+  if (club.requiredBuildingLevel) {
+    for (const req of club.requiredBuildingLevel) {
+      const building = buildings.find(b => b.id === req.buildingId);
+      requirements.push({
+        type: 'building',
+        current: building?.level || 0,
+        required: req.level,
+        name: building?.name || req.buildingId,
+      });
+    }
+  }
+  
+  const canUnlock = requirements.every(r => r.current >= r.required);
+  return { canUnlock, requirements };
+};
+
+export const getClubLevelRequirement = (level: number): number => {
+  return Math.floor(100 * Math.pow(1.5, level - 1));
+};
+
+export const calculateClubLevelProgress = (totalContribution: number, currentLevel: number, maxLevel: number): { progress: number; requiredForNext: number; canLevelUp: boolean } => {
+  if (currentLevel >= maxLevel) {
+    return { progress: 1, requiredForNext: 0, canLevelUp: false };
+  }
+  
+  const requiredForCurrent = getClubLevelRequirement(currentLevel);
+  const requiredForNext = getClubLevelRequirement(currentLevel + 1);
+  const progressInLevel = totalContribution - requiredForCurrent;
+  const levelRange = requiredForNext - requiredForCurrent;
+  const progress = Math.min(1, Math.max(0, progressInLevel / levelRange));
+  const canLevelUp = totalContribution >= requiredForNext;
+  
+  return { progress, requiredForNext, canLevelUp };
+};
+
+export const calculateClubTaskProgress = (
+  tasks: ClubTask[],
+  actionType: 'course' | 'dungeon' | 'recruit' | 'building',
+  amount: number = 1,
+  isThreeStar?: boolean
+): ClubTask[] => {
+  return tasks.map(task => {
+    if (task.completed || task.claimed) return task;
+    if (!task.unlocked) return task;
+    
+    let shouldUpdate = false;
+    let updateAmount = amount;
+    
+    switch (task.type) {
+      case 'course':
+        shouldUpdate = actionType === 'course';
+        break;
+      case 'dungeon':
+        shouldUpdate = actionType === 'dungeon';
+        break;
+      case 'recruit':
+        shouldUpdate = actionType === 'recruit';
+        break;
+      case 'building':
+        shouldUpdate = actionType === 'building';
+        break;
+      case 'special':
+        if (task.id.includes('dungeon') && actionType === 'dungeon' && isThreeStar) {
+          shouldUpdate = true;
+        } else if (task.id.includes('course') && actionType === 'course') {
+          shouldUpdate = true;
+        }
+        break;
+    }
+    
+    if (shouldUpdate) {
+      const newCurrent = Math.min(task.target, task.current + updateAmount);
+      const completed = newCurrent >= task.target;
+      return { ...task, current: newCurrent, completed };
+    }
+    
+    return task;
+  });
+};
+
+export const unlockPrerequisiteTasks = (tasks: ClubTask[], completedTaskId: string): ClubTask[] => {
+  return tasks.map(task => {
+    if (task.unlocked) return task;
+    if (task.prerequisiteTaskId === completedTaskId) {
+      return { ...task, unlocked: true };
+    }
+    return task;
+  });
+};
+
+export const calculateDiscountedClubShopCost = (
+  baseCost: { contributionPoints: number } & Partial<Resource>,
+  clubReputation: number
+): { contributionPoints: number } & Partial<Resource> => {
+  const repLevel = getClubReputationLevel(clubReputation);
+  const discount = repLevel.bonuses.shopDiscount;
+  
+  const result: { contributionPoints: number } & Partial<Resource> = {
+    contributionPoints: Math.floor(baseCost.contributionPoints * (1 - discount)),
+  };
+  
+  if (baseCost.gold !== undefined) result.gold = Math.floor(baseCost.gold * (1 - discount));
+  if (baseCost.mana !== undefined) result.mana = Math.floor(baseCost.mana * (1 - discount));
+  if (baseCost.food !== undefined) result.food = Math.floor(baseCost.food * (1 - discount));
+  if (baseCost.reputation !== undefined) result.reputation = Math.floor(baseCost.reputation * (1 - discount));
+  
+  return result;
+};
+
+export const getClubMemberBonus = (
+  club: Club,
+  students: Student[]
+): { expBonus: number; damageBonus: number; courseSpeedBonus: number; memberCount: number } => {
+  const members = students.filter(s => club.members.includes(s.id));
+  const memberCount = members.length;
+  
+  let expBonus = 0;
+  let damageBonus = 0;
+  let courseSpeedBonus = 0;
+  
+  for (const member of members) {
+    if (club.primaryMagicType === 'mixed' || member.magicType === club.primaryMagicType) {
+      const levelBonus = member.level * 0.002;
+      const potentialBonus = (member.potential - 1) * 0.01;
+      expBonus += levelBonus + potentialBonus;
+      damageBonus += levelBonus + potentialBonus;
+      courseSpeedBonus += levelBonus * 0.5;
+    }
+  }
+  
+  const focusMultiplier = club.focus === 'combat' ? 1.5 : club.focus === 'research' ? 1.3 : club.focus === 'support' ? 1.2 : 1;
+  const expMultiplier = club.focus === 'research' ? 1.5 : club.focus === 'balanced' ? 1.2 : 1;
+  const speedMultiplier = club.focus === 'research' ? 1.4 : club.focus === 'balanced' ? 1.2 : 1;
+  
+  return {
+    expBonus: Math.min(0.5, expBonus * expMultiplier),
+    damageBonus: Math.min(0.5, damageBonus * focusMultiplier),
+    courseSpeedBonus: Math.min(0.3, courseSpeedBonus * speedMultiplier),
+    memberCount,
+  };
+};
+
+export const refreshClubShop = (items: ClubShopItem[]): ClubShopItem[] => {
+  return items.map(item => ({
+    ...item,
+    stock: item.maxStock,
+    purchasedCount: 0,
+  }));
 };

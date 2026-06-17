@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -78,6 +78,19 @@ import {
   initializeNewSeason,
   addToSeasonHistory,
   getRankBonus,
+  INITIAL_CLUBS_STATE,
+  INITIAL_CLUBS,
+  canUnlockClub,
+  calculateClubLevelProgress,
+  getClubLevelRequirement,
+  calculateClubTaskProgress,
+  unlockPrerequisiteTasks,
+  calculateDiscountedClubShopCost,
+  getClubReputationLevel,
+  refreshClubShop,
+  generateClubTasks,
+  getClubMemberBonus,
+  CLUB_REPUTATION_LEVELS,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -124,7 +137,17 @@ type GameAction =
   | { type: 'END_SEASON' }
   | { type: 'SETTLE_SEASON' }
   | { type: 'CLAIM_SEASON_SETTLEMENT_REWARD' }
-  | { type: 'START_NEW_SEASON' };
+  | { type: 'START_NEW_SEASON' }
+  | { type: 'JOIN_CLUB'; clubId: string; studentId: string }
+  | { type: 'LEAVE_CLUB'; clubId: string; studentId: string }
+  | { type: 'UNLOCK_CLUB'; clubId: string }
+  | { type: 'LEVEL_UP_CLUB'; clubId: string }
+  | { type: 'CLAIM_CLUB_TASK'; taskId: string }
+  | { type: 'UPDATE_CLUB_TASK_PROGRESS'; actionType: 'course' | 'dungeon' | 'recruit' | 'building'; amount?: number; isThreeStar?: boolean }
+  | { type: 'PURCHASE_CLUB_SHOP_ITEM'; itemId: string; clubId: string }
+  | { type: 'REFRESH_CLUB_SHOP' }
+  | { type: 'ADD_CLUB_BUFF'; buff: ClubBuff; clubId: string }
+  | { type: 'ADD_CLUB_CONTRIBUTION_LOG'; log: ClubContributionLog };
 
 const MAX_STUDENT_CAPACITY = 20;
 
@@ -174,6 +197,7 @@ const initialState: GameState = {
   stageTasks: INITIAL_STAGE_TASKS_STATE,
   season: INITIAL_SEASON_STATE,
   seasonHistory: [],
+  clubs: INITIAL_CLUBS_STATE,
 };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -250,6 +274,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       );
       const newSeasonCurrentStage = getCurrentSeasonStage(newSeasonStageRewards, newSeasonTotalPoints);
       
+      const updatedClubTasks = calculateClubTaskProgress(
+        state.clubs.tasks,
+        'building',
+        1
+      );
+      
       return {
         ...state,
         resources: {
@@ -271,6 +301,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           seasonPoints: newSeasonTotalPoints,
           stageRewards: newSeasonStageRewards,
           currentStage: newSeasonCurrentStage,
+        },
+        clubs: {
+          ...state.clubs,
+          tasks: updatedClubTasks,
         },
       };
     }
@@ -672,6 +706,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const recentLogs = state.dailyLogs.slice(-29);
       recentLogs.push(dailyLog);
       
+      const updatedClubTasks = calculateClubTaskProgress(
+        state.clubs.tasks,
+        'course',
+        1
+      );
+      
       return {
         ...newState,
         dailyLogs: recentLogs,
@@ -685,6 +725,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           seasonPoints: newSeasonTotalPoints,
           stageRewards: newSeasonStageRewards,
           currentStage: newSeasonCurrentStage,
+        },
+        clubs: {
+          ...state.clubs,
+          tasks: updatedClubTasks,
         },
       };
     }
@@ -1052,6 +1096,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       );
       const newSeasonCurrentStage = getCurrentSeasonStage(newSeasonStageRewards, newSeasonTotalPoints);
       
+      const isThreeStar = action.stars >= 3;
+      const updatedClubTasks = calculateClubTaskProgress(
+        state.clubs.tasks,
+        'dungeon',
+        1,
+        isThreeStar
+      );
+      
       return {
         ...state,
         students: updatedStudents,
@@ -1083,6 +1135,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           seasonPoints: newSeasonTotalPoints,
           stageRewards: newSeasonStageRewards,
           currentStage: newSeasonCurrentStage,
+        },
+        clubs: {
+          ...state.clubs,
+          tasks: updatedClubTasks,
         },
       };
     }
@@ -1524,6 +1580,382 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return {
         ...state,
         season: newSeason,
+      };
+    }
+
+    case 'JOIN_CLUB': {
+      const student = state.students.find(s => s.id === action.studentId);
+      const club = state.clubs.clubs.find(c => c.id === action.clubId);
+      if (!student || !club || !club.unlocked) return state;
+      
+      const repLevel = getClubReputationLevel(club.reputation);
+      const effectiveMaxMembers = club.maxMembers + repLevel.bonuses.maxMembersBonus;
+      if (club.members.length >= effectiveMaxMembers) return state;
+      
+      if (club.members.includes(action.studentId)) return state;
+      
+      const isInOtherClub = state.clubs.clubs.some(c => c.members.includes(action.studentId));
+      
+      const joinEvent: DailyEvent = {
+        type: 'club_joined',
+        message: `🎊 ${student.name} 加入了「${club.name}」！`,
+        studentId: student.id,
+        studentName: student.name,
+        clubId: club.id,
+        clubName: club.name,
+      };
+      
+      const dailyLog: DailyLog = { day: state.day, events: [joinEvent] };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+      
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        clubs: {
+          ...state.clubs,
+          clubs: state.clubs.clubs.map(c => {
+            if (c.id === action.clubId) {
+              return { ...c, members: [...c.members, action.studentId] };
+            }
+            if (isInOtherClub && c.members.includes(action.studentId)) {
+              return { ...c, members: c.members.filter(m => m !== action.studentId) };
+            }
+            return c;
+          }),
+        },
+      };
+    }
+
+    case 'LEAVE_CLUB': {
+      const club = state.clubs.clubs.find(c => c.id === action.clubId);
+      if (!club || !club.members.includes(action.studentId)) return state;
+      
+      return {
+        ...state,
+        clubs: {
+          ...state.clubs,
+          clubs: state.clubs.clubs.map(c =>
+            c.id === action.clubId
+              ? { ...c, members: c.members.filter(m => m !== action.studentId) }
+              : c
+          ),
+        },
+      };
+    }
+
+    case 'UNLOCK_CLUB': {
+      const club = state.clubs.clubs.find(c => c.id === action.clubId);
+      if (!club || club.unlocked) return state;
+      
+      const { canUnlock } = canUnlockClub(club, state.resources.reputation, state.buildings);
+      if (!canUnlock) return state;
+      
+      const newTasks = generateClubTasks(club.id, club.level);
+      
+      return {
+        ...state,
+        clubs: {
+          ...state.clubs,
+          clubs: state.clubs.clubs.map(c =>
+            c.id === action.clubId ? { ...c, unlocked: true } : c
+          ),
+          tasks: [...state.clubs.tasks, ...newTasks],
+        },
+      };
+    }
+
+    case 'LEVEL_UP_CLUB': {
+      const club = state.clubs.clubs.find(c => c.id === action.clubId);
+      if (!club) return state;
+      if (club.level >= club.maxLevel) return state;
+      
+      const { canLevelUp } = calculateClubLevelProgress(
+        club.totalContributionPoints,
+        club.level,
+        club.maxLevel
+      );
+      if (!canLevelUp) return state;
+      
+      const newLevel = club.level + 1;
+      const newTasks = generateClubTasks(club.id, newLevel).filter(
+        t => !state.clubs.tasks.some(et => et.id === t.id)
+      );
+      
+      const levelUpEvent: DailyEvent = {
+        type: 'club_level_up',
+        message: `🎉 「${club.name}」升级到 Lv.${newLevel}！解锁更多任务和奖励`,
+        clubId: club.id,
+        clubName: club.name,
+        value: newLevel,
+      };
+      
+      const dailyLog: DailyLog = { day: state.day, events: [levelUpEvent] };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+      
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        clubs: {
+          ...state.clubs,
+          clubs: state.clubs.clubs.map(c =>
+            c.id === action.clubId ? { ...c, level: newLevel } : c
+          ),
+          tasks: [...state.clubs.tasks, ...newTasks],
+        },
+      };
+    }
+
+    case 'CLAIM_CLUB_TASK': {
+      const task = state.clubs.tasks.find(t => t.id === action.taskId);
+      if (!task || !task.completed || task.claimed) return state;
+      
+      const club = state.clubs.clubs.find(c => c.id === task.clubId);
+      if (!club) return state;
+      
+      const repLevel = getClubReputationLevel(club.reputation);
+      const rewardBonus = 1 + repLevel.bonuses.taskRewardBonus;
+      const contributionBonus = 1 + repLevel.bonuses.contributionGainBonus;
+      
+      const baseContribution = task.reward.contributionPoints || 0;
+      const actualContribution = Math.floor(baseContribution * contributionBonus);
+      
+      const goldReward = Math.floor((task.reward.gold || 0) * rewardBonus);
+      const manaReward = Math.floor((task.reward.mana || 0) * rewardBonus);
+      const foodReward = Math.floor((task.reward.food || 0) * rewardBonus);
+      const reputationReward = Math.floor((task.reward.reputation || 0) * rewardBonus);
+      
+      const newTotalContribution = club.totalContributionPoints + actualContribution;
+      const { canLevelUp } = calculateClubLevelProgress(
+        newTotalContribution,
+        club.level,
+        club.maxLevel
+      );
+      
+      const completedEvent: DailyEvent = {
+        type: 'club_task_complete',
+        message: `🏆 「${club.name}」完成任务「${task.name}」！获得 ${actualContribution}贡献点${goldReward > 0 ? `, +${goldReward}金币` : ''}${manaReward > 0 ? `, +${manaReward}魔力` : ''}${reputationReward > 0 ? `, +${reputationReward}声望` : ''}`,
+        clubId: club.id,
+        clubName: club.name,
+        value: actualContribution,
+      };
+      
+      const dailyLog: DailyLog = { day: state.day, events: [completedEvent] };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+      
+      const contributionLog: ClubContributionLog = {
+        id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        clubId: club.id,
+        type: 'task_complete',
+        amount: actualContribution,
+        day: state.day,
+        description: `完成任务: ${task.name}`,
+        timestamp: Date.now(),
+      };
+      
+      let newTasks = state.clubs.tasks.map(t =>
+        t.id === action.taskId ? { ...t, claimed: true } : t
+      );
+      newTasks = unlockPrerequisiteTasks(newTasks, task.id);
+      
+      const newClubReputation = club.reputation + (reputationReward > 0 ? Math.floor(reputationReward / 2) : 5);
+      const repGainEvent = reputationReward > 0 ? [{
+        type: 'club_reputation_gain' as const,
+        message: `🌟 「${club.name}」声望提升！当前: ${newClubReputation}`,
+        clubId: club.id,
+        clubName: club.name,
+        value: newClubReputation,
+      }] : [];
+      
+      if (repGainEvent.length > 0) {
+        const repLog: DailyLog = { day: state.day, events: repGainEvent };
+        recentLogs.push(repLog);
+      }
+      
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        resources: {
+          gold: state.resources.gold + goldReward,
+          mana: state.resources.mana + manaReward,
+          food: state.resources.food + foodReward,
+          reputation: state.resources.reputation + reputationReward,
+        },
+        clubs: {
+          ...state.clubs,
+          totalContributionEarned: state.clubs.totalContributionEarned + actualContribution,
+          clubs: state.clubs.clubs.map(c =>
+            c.id === club.id
+              ? {
+                  ...c,
+                  contributionPoints: c.contributionPoints + actualContribution,
+                  totalContributionPoints: newTotalContribution,
+                  reputation: newClubReputation,
+                  level: canLevelUp ? c.level + 1 : c.level,
+                }
+              : c
+          ),
+          tasks: newTasks,
+          contributionLogs: [contributionLog, ...state.clubs.contributionLogs].slice(0, 100),
+        },
+      };
+    }
+
+    case 'UPDATE_CLUB_TASK_PROGRESS': {
+      const amount = action.amount || 1;
+      const newTasks = calculateClubTaskProgress(
+        state.clubs.tasks,
+        action.actionType,
+        amount,
+        action.isThreeStar
+      );
+      return {
+        ...state,
+        clubs: { ...state.clubs, tasks: newTasks },
+      };
+    }
+
+    case 'PURCHASE_CLUB_SHOP_ITEM': {
+      const item = state.clubs.shopItems.find(i => i.id === action.itemId);
+      const club = state.clubs.clubs.find(c => c.id === action.clubId);
+      if (!item || !club) return state;
+      
+      if (item.stock <= 0 || item.purchasedCount >= item.purchaseLimit) return state;
+      if (club.level < item.requiredClubLevel) return state;
+      if (item.requiredClubReputation && club.reputation < item.requiredClubReputation) return state;
+      
+      const discountedCost = calculateDiscountedClubShopCost(item.cost, club.reputation);
+      
+      if (club.contributionPoints < (discountedCost.contributionPoints || 0)) return state;
+      if ((discountedCost.gold || 0) > state.resources.gold) return state;
+      if ((discountedCost.mana || 0) > state.resources.mana) return state;
+      if ((discountedCost.food || 0) > state.resources.food) return state;
+      if ((discountedCost.reputation || 0) > state.resources.reputation) return state;
+      
+      let newResources = { ...state.resources };
+      let newClubState = { ...state.clubs };
+      let newActiveBuffs = [...state.clubs.activeBuffs];
+      const events: DailyEvent[] = [];
+      
+      newResources.gold -= (discountedCost.gold || 0);
+      newResources.mana -= (discountedCost.mana || 0);
+      newResources.food -= (discountedCost.food || 0);
+      newResources.reputation -= (discountedCost.reputation || 0);
+      
+      newClubState.clubs = state.clubs.clubs.map(c =>
+        c.id === club.id
+          ? { ...c, contributionPoints: c.contributionPoints - (discountedCost.contributionPoints || 0) }
+          : c
+      );
+      
+      newClubState.shopItems = state.clubs.shopItems.map(i =>
+        i.id === item.id
+          ? { ...i, stock: i.stock - 1, purchasedCount: i.purchasedCount + 1 }
+          : i
+      );
+      
+      switch (item.effect.type) {
+        case 'resource_gain': {
+          const target = item.effect.target as keyof typeof newResources;
+          if (target && target in newResources) {
+            (newResources as any)[target] += item.effect.value;
+          }
+          break;
+        }
+        case 'reputation_boost': {
+          newResources.reputation += item.effect.value;
+          break;
+        }
+        case 'stat_buff': {
+          if (item.effect.target === 'stamina_regen') {
+            state.students.forEach(s => {
+              const idx = state.students.findIndex(st => st.id === s.id);
+              if (idx >= 0) {
+                state.students[idx].stamina = clamp(s.stamina + item.effect.value, 0, 100);
+              }
+            });
+          } else if (item.effect.target === 'morale_regen') {
+            state.students.forEach(s => {
+              const idx = state.students.findIndex(st => st.id === s.id);
+              if (idx >= 0) {
+                state.students[idx].morale = clamp(s.morale + item.effect.value, 0, 100);
+              }
+            });
+          } else if (item.effect.duration) {
+            const buff: ClubBuff = {
+              id: `buff_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              clubId: club.id,
+              name: item.name,
+              description: item.description,
+              effect: {
+                type: item.effect.target as any,
+                value: item.effect.value,
+              },
+              remainingDays: item.effect.duration,
+              totalDays: item.effect.duration,
+              source: item.id,
+            };
+            newActiveBuffs.push(buff);
+          }
+          break;
+        }
+        case 'recruit_ticket': {
+          break;
+        }
+      }
+      
+      events.push({
+        type: 'club_shop_purchase',
+        message: `🛒 从「${club.name}」商店购买了「${item.name}」`,
+        clubId: club.id,
+        clubName: club.name,
+      });
+      
+      const dailyLog: DailyLog = { day: state.day, events };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+      
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        resources: newResources,
+        clubs: {
+          ...newClubState,
+          activeBuffs: newActiveBuffs,
+        },
+      };
+    }
+
+    case 'REFRESH_CLUB_SHOP': {
+      return {
+        ...state,
+        clubs: {
+          ...state.clubs,
+          shopItems: refreshClubShop(state.clubs.shopItems),
+          shopRefreshDay: state.day,
+        },
+      };
+    }
+
+    case 'ADD_CLUB_BUFF': {
+      return {
+        ...state,
+        clubs: {
+          ...state.clubs,
+          activeBuffs: [...state.clubs.activeBuffs, action.buff],
+        },
+      };
+    }
+
+    case 'ADD_CLUB_CONTRIBUTION_LOG': {
+      return {
+        ...state,
+        clubs: {
+          ...state.clubs,
+          contributionLogs: [action.log, ...state.clubs.contributionLogs].slice(0, 100),
+        },
       };
     }
 
@@ -2114,6 +2546,26 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         }
       }
 
+      const updatedClubBuffs = state.clubs.activeBuffs
+        .map(buff => ({ ...buff, remainingDays: buff.remainingDays - 1 }))
+        .filter(buff => buff.remainingDays > 0);
+      
+      let dailyClubReputation = 0;
+      const updatedClubs = state.clubs.clubs.map(club => {
+        if (!club.unlocked) return club;
+        const repLevel = getClubReputationLevel(club.reputation);
+        const clubDailyRep = repLevel.bonuses.dailyReputationBonus;
+        dailyClubReputation += clubDailyRep;
+        return { ...club, reputation: club.reputation + clubDailyRep };
+      });
+      
+      if (dailyClubReputation > 0) {
+        todayEvents.push({
+          type: 'club_reputation_gain',
+          message: `🌟 所有社团声望每日增长 +${dailyClubReputation}`,
+        });
+      }
+      
       return {
         ...state,
         day: newDay,
@@ -2123,6 +2575,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         dailySnapshots: newDailySnapshots,
         weeklyGoals: finalWeeklyGoals,
         season: finalSeason,
+        clubs: {
+          ...state.clubs,
+          clubs: updatedClubs,
+          activeBuffs: updatedClubBuffs,
+        },
       };
     }
 
@@ -2253,6 +2710,21 @@ interface GameContextType {
   startNewSeason: () => void;
   getSeasonProgress: () => { currentDay: number; daysLeft: number; totalDays: number };
   claimSeasonSettlementReward: () => void;
+  joinClub: (clubId: string, studentId: string) => void;
+  leaveClub: (clubId: string, studentId: string) => void;
+  unlockClub: (clubId: string) => void;
+  levelUpClub: (clubId: string) => void;
+  claimClubTask: (taskId: string) => void;
+  purchaseClubShopItem: (itemId: string, clubId: string) => void;
+  refreshClubShop: () => void;
+  canUnlockClub: typeof canUnlockClub;
+  calculateClubLevelProgress: typeof calculateClubLevelProgress;
+  getClubLevelRequirement: typeof getClubLevelRequirement;
+  calculateDiscountedClubShopCost: typeof calculateDiscountedClubShopCost;
+  getClubReputationLevel: typeof getClubReputationLevel;
+  getClubMemberBonus: typeof getClubMemberBonus;
+  CLUB_REPUTATION_LEVELS: typeof CLUB_REPUTATION_LEVELS;
+  INITIAL_CLUBS: typeof INITIAL_CLUBS;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -2658,6 +3130,42 @@ export function GameProvider({ children }: { children: ReactNode }) {
     autoSaveIfEnabled();
   };
 
+  const joinClub = (clubId: string, studentId: string) => {
+    dispatch({ type: 'JOIN_CLUB', clubId, studentId });
+    dispatch({ type: 'UPDATE_CLUB_TASK_PROGRESS', actionType: 'recruit', amount: 1 });
+    autoSaveIfEnabled();
+  };
+
+  const leaveClub = (clubId: string, studentId: string) => {
+    dispatch({ type: 'LEAVE_CLUB', clubId, studentId });
+    autoSaveIfEnabled();
+  };
+
+  const unlockClub = (clubId: string) => {
+    dispatch({ type: 'UNLOCK_CLUB', clubId });
+    autoSaveIfEnabled();
+  };
+
+  const levelUpClub = (clubId: string) => {
+    dispatch({ type: 'LEVEL_UP_CLUB', clubId });
+    autoSaveIfEnabled();
+  };
+
+  const claimClubTask = (taskId: string) => {
+    dispatch({ type: 'CLAIM_CLUB_TASK', taskId });
+    autoSaveIfEnabled();
+  };
+
+  const purchaseClubShopItem = (itemId: string, clubId: string) => {
+    dispatch({ type: 'PURCHASE_CLUB_SHOP_ITEM', itemId, clubId });
+    autoSaveIfEnabled();
+  };
+
+  const refreshClubShop = () => {
+    dispatch({ type: 'REFRESH_CLUB_SHOP' });
+    autoSaveIfEnabled();
+  };
+
   return (
     <GameContext.Provider value={{ 
       state, 
@@ -2728,6 +3236,21 @@ export function GameProvider({ children }: { children: ReactNode }) {
       startNewSeason,
       getSeasonProgress,
       claimSeasonSettlementReward,
+      joinClub,
+      leaveClub,
+      unlockClub,
+      levelUpClub,
+      claimClubTask,
+      purchaseClubShopItem,
+      refreshClubShop,
+      canUnlockClub,
+      calculateClubLevelProgress,
+      getClubLevelRequirement,
+      calculateDiscountedClubShopCost,
+      getClubReputationLevel,
+      getClubMemberBonus,
+      CLUB_REPUTATION_LEVELS,
+      INITIAL_CLUBS,
     }}>
       {children}
     </GameContext.Provider>

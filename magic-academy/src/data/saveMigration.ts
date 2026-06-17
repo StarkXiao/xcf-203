@@ -13,6 +13,7 @@ import {
   INITIAL_WEEKLY_GOALS,
   INITIAL_STAGE_TASKS_STATE,
   INITIAL_SEASON_STATE,
+  INITIAL_CLUBS_STATE,
 } from './gameData';
 
 type SaveData = Record<string, unknown>;
@@ -726,6 +727,7 @@ function normalizeToGameState(data: SaveData): GameState {
     stageTasks,
     season,
     seasonHistory,
+    clubs: INITIAL_CLUBS_STATE,
   };
 }
 
