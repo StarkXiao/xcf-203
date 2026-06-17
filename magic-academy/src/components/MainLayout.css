@@ -324,10 +324,79 @@ body {
   text-align: center;
 }
 
+.student-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
 .student-name {
   font-weight: 600;
   font-size: 1.1rem;
-  margin-bottom: 0.5rem;
+}
+
+.student-quality {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.potential-badge {
+  font-size: 0.8rem;
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.student-traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 0.5rem;
+}
+
+.trait-badge {
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: help;
+}
+
+.trait-badge.trait-common {
+  background: #4b5563;
+  color: #d1d5db;
+}
+
+.trait-badge.trait-rare {
+  background: #1e40af;
+  color: #bfdbfe;
+}
+
+.trait-badge.trait-epic {
+  background: #5b21b6;
+  color: #c4b5fd;
+}
+
+.trait-badge.trait-legendary {
+  background: #c2410c;
+  color: #fed7aa;
+}
+
+.recruit-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.trait-info {
+  color: var(--primary);
+}
+
+.potential-info {
+  color: var(--warning);
 }
 
 .student-info {

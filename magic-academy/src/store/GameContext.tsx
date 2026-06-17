@@ -1,6 +1,18 @@
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
 import type { GameState, Resource, TabType, Student as StudentType } from '../types/game';
-import { INITIAL_RESOURCES, INITIAL_BUILDINGS, INITIAL_COURSES, INITIAL_DUNGEONS, generateStudentName, getRandomMagicType } from '../data/gameData';
+import { 
+  INITIAL_RESOURCES, 
+  INITIAL_BUILDINGS, 
+  INITIAL_COURSES, 
+  INITIAL_DUNGEONS, 
+  generateStudentName, 
+  getRandomMagicType,
+  generateTraits,
+  generatePotential,
+  calculateExpGain,
+  calculateCourseSpeed,
+  calculateSkillDamage,
+} from '../data/gameData';
 
 type GameAction =
   | { type: 'ADD_RESOURCE'; resource: Partial<Resource> }
@@ -133,7 +145,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             let newSkills = s.skills;
             
             if (course.effect.type === 'exp_gain') {
-              newExp += course.effect.value;
+              const expGain = calculateExpGain(course.effect.value, s);
+              newExp += expGain;
               while (newExp >= newLevel * 100) {
                 newExp -= newLevel * 100;
                 newLevel++;
@@ -141,11 +154,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             } else if (course.effect.type === 'skill_unlock' && course.magicType) {
               const skillId = `skill_${s.id}_${course.magicType}`;
               if (!newSkills.find(sk => sk.id === skillId)) {
+                const baseDamage = 20 + s.level * 5;
+                const finalDamage = calculateSkillDamage(baseDamage, s, { type: course.magicType });
                 newSkills = [...newSkills, {
                   id: skillId,
                   name: `${course.magicType}魔法`,
                   type: course.magicType,
-                  damage: 20 + s.level * 5,
+                  damage: finalDamage,
                   cost: 10,
                   description: `${course.magicType}系基础魔法`,
                 }];
@@ -186,17 +201,20 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
     case 'NEXT_DAY': {
       const courseSpeedBonus = state.buildings.find(b => b.id === 'library')?.level || 0;
-      const expMultiplier = 1 + courseSpeedBonus * 0.1;
+      const baseExpMultiplier = 1 + courseSpeedBonus * 0.1;
       
       const updatedStudents = state.students.map(student => {
         if (student.assignedCourse && student.status === 'studying') {
           const course = state.courses.find(c => c.id === student.assignedCourse);
           if (!course) return student;
           
-          const newProgress = student.courseProgress + 1;
-          const daysRemaining = student.courseDaysRemaining - 1;
+          const courseSpeed = calculateCourseSpeed(1, student);
+          const adjustedProgress = Math.min(courseSpeed, 1);
+          const newProgress = student.courseProgress + adjustedProgress;
+          const daysRemaining = student.courseDaysRemaining - adjustedProgress;
           
-          const dailyExp = Math.floor(10 * expMultiplier);
+          const baseDailyExp = 10 * baseExpMultiplier;
+          const dailyExp = calculateExpGain(baseDailyExp, student);
           let newExp = student.exp + dailyExp;
           let newLevel = student.level;
           
@@ -206,7 +224,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           }
           
           if (daysRemaining <= 0) {
-            let finalExp = newExp + (course.effect.type === 'exp_gain' ? course.effect.value : 0);
+            const baseFinalExp = course.effect.type === 'exp_gain' ? course.effect.value : 0;
+            const finalExpGain = calculateExpGain(baseFinalExp, student);
+            let finalExp = newExp + finalExpGain;
             let finalLevel = newLevel;
             let newSkills = student.skills;
             
@@ -218,11 +238,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             if (course.effect.type === 'skill_unlock' && course.magicType) {
               const skillId = `skill_${student.id}_${course.magicType}`;
               if (!newSkills.find(sk => sk.id === skillId)) {
+                const baseDamage = 20 + finalLevel * 5;
+                const finalDamage = calculateSkillDamage(baseDamage, student, { type: course.magicType });
                 newSkills = [...newSkills, {
                   id: skillId,
                   name: `${course.magicType}魔法`,
                   type: course.magicType,
-                  damage: 20 + finalLevel * 5,
+                  damage: finalDamage,
                   cost: 10,
                   description: `${course.magicType}系基础魔法`,
                 }];
@@ -320,6 +342,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const recruitStudent = (quality: 'common' | 'rare' | 'epic' | 'legendary') => {
     const levelMap = { common: 1, rare: 2, epic: 3, legendary: 5 };
+    const traits = generateTraits(quality);
+    const potential = generatePotential(quality);
+    
     const newStudent: StudentType = {
       id: `student_${state.currentStudentId}`,
       name: generateStudentName(),
@@ -332,6 +357,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
       assignedCourse: null,
       courseProgress: 0,
       courseDaysRemaining: 0,
+      quality: quality,
+      potential: potential,
+      traits: traits,
     };
     dispatch({ type: 'ADD_STUDENT', student: newStudent });
   };

@@ -32,7 +32,37 @@ export interface Student {
   assignedCourse: string | null;
   courseProgress: number;
   courseDaysRemaining: number;
+  quality: StudentQuality;
+  potential: number;
+  traits: Trait[];
 }
+
+export type StudentQuality = 'common' | 'rare' | 'epic' | 'legendary';
+
+export interface Trait {
+  id: string;
+  name: string;
+  description: string;
+  rarity: TraitRarity;
+  effects: TraitEffect[];
+}
+
+export type TraitRarity = 'common' | 'rare' | 'epic' | 'legendary';
+
+export interface TraitEffect {
+  type: TraitEffectType;
+  value: number;
+  magicType?: MagicType;
+}
+
+export type TraitEffectType = 
+  | 'exp_bonus' 
+  | 'skill_damage' 
+  | 'magic_affinity' 
+  | 'learning_speed' 
+  | 'course_speed'
+  | 'potential_growth'
+  | 'all_stats';
 
 export type MagicType = 'fire' | 'water' | 'earth' | 'wind' | 'light' | 'dark';
 

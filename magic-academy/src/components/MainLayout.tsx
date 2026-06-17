@@ -151,9 +151,27 @@ function RecruitModule() {
   };
 
   const tickets = [
-    { quality: 'common' as const, name: '普通招募', cost: { gold: 100, mana: 50, food: 0, reputation: 0 } },
-    { quality: 'rare' as const, name: '稀有招募', cost: { gold: 300, mana: 150, food: 10, reputation: 20 } },
-    { quality: 'epic' as const, name: '史诗招募', cost: { gold: 800, mana: 400, food: 30, reputation: 50 } },
+    { 
+      quality: 'common' as const, 
+      name: '普通招募', 
+      cost: { gold: 100, mana: 50, food: 0, reputation: 0 },
+      traits: '1个普通特质',
+      potential: '潜力: 0.5-1.0',
+    },
+    { 
+      quality: 'rare' as const, 
+      name: '稀有招募', 
+      cost: { gold: 300, mana: 150, food: 10, reputation: 20 },
+      traits: '1个稀有特质',
+      potential: '潜力: 0.9-1.3',
+    },
+    { 
+      quality: 'epic' as const, 
+      name: '史诗招募', 
+      cost: { gold: 800, mana: 400, food: 30, reputation: 50 },
+      traits: '2个史诗特质',
+      potential: '潜力: 1.2-1.6',
+    },
   ];
 
   const isFull = state.students.length >= getCapacity();
@@ -169,9 +187,26 @@ function RecruitModule() {
           <div className="student-grid">
             {state.students.map(student => {
               const course = student.assignedCourse ? state.courses.find(c => c.id === student.assignedCourse) : null;
+              const qualityColors: Record<string, string> = {
+                common: '#9e9e9e',
+                rare: '#2196f3',
+                epic: '#9c27b0',
+                legendary: '#ff9800',
+              };
+              const qualityNames: Record<string, string> = {
+                common: '普通',
+                rare: '稀有',
+                epic: '史诗',
+                legendary: '传说',
+              };
               return (
-                <div key={student.id} className="student-card">
-                  <div className="student-name">{student.name}</div>
+                <div key={student.id} className="student-card" style={{ borderColor: qualityColors[student.quality] || '#9e9e9e' }}>
+                  <div className="student-header">
+                    <div className="student-name">{student.name}</div>
+                    <span className="student-quality" style={{ color: qualityColors[student.quality] }}>
+                      {qualityNames[student.quality]}
+                    </span>
+                  </div>
                   <div className="student-info">
                     <span className="magic-type" data-type={student.magicType}>
                       {student.magicType === 'fire' && '🔥'}
@@ -182,6 +217,7 @@ function RecruitModule() {
                       {student.magicType === 'dark' && '🌑'}
                     </span>
                     <span>Lv.{student.level}</span>
+                    <span className="potential-badge">潜力: {student.potential.toFixed(1)}</span>
                   </div>
                   <div className="student-exp">
                     经验: {student.exp}/{student.level * 100}
@@ -190,12 +226,21 @@ function RecruitModule() {
                     {student.status === 'idle' && '🟢 空闲'}
                     {student.status === 'studying' && course && (
                       <span className="studying-info">
-                        📚 {course.name} ({student.courseDaysRemaining}天)
+                        📚 {course.name} ({student.courseDaysRemaining.toFixed(1)}天)
                       </span>
                     )}
                     {student.status === 'training' && '⚔️ 训练'}
                     {student.status === 'resting' && '😴 休息'}
                   </div>
+                  {student.traits.length > 0 && (
+                    <div className="student-traits">
+                      {student.traits.map(trait => (
+                        <span key={trait.id} className={`trait-badge trait-${trait.rarity}`} title={trait.description}>
+                          {trait.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   {student.skills.length > 0 && (
                     <div className="student-skills">
                       技能: {student.skills.map(s => s.name).join(', ')}
@@ -214,29 +259,41 @@ function RecruitModule() {
           <p className="empty-message">学员已达上限！</p>
         ) : (
           <div className="recruit-options">
-            {tickets.map(ticket => (
-              <div key={ticket.quality} className="recruit-card">
-                <h4>{ticket.name}</h4>
-                <div className="recruit-cost">
-                  <span className={ticket.cost.gold > state.resources.gold ? 'insufficient' : ''}>💰{ticket.cost.gold}</span>
-                  <span className={ticket.cost.mana > state.resources.mana ? 'insufficient' : ''}>🔮{ticket.cost.mana}</span>
-                  <span className={ticket.cost.food > state.resources.food ? 'insufficient' : ''}>🍖{ticket.cost.food}</span>
-                  <span className={ticket.cost.reputation > state.resources.reputation ? 'insufficient' : ''}>⭐{ticket.cost.reputation}</span>
+            {tickets.map(ticket => {
+              const qualityColors: Record<string, string> = {
+                common: '#9e9e9e',
+                rare: '#2196f3',
+                epic: '#9c27b0',
+                legendary: '#ff9800',
+              };
+              return (
+                <div key={ticket.quality} className="recruit-card" style={{ borderColor: qualityColors[ticket.quality] }}>
+                  <h4 style={{ color: qualityColors[ticket.quality] }}>{ticket.name}</h4>
+                  <div className="recruit-info">
+                    <span className="trait-info">{ticket.traits}</span>
+                    <span className="potential-info">{ticket.potential}</span>
+                  </div>
+                  <div className="recruit-cost">
+                    <span className={ticket.cost.gold > state.resources.gold ? 'insufficient' : ''}>💰{ticket.cost.gold}</span>
+                    <span className={ticket.cost.mana > state.resources.mana ? 'insufficient' : ''}>🔮{ticket.cost.mana}</span>
+                    <span className={ticket.cost.food > state.resources.food ? 'insufficient' : ''}>🍖{ticket.cost.food}</span>
+                    <span className={ticket.cost.reputation > state.resources.reputation ? 'insufficient' : ''}>⭐{ticket.cost.reputation}</span>
+                  </div>
+                  <button
+                    className={`recruit-btn ${ticket.quality} ${!canAfford(ticket.cost) ? 'disabled' : ''}`}
+                    onClick={() => {
+                      if (canAfford(ticket.cost)) {
+                        dispatch({ type: 'SPEND_RESOURCE', resource: ticket.cost });
+                        recruitStudent(ticket.quality);
+                      }
+                    }}
+                    disabled={!canAfford(ticket.cost)}
+                  >
+                    招募
+                  </button>
                 </div>
-                <button
-                  className={`recruit-btn ${ticket.quality} ${!canAfford(ticket.cost) ? 'disabled' : ''}`}
-                  onClick={() => {
-                    if (canAfford(ticket.cost)) {
-                      dispatch({ type: 'SPEND_RESOURCE', resource: ticket.cost });
-                      recruitStudent(ticket.quality);
-                    }
-                  }}
-                  disabled={!canAfford(ticket.cost)}
-                >
-                  招募
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
