@@ -147,7 +147,9 @@ type GameAction =
   | { type: 'PURCHASE_CLUB_SHOP_ITEM'; itemId: string; clubId: string }
   | { type: 'REFRESH_CLUB_SHOP' }
   | { type: 'ADD_CLUB_BUFF'; buff: ClubBuff; clubId: string }
-  | { type: 'ADD_CLUB_CONTRIBUTION_LOG'; log: ClubContributionLog };
+  | { type: 'ADD_CLUB_CONTRIBUTION_LOG'; log: ClubContributionLog }
+  | { type: 'USE_RECRUIT_TICKET'; quality: 'common' | 'rare' | 'epic' | 'legendary' }
+  | { type: 'ADD_RECRUIT_TICKET'; quality: 'common' | 'rare' | 'epic' | 'legendary'; amount: number };
 
 const MAX_STUDENT_CAPACITY = 20;
 
@@ -191,6 +193,12 @@ const initialState: GameState = {
       epic: 0,
       legendary: 0,
     },
+  },
+  recruitTickets: {
+    common: 0,
+    rare: 0,
+    epic: 0,
+    legendary: 0,
   },
   goalProgress: INITIAL_GOAL_PROGRESS,
   weeklyGoals: INITIAL_WEEKLY_GOALS,
@@ -1902,7 +1910,26 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           break;
         }
         case 'recruit_ticket': {
-          break;
+          const ticketQuality = item.effect.quality as 'common' | 'rare' | 'epic' | 'legendary';
+          const ticketValue = item.effect.value || 1;
+          newClubState.clubs = newClubState.clubs.map(c =>
+            c.id === club.id
+              ? { ...c, contributionPoints: c.contributionPoints - (discountedCost.contributionPoints || 0) }
+              : c
+          );
+          return {
+            ...state,
+            resources: newResources,
+            clubs: {
+              ...newClubState,
+              activeBuffs: newActiveBuffs,
+            },
+            recruitTickets: {
+              ...state.recruitTickets,
+              [ticketQuality]: state.recruitTickets[ticketQuality] + ticketValue,
+            },
+            dailyLogs: recentLogs,
+          };
         }
       }
       
@@ -1955,6 +1982,28 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         clubs: {
           ...state.clubs,
           contributionLogs: [action.log, ...state.clubs.contributionLogs].slice(0, 100),
+        },
+      };
+    }
+
+    case 'USE_RECRUIT_TICKET': {
+      const currentTickets = state.recruitTickets[action.quality];
+      if (currentTickets <= 0) return state;
+      return {
+        ...state,
+        recruitTickets: {
+          ...state.recruitTickets,
+          [action.quality]: currentTickets - 1,
+        },
+      };
+    }
+
+    case 'ADD_RECRUIT_TICKET': {
+      return {
+        ...state,
+        recruitTickets: {
+          ...state.recruitTickets,
+          [action.quality]: state.recruitTickets[action.quality] + action.amount,
         },
       };
     }
@@ -2725,6 +2774,8 @@ interface GameContextType {
   getClubMemberBonus: typeof getClubMemberBonus;
   CLUB_REPUTATION_LEVELS: typeof CLUB_REPUTATION_LEVELS;
   INITIAL_CLUBS: typeof INITIAL_CLUBS;
+  useRecruitTicket: (quality: 'common' | 'rare' | 'epic' | 'legendary') => boolean;
+  addRecruitTicket: (quality: 'common' | 'rare' | 'epic' | 'legendary', amount: number) => void;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -3163,6 +3214,17 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const refreshClubShop = () => {
     dispatch({ type: 'REFRESH_CLUB_SHOP' });
+    autoSaveIfEnabled();
+  };
+
+  const useRecruitTicket = (quality: 'common' | 'rare' | 'epic' | 'legendary'): boolean => {
+    if (state.recruitTickets[quality] <= 0) return false;
+    dispatch({ type: 'USE_RECRUIT_TICKET', quality });
+    return true;
+  };
+
+  const addRecruitTicket = (quality: 'common' | 'rare' | 'epic' | 'legendary', amount: number) => {
+    dispatch({ type: 'ADD_RECRUIT_TICKET', quality, amount });
     autoSaveIfEnabled();
   };
 

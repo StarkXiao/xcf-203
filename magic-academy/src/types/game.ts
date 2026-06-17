@@ -426,6 +426,8 @@ export interface GachaHistory {
   qualityCounts: Record<StudentQuality, number>;
 }
 
+export type RecruitTickets = Record<StudentQuality, number>;
+
 export interface GameState {
   saveVersion: number;
   resources: Resource;
@@ -444,6 +446,7 @@ export interface GameState {
   autoSaveConfig: AutoSaveConfig;
   pityCounters: PityCounter;
   gachaHistory: GachaHistory;
+  recruitTickets: RecruitTickets;
   goalProgress: GoalProgress;
   weeklyGoals: WeeklyGoalsState;
   stageTasks: StageTasksState;
