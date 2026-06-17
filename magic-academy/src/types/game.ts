@@ -30,6 +30,8 @@ export interface Student {
   status: StudentStatus;
   assignedBuilding: string | null;
   assignedCourse: string | null;
+  courseProgress: number;
+  courseDaysRemaining: number;
 }
 
 export type MagicType = 'fire' | 'water' | 'earth' | 'wind' | 'light' | 'dark';

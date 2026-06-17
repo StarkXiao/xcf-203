@@ -1,6 +1,6 @@
 import React from 'react';
 import { useGame } from '../store/GameContext';
-import type { TabType, Dungeon as DungeonType, Student as StudentType } from '../types/game';
+import type { TabType, Dungeon as DungeonType, Student as StudentType, Course as CourseType } from '../types/game';
 import './MainLayout.css';
 
 interface TabConfig {
@@ -167,31 +167,43 @@ function RecruitModule() {
           <p className="empty-message">还没有学员，快去招募吧！</p>
         ) : (
           <div className="student-grid">
-            {state.students.map(student => (
-              <div key={student.id} className="student-card">
-                <div className="student-name">{student.name}</div>
-                <div className="student-info">
-                  <span className="magic-type" data-type={student.magicType}>
-                    {student.magicType === 'fire' && '🔥'}
-                    {student.magicType === 'water' && '💧'}
-                    {student.magicType === 'earth' && '🪨'}
-                    {student.magicType === 'wind' && '💨'}
-                    {student.magicType === 'light' && '✨'}
-                    {student.magicType === 'dark' && '🌑'}
-                  </span>
-                  <span>Lv.{student.level}</span>
+            {state.students.map(student => {
+              const course = student.assignedCourse ? state.courses.find(c => c.id === student.assignedCourse) : null;
+              return (
+                <div key={student.id} className="student-card">
+                  <div className="student-name">{student.name}</div>
+                  <div className="student-info">
+                    <span className="magic-type" data-type={student.magicType}>
+                      {student.magicType === 'fire' && '🔥'}
+                      {student.magicType === 'water' && '💧'}
+                      {student.magicType === 'earth' && '🪨'}
+                      {student.magicType === 'wind' && '💨'}
+                      {student.magicType === 'light' && '✨'}
+                      {student.magicType === 'dark' && '🌑'}
+                    </span>
+                    <span>Lv.{student.level}</span>
+                  </div>
+                  <div className="student-exp">
+                    经验: {student.exp}/{student.level * 100}
+                  </div>
+                  <div className="student-status">
+                    {student.status === 'idle' && '🟢 空闲'}
+                    {student.status === 'studying' && course && (
+                      <span className="studying-info">
+                        📚 {course.name} ({student.courseDaysRemaining}天)
+                      </span>
+                    )}
+                    {student.status === 'training' && '⚔️ 训练'}
+                    {student.status === 'resting' && '😴 休息'}
+                  </div>
+                  {student.skills.length > 0 && (
+                    <div className="student-skills">
+                      技能: {student.skills.map(s => s.name).join(', ')}
+                    </div>
+                  )}
                 </div>
-                <div className="student-exp">
-                  经验: {student.exp}/{student.level * 100}
-                </div>
-                <div className="student-status">
-                  {student.status === 'idle' && '🟢 空闲'}
-                  {student.status === 'studying' && '📚 学习'}
-                  {student.status === 'training' && '⚔️ 训练'}
-                  {student.status === 'resting' && '😴 休息'}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -233,45 +245,73 @@ function RecruitModule() {
 }
 
 function CourseModule() {
-  const { state, dispatch } = useGame();
+  const { state, dispatch, canAfford } = useGame();
 
-  const availableStudents = state.students.filter(s => s.status === 'idle' && !s.assignedCourse);
+  const availableStudents = state.students.filter(s => s.status === 'idle');
+  const studyingStudents = state.students.filter(s => s.status === 'studying');
 
   const handleAssignCourse = (studentId: string, courseId: string) => {
-    dispatch({ type: 'ASSIGN_STUDENT_TO_COURSE', studentId, courseId });
-    const student = state.students.find(s => s.id === studentId);
-    if (student) {
-      dispatch({ type: 'UPDATE_STUDENT', student: { ...student, status: 'studying' } });
-    }
+    const course = state.courses.find(c => c.id === courseId);
+    if (!course) return;
+    if (!canAfford(course.cost)) return;
+    
+    dispatch({ type: 'SPEND_RESOURCE', resource: course.cost });
+    dispatch({ type: 'ASSIGN_STUDENT_TO_COURSE', studentId, courseId, courseDuration: course.duration });
   };
 
   return (
     <div className="module course-module">
       <h2>📚 课程安排</h2>
-      <div className="course-grid">
-        {state.courses.map(course => (
-          <div key={course.id} className="course-card">
-            <div className="course-header">
-              <h3>{course.name}</h3>
-              <span className="course-level">Lv.{course.level}</span>
-            </div>
-            <div className="course-info">
-              <span>⏱️ 持续 {course.duration} 天</span>
-              <span>📖 所需等级 Lv.{course.requiredLevel}</span>
-            </div>
-            <div className="course-effect">
-              {course.effect.type === 'exp_gain' && `经验 +${course.effect.value}`}
-              {course.effect.type === 'skill_unlock' && `解锁技能`}
-              {course.effect.type === 'stat_boost' && `属性 +${course.effect.value}`}
-            </div>
-            <div className="course-cost">
-              <span>💰{course.cost.gold}</span>
-              <span>🔮{course.cost.mana}</span>
-              <span>🍖{course.cost.food}</span>
-              <span>⭐{course.cost.reputation}</span>
-            </div>
+      
+      <div className="studying-section">
+        <h3>正在上课的学员</h3>
+        {studyingStudents.length === 0 ? (
+          <p className="empty-message">没有学员正在上课</p>
+        ) : (
+          <div className="studying-list">
+            {studyingStudents.map(student => {
+              const course = state.courses.find(c => c.id === student.assignedCourse);
+              return (
+                <div key={student.id} className="studying-item">
+                  <span className="student-name">{student.name}</span>
+                  <span className="course-name">{course?.name || '未知课程'}</span>
+                  <span className="course-progress">
+                    进度: {student.courseProgress}/{course?.duration || 0} ({student.courseDaysRemaining}天剩余)
+                  </span>
+                </div>
+              );
+            })}
           </div>
-        ))}
+        )}
+      </div>
+
+      <div className="course-list">
+        <h3>可选课程</h3>
+        <div className="course-grid">
+          {state.courses.map(course => (
+            <div key={course.id} className="course-card">
+              <div className="course-header">
+                <h3>{course.name}</h3>
+                <span className="course-level">Lv.{course.level}</span>
+              </div>
+              <div className="course-info">
+                <span>⏱️ 持续 {course.duration} 天</span>
+                <span>📖 所需等级 Lv.{course.requiredLevel}</span>
+              </div>
+              <div className="course-effect">
+                {course.effect.type === 'exp_gain' && `经验 +${course.effect.value}`}
+                {course.effect.type === 'skill_unlock' && course.magicType && `解锁 ${course.magicType} 技能`}
+                {course.effect.type === 'stat_boost' && `属性 +${course.effect.value}`}
+              </div>
+              <div className="course-cost">
+                <span className={course.cost.gold > state.resources.gold ? 'insufficient' : ''}>💰{course.cost.gold}</span>
+                <span className={course.cost.mana > state.resources.mana ? 'insufficient' : ''}>🔮{course.cost.mana}</span>
+                <span className={course.cost.food > state.resources.food ? 'insufficient' : ''}>🍖{course.cost.food}</span>
+                <span className={course.cost.reputation > state.resources.reputation ? 'insufficient' : ''}>⭐{course.cost.reputation}</span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="assignment-section">
@@ -297,7 +337,7 @@ function CourseModule() {
                   {state.courses
                     .filter(c => c.requiredLevel <= student.level)
                     .map(course => (
-                      <option key={course.id} value={course.id}>{course.name}</option>
+                      <option key={course.id} value={course.id}>{course.name} ({course.duration}天)</option>
                     ))}
                 </select>
               </div>
@@ -352,6 +392,7 @@ function DungeonModule() {
         <DungeonBattle
           dungeon={state.dungeons.find(d => d.id === selectedDungeon)!}
           students={state.students}
+          courses={state.courses}
           onClose={() => setSelectedDungeon(null)}
           onComplete={() => {
             dispatch({ type: 'COMPLETE_DUNGEON', dungeonId: selectedDungeon });
@@ -366,21 +407,27 @@ function DungeonModule() {
 interface DungeonBattleProps {
   dungeon: DungeonType;
   students: StudentType[];
+  courses: CourseType[];
   onClose: () => void;
   onComplete: () => void;
 }
 
-function DungeonBattle({ dungeon, students, onClose, onComplete }: DungeonBattleProps) {
+function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: DungeonBattleProps) {
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const [battleStarted, setBattleStarted] = React.useState(false);
   const [selectedTeam, setSelectedTeam] = React.useState<string[]>([]);
+  const [battleResult, setBattleResult] = React.useState<'win' | 'lose' | null>(null);
+  
   const battleRef = React.useRef<{
-    playerTeam: (StudentType & { hp: number })[];
+    playerTeam: (StudentType & { hp: number; maxHp: number })[];
     enemyTeam: Enemy[];
     currentWave: number;
     totalWaves: number;
     battleEnded: boolean;
     animationId: number | null;
+    playerActionTimer: number;
+    enemyActionTimer: number;
+    attackLog: string[];
   }>({
     playerTeam: [],
     enemyTeam: [],
@@ -388,35 +435,52 @@ function DungeonBattle({ dungeon, students, onClose, onComplete }: DungeonBattle
     totalWaves: dungeon.waves,
     battleEnded: false,
     animationId: null,
+    playerActionTimer: 0,
+    enemyActionTimer: 0,
+    attackLog: [],
   });
 
   const eligibleStudents = students.filter(s => s.level >= dungeon.requiredLevel);
 
   const generateEnemies = (wave: number): Enemy[] => {
     const count = Math.min(1 + Math.floor(wave / 2), 3);
-    return Array.from({ length: count }, (_, i) => ({
-      id: `enemy_${wave}_${i}`,
-      name: wave === dungeon.waves ? 'Boss' : `怪物 ${i + 1}`,
-      hp: 50 + wave * 30 + Math.floor(Math.random() * 20),
-      maxHp: 50 + wave * 30 + Math.floor(Math.random() * 20),
-      damage: 10 + wave * 5,
-      type: 'fire',
-      isBoss: wave === dungeon.waves,
-    }));
+    const baseHp = 50 + wave * 30;
+    const baseDamage = 10 + wave * 5;
+    
+    return Array.from({ length: count }, (_, i) => {
+      const isBoss = wave === dungeon.waves && i === count - 1;
+      return {
+        id: `enemy_${wave}_${i}`,
+        name: isBoss ? 'Boss' : `怪物 ${i + 1}`,
+        hp: isBoss ? baseHp * 2 : baseHp + Math.floor(Math.random() * 20),
+        maxHp: isBoss ? baseHp * 2 : baseHp + Math.floor(Math.random() * 20),
+        damage: isBoss ? baseDamage * 1.5 : baseDamage,
+        type: 'fire',
+        isBoss,
+      };
+    });
   };
 
   const startBattle = () => {
     if (selectedTeam.length === 0) return;
     const team = eligibleStudents.filter(s => selectedTeam.includes(s.id));
     battleRef.current = {
-      playerTeam: team.map(s => ({ ...s, hp: 100 + s.level * 20 })),
+      playerTeam: team.map(s => ({ 
+        ...s, 
+        hp: 100 + s.level * 20 + s.skills.length * 10,
+        maxHp: 100 + s.level * 20 + s.skills.length * 10
+      })),
       enemyTeam: generateEnemies(1),
       currentWave: 1,
       totalWaves: dungeon.waves,
       battleEnded: false,
       animationId: null,
+      playerActionTimer: 0,
+      enemyActionTimer: 0,
+      attackLog: [],
     };
     setBattleStarted(true);
+    setBattleResult(null);
   };
 
   React.useEffect(() => {
@@ -427,67 +491,124 @@ function DungeonBattle({ dungeon, students, onClose, onComplete }: DungeonBattle
     if (!ctx) return;
 
     let lastTime = 0;
-    let enemyActionTimer = 0;
 
     const gameLoop = (timestamp: number) => {
       if (battleRef.current.battleEnded) return;
 
       const deltaTime = timestamp - lastTime;
       lastTime = timestamp;
-      enemyActionTimer += deltaTime;
+      
+      battleRef.current.playerActionTimer += deltaTime;
+      battleRef.current.enemyActionTimer += deltaTime;
 
       ctx.fillStyle = '#1a1a2e';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       ctx.fillStyle = '#fff';
-      ctx.font = '16px Arial';
+      ctx.font = 'bold 18px Arial';
       ctx.fillText(`第 ${battleRef.current.currentWave}/${battleRef.current.totalWaves} 波`, 10, 25);
 
-      const { playerTeam, enemyTeam } = battleRef.current;
+      const { playerTeam, enemyTeam, attackLog } = battleRef.current;
+
+      const playerBaseDamage = 15;
+      const playerAttackInterval = 1500;
+      const enemyAttackInterval = 2000;
+
+      if (battleRef.current.playerActionTimer > playerAttackInterval && enemyTeam.length > 0 && playerTeam.length > 0) {
+        battleRef.current.playerActionTimer = 0;
+        
+        const attacker = playerTeam[Math.floor(Math.random() * playerTeam.length)];
+        const target = enemyTeam[Math.floor(Math.random() * enemyTeam.length)];
+        
+        const skillBonus = attacker.skills.length > 0 ? attacker.skills[0].damage : 0;
+        const damage = playerBaseDamage + attacker.level * 3 + skillBonus;
+        
+        target.hp -= damage;
+        attackLog.push(`${attacker.name} 对 ${target.name} 造成 ${damage} 伤害`);
+        
+        if (attackLog.length > 5) attackLog.shift();
+        
+        if (target.hp <= 0) {
+          battleRef.current.enemyTeam = enemyTeam.filter(e => e.hp > 0);
+          attackLog.push(`${target.name} 被击败！`);
+        }
+      }
+
+      if (battleRef.current.enemyActionTimer > enemyAttackInterval && enemyTeam.length > 0 && playerTeam.length > 0) {
+        battleRef.current.enemyActionTimer = 0;
+        
+        const attacker = enemyTeam[Math.floor(Math.random() * enemyTeam.length)];
+        const target = playerTeam[Math.floor(Math.random() * playerTeam.length)];
+        
+        target.hp -= attacker.damage;
+        attackLog.push(`${attacker.name} 对 ${target.name} 造成 ${Math.floor(attacker.damage)} 伤害`);
+        
+        if (attackLog.length > 5) attackLog.shift();
+        
+        if (target.hp <= 0) {
+          battleRef.current.playerTeam = playerTeam.filter(p => p.hp > 0);
+          attackLog.push(`${target.name} 被击败！`);
+        }
+      }
+
+      ctx.font = '14px Arial';
+      ctx.fillStyle = '#aaa';
+      attackLog.forEach((log, i) => {
+        ctx.fillText(log, 10, 280 - i * 18);
+      });
 
       playerTeam.forEach((student, i) => {
-        ctx.fillStyle = '#4CAF50';
-        ctx.fillRect(50, 50 + i * 60, 150, 40);
+        const hpPercent = student.hp / student.maxHp;
+        ctx.fillStyle = hpPercent > 0.5 ? '#4CAF50' : hpPercent > 0.25 ? '#FF9800' : '#f44336';
+        ctx.fillRect(50, 50 + i * 70, 150, 50);
+        
         ctx.fillStyle = '#fff';
-        ctx.fillText(`${student.name}`, 55, 75 + i * 60);
-        ctx.fillText(`HP: ${student.hp}`, 55, 90 + i * 60);
+        ctx.font = 'bold 14px Arial';
+        ctx.fillText(`${student.name}`, 55, 70 + i * 70);
+        ctx.font = '12px Arial';
+        ctx.fillText(`HP: ${Math.max(0, Math.floor(student.hp))}/${student.maxHp}`, 55, 90 + i * 70);
+        
+        ctx.fillStyle = '#333';
+        ctx.fillRect(50, 50 + i * 70 + 52, 150, 8);
+        ctx.fillStyle = hpPercent > 0.5 ? '#4CAF50' : hpPercent > 0.25 ? '#FF9800' : '#f44336';
+        ctx.fillRect(50, 50 + i * 70 + 52, 150 * Math.max(0, hpPercent), 8);
       });
 
       enemyTeam.forEach((enemy, i) => {
+        const hpPercent = enemy.hp / enemy.maxHp;
         ctx.fillStyle = enemy.isBoss ? '#f44336' : '#e91e63';
-        ctx.fillRect(350, 50 + i * 60, 150, 40);
+        ctx.fillRect(350, 50 + i * 70, 150, 50);
+        
         ctx.fillStyle = '#fff';
-        ctx.fillText(`${enemy.name}`, 355, 75 + i * 60);
-        ctx.fillText(`HP: ${enemy.hp}/${enemy.maxHp}`, 355, 90 + i * 60);
+        ctx.font = 'bold 14px Arial';
+        ctx.fillText(`${enemy.name}`, 355, 70 + i * 70);
+        ctx.font = '12px Arial';
+        ctx.fillText(`HP: ${Math.max(0, Math.floor(enemy.hp))}/${enemy.maxHp}`, 355, 90 + i * 70);
+        
+        ctx.fillStyle = '#333';
+        ctx.fillRect(350, 50 + i * 70 + 52, 150, 8);
+        ctx.fillStyle = enemy.isBoss ? '#f44336' : '#e91e63';
+        ctx.fillRect(350, 50 + i * 70 + 52, 150 * Math.max(0, hpPercent), 8);
       });
-
-      if (enemyActionTimer > 2000) {
-        enemyActionTimer = 0;
-        if (enemyTeam.length > 0 && playerTeam.length > 0) {
-          const target = playerTeam[Math.floor(Math.random() * playerTeam.length)];
-          const attacker = enemyTeam[Math.floor(Math.random() * enemyTeam.length)];
-          target.hp -= attacker.damage;
-          if (target.hp <= 0) {
-            battleRef.current.playerTeam = playerTeam.filter(s => s.id !== target.id);
-          }
-        }
-      }
 
       if (playerTeam.length === 0) {
         battleRef.current.battleEnded = true;
         ctx.fillStyle = '#f44336';
-        ctx.font = '32px Arial';
+        ctx.font = 'bold 32px Arial';
         ctx.fillText('战斗失败！', canvas.width / 2 - 80, canvas.height / 2);
+        setBattleResult('lose');
       } else if (enemyTeam.length === 0) {
         if (battleRef.current.currentWave < battleRef.current.totalWaves) {
           battleRef.current.currentWave++;
           battleRef.current.enemyTeam = generateEnemies(battleRef.current.currentWave);
+          battleRef.current.attackLog.push(`进入第 ${battleRef.current.currentWave} 波！`);
         } else {
           battleRef.current.battleEnded = true;
           ctx.fillStyle = '#4CAF50';
-          ctx.font = '32px Arial';
+          ctx.font = 'bold 32px Arial';
           ctx.fillText('战斗胜利！', canvas.width / 2 - 80, canvas.height / 2);
-          setTimeout(() => onComplete(), 1000);
+          setBattleResult('win');
+          setTimeout(() => onComplete(), 1500);
         }
       }
 
@@ -509,24 +630,32 @@ function DungeonBattle({ dungeon, students, onClose, onComplete }: DungeonBattle
         <h3>{dungeon.name}</h3>
         {!battleStarted ? (
           <div className="team-selection">
-            <p>选择参战学员 (至少1人):</p>
+            <p>选择参战学员 (至少1人，推荐2-3人):</p>
             <div className="team-select-grid">
-              {eligibleStudents.map(student => (
-                <label key={student.id} className="team-member-option">
-                  <input
-                    type="checkbox"
-                    checked={selectedTeam.includes(student.id)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedTeam([...selectedTeam, student.id]);
-                      } else {
-                        setSelectedTeam(selectedTeam.filter(id => id !== student.id));
-                      }
-                    }}
-                  />
-                  <span>{student.name} (Lv.{student.level})</span>
-                </label>
-              ))}
+              {eligibleStudents.map(student => {
+                const course = student.assignedCourse ? courses.find(c => c.id === student.assignedCourse) : null;
+                return (
+                  <label key={student.id} className={`team-member-option ${student.status !== 'idle' ? 'disabled' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={selectedTeam.includes(student.id)}
+                      disabled={student.status !== 'idle'}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedTeam([...selectedTeam, student.id]);
+                        } else {
+                          setSelectedTeam(selectedTeam.filter(id => id !== student.id));
+                        }
+                      }}
+                    />
+                    <span>
+                      {student.name} (Lv.{student.level})
+                      {student.skills.length > 0 && ` [${student.skills.length}技能]`}
+                      {student.status !== 'idle' && course && ` - 正在${course.name}`}
+                    </span>
+                  </label>
+                );
+              })}
             </div>
             <div className="battle-actions">
               <button onClick={startBattle} disabled={selectedTeam.length === 0}>开始战斗</button>
@@ -536,6 +665,12 @@ function DungeonBattle({ dungeon, students, onClose, onComplete }: DungeonBattle
         ) : (
           <div className="battle-arena">
             <canvas ref={canvasRef} width={550} height={300} />
+            {battleResult === 'lose' && (
+              <div className="battle-result lose">
+                <p>战斗失败，学员需要更多训练！</p>
+                <button onClick={onClose}>返回</button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -547,37 +682,56 @@ function SettlementModule() {
   const { state, dispatch } = useGame();
   const [daysToAdvance, setDaysToAdvance] = React.useState(1);
 
+  const libraryLevel = state.buildings.find(b => b.id === 'library')?.level || 0;
+  const diningHallLevel = state.buildings.find(b => b.id === 'dining_hall')?.level || 0;
+  const manaTowerLevel = state.buildings.find(b => b.id === 'mana_tower')?.level || 0;
+
   const dailyIncome = {
-    gold: 50 + state.buildings.filter(b => b.id === 'dining_hall').reduce((acc, b) => acc + b.level * 5, 0),
-    mana: 30 + state.buildings.filter(b => b.id === 'mana_tower').reduce((acc, b) => acc + b.level * 10, 0),
-    food: 10 + state.buildings.filter(b => b.id === 'dining_hall').reduce((acc, b) => acc + b.level * 3, 0),
-    reputation: 5,
+    gold: 50 + diningHallLevel * 5,
+    mana: 30 + manaTowerLevel * 10,
+    food: 10 + diningHallLevel * 3,
+    reputation: 5 + diningHallLevel * 2,
   };
+
+  const foodConsumption = Math.ceil(state.students.length * 0.5);
+  const studyingCount = state.students.filter(s => s.status === 'studying').length;
 
   return (
     <div className="module settlement-module">
       <h2>💰 资源结算</h2>
 
       <div className="daily-production">
-        <h3>每日产出</h3>
+        <h3>每日产出与消耗</h3>
         <div className="production-grid">
           <div className="production-item">
             <span>💰 金币</span>
-            <span>+{dailyIncome.gold}</span>
+            <span className="positive">+{dailyIncome.gold}</span>
           </div>
           <div className="production-item">
             <span>🔮 魔力</span>
-            <span>+{dailyIncome.mana}</span>
+            <span className="positive">+{dailyIncome.mana}</span>
           </div>
           <div className="production-item">
             <span>🍖 食物</span>
-            <span>+{dailyIncome.food - Math.ceil(state.students.length * 0.5)} (消耗: -{Math.ceil(state.students.length * 0.5)})</span>
+            <span>+{dailyIncome.food} -{foodConsumption} = {dailyIncome.food - foodConsumption}</span>
           </div>
           <div className="production-item">
             <span>⭐ 声望</span>
-            <span>+{dailyIncome.reputation}</span>
+            <span className="positive">+{dailyIncome.reputation}</span>
           </div>
         </div>
+        
+        <div className="production-bonus">
+          <p>📚 图书馆 Lv.{libraryLevel}: 课程经验 +{libraryLevel * 10}%</p>
+          <p>🍽️ 餐厅 Lv.{diningHallLevel}: 产出 +{diningHallLevel * 5}金币, +{diningHallLevel * 3}食物</p>
+          <p>🔮 魔力塔 Lv.{manaTowerLevel}: 魔力 +{manaTowerLevel * 10}</p>
+        </div>
+        
+        {studyingCount > 0 && (
+          <div className="studying-status">
+            <p>📖 {studyingCount} 名学员正在上课，推进时间可获得经验</p>
+          </div>
+        )}
       </div>
 
       <div className="advance-time">
@@ -598,14 +752,17 @@ function SettlementModule() {
                 dispatch({ type: 'NEXT_DAY' });
               }
             }}
-            disabled={state.resources.food < Math.ceil(state.students.length * 0.5 * daysToAdvance)}
+            disabled={state.resources.food < foodConsumption * daysToAdvance}
           >
             推进 {daysToAdvance} 天
           </button>
         </div>
         <p className="warning">
-          {state.resources.food < Math.ceil(state.students.length * 0.5 * daysToAdvance) &&
-            '食物不足！'}
+          {state.resources.food < foodConsumption * daysToAdvance &&
+            `食物不足！需要 ${foodConsumption * daysToAdvance}，当前 ${state.resources.food}`}
+        </p>
+        <p className="tip">
+          💡 推进时间会让正在上课的学员获得经验，课程完成后学员会自动结课
         </p>
       </div>
 
@@ -641,6 +798,8 @@ function SettlementModule() {
 function SettingsModule() {
   const { state, saveGame, loadGame, dispatch } = useGame();
 
+  const totalSkills = state.students.reduce((acc, s) => acc + s.skills.length, 0);
+
   return (
     <div className="module settings-module">
       <h2>⚙️ 设置存档</h2>
@@ -668,12 +827,20 @@ function SettingsModule() {
         <h3>游戏统计</h3>
         <div className="stats-grid">
           <div className="stat-item">
-            <span>🏰 学院等级</span>
+            <span>🏰 最高建筑等级</span>
             <span>{Math.max(...state.buildings.map(b => b.level))}</span>
           </div>
           <div className="stat-item">
             <span>👥 学员数量</span>
             <span>{state.students.length}</span>
+          </div>
+          <div className="stat-item">
+            <span>📊 学员总等级</span>
+            <span>{state.students.reduce((acc, s) => acc + s.level, 0)}</span>
+          </div>
+          <div className="stat-item">
+            <span>✨ 已解锁技能</span>
+            <span>{totalSkills}</span>
           </div>
           <div className="stat-item">
             <span>⚔️ 通关副本</span>
@@ -686,9 +853,24 @@ function SettingsModule() {
         </div>
       </div>
 
+      <div className="game-guide">
+        <h3>游戏指南</h3>
+        <div className="guide-content">
+          <p><strong>玩法循环：</strong></p>
+          <ol>
+            <li>招募学员消耗金币/魔力</li>
+            <li>安排学员上课消耗资源，获得经验和技能</li>
+            <li>升级建筑增加学员容量和产出</li>
+            <li>挑战副本获得大量资源奖励</li>
+            <li>推进时间让学员成长，课程自动完成</li>
+          </ol>
+          <p><strong>建议：</strong>先招募学员，上课获取技能，再挑战副本获取资源升级建筑</p>
+        </div>
+      </div>
+
       <div className="about-section">
         <h3>关于游戏</h3>
-        <p>魔法学院经营游戏 v1.0</p>
+        <p>魔法学院经营游戏 v1.1</p>
         <p>使用 React + TypeScript + Canvas API 构建</p>
       </div>
     </div>
