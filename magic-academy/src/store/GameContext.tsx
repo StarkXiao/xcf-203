@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, Dungeon } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
   INITIAL_BUILDINGS, 
@@ -46,6 +46,10 @@ type GameAction =
   | { type: 'ASSIGN_STUDENT_TO_COURSE'; studentId: string; courseId: string | null; courseDuration: number }
   | { type: 'ASSIGN_STUDENT_TO_REST'; studentId: string }
   | { type: 'COMPLETE_COURSE'; studentId: string; courseId: string }
+  | { type: 'QUEUE_COURSE'; studentId: string; courseId: string; day: number }
+  | { type: 'REMOVE_FROM_QUEUE'; studentId: string; queueIndex: number }
+  | { type: 'REORDER_QUEUE'; studentId: string; fromIndex: number; toIndex: number }
+  | { type: 'START_NEXT_COURSE'; studentId: string }
   | { type: 'START_DUNGEON'; dungeonId: string }
   | { type: 'COMPLETE_DUNGEON'; dungeonId: string; stars: number; survivingMembers: number; totalMembers: number; averageHpPercent: number; totalTurns: number; team: string[] }
   | { type: 'SWEEP_DUNGEON'; dungeonId: string }
@@ -175,7 +179,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case 'COMPLETE_COURSE': {
       const course = state.courses.find(c => c.id === action.courseId);
       if (!course) return state;
-      return {
+      
+      let newState = {
         ...state,
         students: state.students.map(s => {
           if (s.id === action.studentId) {
@@ -220,6 +225,134 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           return s;
         }),
       };
+      
+      const student = newState.students.find(s => s.id === action.studentId);
+      if (student && student.courseQueue && student.courseQueue.length > 0) {
+        const nextQueued = student.courseQueue[0];
+        const nextCourse = newState.courses.find(c => c.id === nextQueued.courseId);
+        if (nextCourse && newState.resources.gold >= nextCourse.cost.gold &&
+            newState.resources.mana >= nextCourse.cost.mana &&
+            newState.resources.food >= nextCourse.cost.food &&
+            newState.resources.reputation >= nextCourse.cost.reputation &&
+            nextCourse.requiredLevel <= student.level) {
+          newState = {
+            ...newState,
+            resources: {
+              gold: newState.resources.gold - nextCourse.cost.gold,
+              mana: newState.resources.mana - nextCourse.cost.mana,
+              food: newState.resources.food - nextCourse.cost.food,
+              reputation: newState.resources.reputation - nextCourse.cost.reputation,
+            },
+            students: newState.students.map(s => {
+              if (s.id === action.studentId) {
+                return {
+                  ...s,
+                  assignedCourse: nextCourse.id,
+                  status: 'studying' as const,
+                  courseProgress: 0,
+                  courseDaysRemaining: nextCourse.duration,
+                  courseQueue: s.courseQueue.slice(1),
+                };
+              }
+              return s;
+            }),
+          };
+        }
+      }
+      
+      return newState;
+    }
+
+    case 'QUEUE_COURSE': {
+      const course = state.courses.find(c => c.id === action.courseId);
+      const student = state.students.find(s => s.id === action.studentId);
+      if (!course || !student) return state;
+      
+      if (student.assignedCourse === action.courseId) return state;
+      if (student.courseQueue.some(q => q.courseId === action.courseId)) return state;
+      if (course.requiredLevel > student.level) return state;
+      
+      return {
+        ...state,
+        students: state.students.map(s => {
+          if (s.id === action.studentId) {
+            return {
+              ...s,
+              courseQueue: [...s.courseQueue, { courseId: action.courseId, addedAt: action.day }],
+            };
+          }
+          return s;
+        }),
+      };
+    }
+
+    case 'REMOVE_FROM_QUEUE': {
+      return {
+        ...state,
+        students: state.students.map(s => {
+          if (s.id === action.studentId) {
+            const newQueue = [...s.courseQueue];
+            newQueue.splice(action.queueIndex, 1);
+            return { ...s, courseQueue: newQueue };
+          }
+          return s;
+        }),
+      };
+    }
+
+    case 'REORDER_QUEUE': {
+      return {
+        ...state,
+        students: state.students.map(s => {
+          if (s.id === action.studentId) {
+            const newQueue = [...s.courseQueue];
+            const [removed] = newQueue.splice(action.fromIndex, 1);
+            newQueue.splice(action.toIndex, 0, removed);
+            return { ...s, courseQueue: newQueue };
+          }
+          return s;
+        }),
+      };
+    }
+
+    case 'START_NEXT_COURSE': {
+      const student = state.students.find(s => s.id === action.studentId);
+      if (!student || !student.courseQueue || student.courseQueue.length === 0) return state;
+      if (student.status !== 'idle') return state;
+      
+      const nextQueued = student.courseQueue[0];
+      const nextCourse = state.courses.find(c => c.id === nextQueued.courseId);
+      if (!nextCourse) return state;
+      if (state.resources.gold < nextCourse.cost.gold ||
+          state.resources.mana < nextCourse.cost.mana ||
+          state.resources.food < nextCourse.cost.food ||
+          state.resources.reputation < nextCourse.cost.reputation) {
+        return state;
+      }
+      if (nextCourse.requiredLevel > student.level) return state;
+      
+      return {
+        ...state,
+        resources: {
+          gold: state.resources.gold - nextCourse.cost.gold,
+          mana: state.resources.mana - nextCourse.cost.mana,
+          food: state.resources.food - nextCourse.cost.food,
+          reputation: state.resources.reputation - nextCourse.cost.reputation,
+        },
+        students: state.students.map(s => {
+          if (s.id === action.studentId) {
+            return {
+              ...s,
+              assignedCourse: nextCourse.id,
+              status: 'studying' as const,
+              courseProgress: 0,
+              courseDaysRemaining: nextCourse.duration,
+              courseQueue: s.courseQueue.slice(1),
+            };
+          }
+          return s;
+        }),
+      };
     }
 
     case 'COMPLETE_DUNGEON': {
@@ -230,7 +363,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         if (!action.team.includes(s.id)) return s;
 
         let staminaDelta = -dungeon.staminaCost;
-        let moraleDelta = 0;
+        let moraleDelta: number;
 
         if (action.stars <= 0) {
           moraleDelta = -15;
@@ -408,8 +541,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       for (const student of state.students) {
         const moraleChange = calculateDailyMoraleChange(student, hasEnoughFood, dormitoryLevel);
         const staminaChange = calculateDailyStaminaChange(student, diningHallLevel);
-        let newMorale = clamp(student.morale + moraleChange, 0, 100);
-        let newStamina = clamp(student.stamina + staminaChange, 0, 100);
+        const newMorale = clamp(student.morale + moraleChange, 0, 100);
+        const newStamina = clamp(student.stamina + staminaChange, 0, 100);
 
         if (moraleChange !== 0 && Math.abs(moraleChange) >= 10) {
           todayEvents.push({
@@ -489,6 +622,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             let finalExp = newExp + finalExpGain;
             let finalLevel = newLevel;
             let newSkills = student.skills;
+            let newCourseQueue = student.courseQueue;
+            let newAssignedCourse: string | null = null;
+            let newStatus: StudentType['status'] = 'idle';
+            let newCourseDaysRemaining = 0;
+            const newCourseProgress = 0;
 
             while (finalExp >= finalLevel * 100) {
               finalExp -= finalLevel * 100;
@@ -517,14 +655,46 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               message: `🎓 ${student.name} 完成了「${course.name}」！`,
               studentId: student.id,
               studentName: student.name,
+              courseId: course.id,
+              courseName: course.name,
             });
+
+            if (newCourseQueue.length > 0) {
+              const nextQueued = newCourseQueue[0];
+              const nextCourse = state.courses.find(c => c.id === nextQueued.courseId);
+              if (nextCourse && nextCourse.requiredLevel <= finalLevel) {
+                newAssignedCourse = nextCourse.id;
+                newStatus = 'studying';
+                newCourseDaysRemaining = nextCourse.duration;
+                newCourseQueue = newCourseQueue.slice(1);
+                todayEvents.push({
+                  type: 'course_started',
+                  message: `📚 ${student.name} 自动开始「${nextCourse.name}」！`,
+                  studentId: student.id,
+                  studentName: student.name,
+                  courseId: nextCourse.id,
+                  courseName: nextCourse.name,
+                });
+              } else if (nextCourse && nextCourse.requiredLevel > finalLevel) {
+                todayEvents.push({
+                  type: 'warning',
+                  message: `⚠️ ${student.name} 等级不足(Lv.${finalLevel}/Lv.${nextCourse.requiredLevel})，无法开始「${nextCourse.name}」，已从队列移除`,
+                  studentId: student.id,
+                  studentName: student.name,
+                  courseId: nextCourse.id,
+                  courseName: nextCourse.name,
+                });
+                newCourseQueue = newCourseQueue.slice(1);
+              }
+            }
 
             updatedStudents.push({
               ...student,
-              status: 'idle' as const,
-              assignedCourse: null,
-              courseProgress: course.duration,
-              courseDaysRemaining: 0,
+              status: newStatus,
+              assignedCourse: newAssignedCourse,
+              courseProgress: newCourseProgress,
+              courseDaysRemaining: newCourseDaysRemaining,
+              courseQueue: newCourseQueue,
               exp: finalExp,
               level: finalLevel,
               skills: newSkills,
@@ -532,6 +702,20 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               stamina: newStamina,
             });
           } else {
+            if (daysRemaining <= 1 && student.courseQueue.length > 0) {
+              const nextQueued = student.courseQueue[0];
+              const nextCourse = state.courses.find(c => c.id === nextQueued.courseId);
+              if (nextCourse) {
+                todayEvents.push({
+                  type: 'study',
+                  message: `⏰ ${student.name} 的「${course.name}」即将完成，下一门「${nextCourse.name}」准备中...`,
+                  studentId: student.id,
+                  studentName: student.name,
+                  courseId: course.id,
+                  courseName: course.name,
+                });
+              }
+            }
             updatedStudents.push({
               ...student,
               courseProgress: newProgress,
@@ -542,6 +726,30 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               stamina: newStamina,
             });
           }
+        } else if (student.status === 'idle' && student.courseQueue.length > 0) {
+          const nextQueued = student.courseQueue[0];
+          const nextCourse = state.courses.find(c => c.id === nextQueued.courseId);
+          let updatedStudent = { ...student, morale: newMorale, stamina: newStamina };
+          
+          if (nextCourse && nextCourse.requiredLevel <= student.level) {
+            updatedStudent = {
+              ...updatedStudent,
+              assignedCourse: nextCourse.id,
+              status: 'studying' as const,
+              courseProgress: 0,
+              courseDaysRemaining: nextCourse.duration,
+              courseQueue: student.courseQueue.slice(1),
+            };
+            todayEvents.push({
+              type: 'course_started',
+              message: `📚 ${student.name} 开始「${nextCourse.name}」！`,
+              studentId: student.id,
+              studentName: student.name,
+              courseId: nextCourse.id,
+              courseName: nextCourse.name,
+            });
+          }
+          updatedStudents.push(updatedStudent);
         } else {
           updatedStudents.push({
             ...student,
@@ -586,7 +794,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case 'LOAD_GAME': {
       const saved = action.state;
       const defaultDungeons = INITIAL_DUNGEONS;
-      const migratedDungeons = saved.dungeons.map((d: any) => {
+      const migratedDungeons = saved.dungeons.map((d: Partial<Dungeon>) => {
         const template = defaultDungeons.find(t => t.id === d.id);
         return {
           ...d,
@@ -605,10 +813,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           },
         };
       });
-      const migratedStudents = (saved.students || []).map((s: any) => ({
+      const migratedStudents = (saved.students || []).map((s: Partial<StudentType>) => ({
         ...s,
         morale: s.morale ?? INITIAL_STUDENT_MORALE,
         stamina: s.stamina ?? INITIAL_STUDENT_STAMINA,
+        courseQueue: s.courseQueue ?? [],
       }));
       return {
         ...saved,
@@ -634,6 +843,11 @@ interface GameContextType {
   canAfford: (cost: Partial<Resource>) => boolean;
   recruitStudent: (quality: 'common' | 'rare' | 'epic' | 'legendary') => void;
   assignStudentToRest: (studentId: string) => void;
+  assignStudentToCourse: (studentId: string, courseId: string) => void;
+  queueCourse: (studentId: string, courseId: string) => void;
+  removeFromQueue: (studentId: string, queueIndex: number) => void;
+  reorderQueue: (studentId: string, fromIndex: number, toIndex: number) => void;
+  checkCourseConflict: (studentId: string, courseId: string) => { hasConflict: boolean; reason?: string };
   saveGame: () => void;
   loadGame: () => void;
   checkPrerequisites: typeof checkPrerequisites;
@@ -697,6 +911,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       assignedCourse: null,
       courseProgress: 0,
       courseDaysRemaining: 0,
+      courseQueue: [],
       quality: quality,
       potential: potential,
       traits: traits,
@@ -708,6 +923,56 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const assignStudentToRest = (studentId: string) => {
     dispatch({ type: 'ASSIGN_STUDENT_TO_REST', studentId });
+  };
+
+  const assignStudentToCourse = (studentId: string, courseId: string) => {
+    const course = state.courses.find(c => c.id === courseId);
+    if (!course) return;
+    if (!canAfford(course.cost)) return;
+    
+    const conflict = checkCourseConflict(studentId, courseId);
+    if (conflict.hasConflict) return;
+    
+    dispatch({ type: 'SPEND_RESOURCE', resource: course.cost });
+    dispatch({ type: 'ASSIGN_STUDENT_TO_COURSE', studentId, courseId, courseDuration: course.duration });
+  };
+
+  const queueCourse = (studentId: string, courseId: string) => {
+    const course = state.courses.find(c => c.id === courseId);
+    if (!course) return;
+    
+    const conflict = checkCourseConflict(studentId, courseId);
+    if (conflict.hasConflict) return;
+    
+    dispatch({ type: 'QUEUE_COURSE', studentId, courseId, day: state.day });
+  };
+
+  const removeFromQueue = (studentId: string, queueIndex: number) => {
+    dispatch({ type: 'REMOVE_FROM_QUEUE', studentId, queueIndex });
+  };
+
+  const reorderQueue = (studentId: string, fromIndex: number, toIndex: number) => {
+    dispatch({ type: 'REORDER_QUEUE', studentId, fromIndex, toIndex });
+  };
+
+  const checkCourseConflict = (studentId: string, courseId: string) => {
+    const student = state.students.find(s => s.id === studentId);
+    if (!student) return { hasConflict: true, reason: '学员不存在' };
+    
+    if (student.assignedCourse === courseId) {
+      return { hasConflict: true, reason: '该学员正在学习此课程' };
+    }
+    
+    if (student.courseQueue.some(q => q.courseId === courseId)) {
+      return { hasConflict: true, reason: '该课程已在队列中' };
+    }
+    
+    const course = state.courses.find(c => c.id === courseId);
+    if (course && course.requiredLevel > student.level) {
+      return { hasConflict: true, reason: `等级不足 (需要 Lv.${course.requiredLevel})` };
+    }
+    
+    return { hasConflict: false };
   };
 
   const saveGame = () => {
@@ -735,6 +1000,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
       canAfford, 
       recruitStudent,
       assignStudentToRest,
+      assignStudentToCourse,
+      queueCourse,
+      removeFromQueue,
+      reorderQueue,
+      checkCourseConflict,
       saveGame, 
       loadGame,
       checkPrerequisites,

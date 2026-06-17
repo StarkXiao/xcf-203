@@ -642,8 +642,7 @@ export const calculateBattleStars = (
   dungeon: Dungeon,
   survivingMembers: number,
   totalMembers: number,
-  averageHpPercent: number,
-  _totalTurns: number
+  averageHpPercent: number
 ): number => {
   if (survivingMembers === 0) return 0;
 

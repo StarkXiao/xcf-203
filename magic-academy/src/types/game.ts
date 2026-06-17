@@ -52,11 +52,17 @@ export interface Student {
   assignedCourse: string | null;
   courseProgress: number;
   courseDaysRemaining: number;
+  courseQueue: QueuedCourse[];
   quality: StudentQuality;
   potential: number;
   traits: Trait[];
   morale: number;
   stamina: number;
+}
+
+export interface QueuedCourse {
+  courseId: string;
+  addedAt: number;
 }
 
 export type StudentQuality = 'common' | 'rare' | 'epic' | 'legendary';
@@ -195,11 +201,13 @@ export interface DailyLog {
 }
 
 export interface DailyEvent {
-  type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning';
+  type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning' | 'course_queued' | 'course_started' | 'queue_empty' | 'course_conflict';
   message: string;
   value?: number;
   studentId?: string;
   studentName?: string;
+  courseId?: string;
+  courseName?: string;
 }
 
 export const MORALE_MAX = 100;

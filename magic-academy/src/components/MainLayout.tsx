@@ -427,24 +427,182 @@ function RecruitModule() {
 }
 
 function CourseModule() {
-  const { state, dispatch, canAfford } = useGame();
+  const { state, assignStudentToCourse, queueCourse, removeFromQueue, reorderQueue, checkCourseConflict, canAfford } = useGame();
+  const [selectedStudentForQueue, setSelectedStudentForQueue] = React.useState<string | null>(null);
+  const [conflictMessage, setConflictMessage] = React.useState<string | null>(null);
 
   const availableStudents = state.students.filter(s => s.status === 'idle');
   const studyingStudents = state.students.filter(s => s.status === 'studying');
+  const studentsWithQueue = state.students.filter(s => s.courseQueue && s.courseQueue.length > 0);
 
   const handleAssignCourse = (studentId: string, courseId: string) => {
-    const course = state.courses.find(c => c.id === courseId);
-    if (!course) return;
-    if (!canAfford(course.cost)) return;
-    
-    dispatch({ type: 'SPEND_RESOURCE', resource: course.cost });
-    dispatch({ type: 'ASSIGN_STUDENT_TO_COURSE', studentId, courseId, courseDuration: course.duration });
+    const conflict = checkCourseConflict(studentId, courseId);
+    if (conflict.hasConflict && conflict.reason) {
+      setConflictMessage(conflict.reason);
+      setTimeout(() => setConflictMessage(null), 3000);
+      return;
+    }
+    assignStudentToCourse(studentId, courseId);
+  };
+
+  const handleQueueCourse = (studentId: string, courseId: string) => {
+    const conflict = checkCourseConflict(studentId, courseId);
+    if (conflict.hasConflict && conflict.reason) {
+      setConflictMessage(conflict.reason);
+      setTimeout(() => setConflictMessage(null), 3000);
+      return;
+    }
+    queueCourse(studentId, courseId);
+    setSelectedStudentForQueue(null);
+  };
+
+  const moveQueueItem = (studentId: string, fromIndex: number, direction: 'up' | 'down') => {
+    const toIndex = direction === 'up' ? fromIndex - 1 : fromIndex + 1;
+    reorderQueue(studentId, fromIndex, toIndex);
+  };
+
+  const getTotalQueueDays = (student: typeof state.students[0]) => {
+    return student.courseQueue.reduce((total, q) => {
+      const course = state.courses.find(c => c.id === q.courseId);
+      return total + (course?.duration || 0);
+    }, 0);
+  };
+
+  const renderCourseQueue = (student: typeof state.students[0]) => {
+    if (!student.courseQueue || student.courseQueue.length === 0) return null;
+
+    return (
+      <div className="course-queue-section">
+        <div className="queue-header">
+          <span className="queue-title">📋 学习队列 ({student.courseQueue.length}门, 共{getTotalQueueDays(student)}天)</span>
+        </div>
+        <div className="queue-list">
+          {student.courseQueue.map((queued, index) => {
+            const course = state.courses.find(c => c.id === queued.courseId);
+            if (!course) return null;
+            return (
+              <div key={`${queued.courseId}-${index}`} className="queue-item">
+                <span className="queue-order">#{index + 1}</span>
+                <span className="queue-course-name">{course.name}</span>
+                <span className="queue-course-duration">({course.duration}天)</span>
+                <div className="queue-actions">
+                  <button 
+                    className="queue-btn move-up"
+                    onClick={() => moveQueueItem(student.id, index, 'up')}
+                    disabled={index === 0}
+                    title="上移"
+                  >
+                    ↑
+                  </button>
+                  <button 
+                    className="queue-btn move-down"
+                    onClick={() => moveQueueItem(student.id, index, 'down')}
+                    disabled={index === student.courseQueue.length - 1}
+                    title="下移"
+                  >
+                    ↓
+                  </button>
+                  <button 
+                    className="queue-btn remove"
+                    onClick={() => removeFromQueue(student.id, index)}
+                    title="移除"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const renderQueueCourseSelector = (studentId: string) => {
+    const student = state.students.find(s => s.id === studentId);
+    if (!student) return null;
+
+    return (
+      <div className="queue-selector">
+        <select
+          className="course-select"
+          onChange={(e) => {
+            if (e.target.value) {
+              handleQueueCourse(studentId, e.target.value);
+            }
+          }}
+          defaultValue=""
+          autoFocus
+        >
+          <option value="" disabled>选择要加入队列的课程...</option>
+          {state.courses
+            .filter(c => c.requiredLevel <= student.level)
+            .map(course => {
+              const conflict = checkCourseConflict(studentId, course.id);
+              const expectedExp = course.effect.type === 'exp_gain' 
+                ? calculateExpGain(course.effect.value, student)
+                : null;
+              const label = expectedExp !== null
+                ? `${course.name} (${course.duration}天, 预计+${expectedExp}经验)${conflict.hasConflict ? ' - ' + conflict.reason : ''}`
+                : `${course.name} (${course.duration}天)${conflict.hasConflict ? ' - ' + conflict.reason : ''}`;
+              return (
+                <option 
+                  key={course.id} 
+                  value={course.id}
+                  disabled={conflict.hasConflict}
+                >
+                  {label}
+                </option>
+              );
+            })}
+        </select>
+        <button className="cancel-queue-btn" onClick={() => setSelectedStudentForQueue(null)}>取消</button>
+      </div>
+    );
+  };
+
+  const renderCompletionReminder = () => {
+    const almostDone = studyingStudents.filter(s => s.courseDaysRemaining <= 1);
+    if (almostDone.length === 0) return null;
+
+    return (
+      <div className="reminder-section">
+        <h3>⏰ 即将完成提醒</h3>
+        <div className="reminder-list">
+          {almostDone.map(student => {
+            const course = state.courses.find(c => c.id === student.assignedCourse);
+            const nextCourse = student.courseQueue && student.courseQueue.length > 0 
+              ? state.courses.find(c => c.id === student.courseQueue[0].courseId)
+              : null;
+            return (
+              <div key={student.id} className="reminder-item">
+                <span className="reminder-icon">⏳</span>
+                <span className="reminder-text">
+                  <strong>{student.name}</strong> 的「{course?.name}」还有 {student.courseDaysRemaining.toFixed(1)} 天完成
+                  {nextCourse && (
+                    <span className="next-course-hint"> → 下一门:「{nextCourse.name}」</span>
+                  )}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
   };
 
   return (
     <div className="module course-module">
       <h2>📚 课程安排</h2>
       
+      {conflictMessage && (
+        <div className="conflict-alert">
+          ⚠️ {conflictMessage}
+        </div>
+      )}
+
+      {renderCompletionReminder()}
+
       <div className="studying-section">
         <h3>正在上课的学员</h3>
         {studyingStudents.length === 0 ? (
@@ -454,22 +612,49 @@ function CourseModule() {
             {studyingStudents.map(student => {
               const course = state.courses.find(c => c.id === student.assignedCourse);
               const stats = getStudentStatsSummary(student);
+              const progressPercent = course ? (student.courseProgress / course.duration) * 100 : 0;
               return (
-                <div key={student.id} className="studying-item">
-                  <span className="student-name">{student.name}</span>
-                  <span className="course-name">{course?.name || '未知课程'}</span>
-                  <span className="course-progress">
-                    进度: {student.courseProgress.toFixed(1)}/{course?.duration || 0} ({student.courseDaysRemaining.toFixed(1)}天剩余)
-                  </span>
-                  <span className="course-stats">
-                    经验x{stats.expMultiplier / 100} / 速度x{stats.courseSpeedMultiplier / 100}
-                  </span>
+                <div key={student.id} className={`studying-item ${student.courseDaysRemaining <= 1 ? 'almost-done' : ''}`}>
+                  <div className="studying-main-info">
+                    <span className="student-name">{student.name}</span>
+                    <span className="course-name">{course?.name || '未知课程'}</span>
+                  </div>
+                  <div className="studying-progress-bar">
+                    <div className="progress-fill" style={{ width: `${progressPercent}%` }}></div>
+                  </div>
+                  <div className="studying-details">
+                    <span className="course-progress">
+                      进度: {student.courseProgress.toFixed(1)}/{course?.duration || 0} ({student.courseDaysRemaining.toFixed(1)}天剩余)
+                    </span>
+                    <span className="course-stats">
+                      经验x{stats.expMultiplier / 100} / 速度x{stats.courseSpeedMultiplier / 100}
+                    </span>
+                  </div>
+                  {renderCourseQueue(student)}
                 </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {studentsWithQueue.length > 0 && (
+        <div className="queue-overview-section">
+          <h3>📋 待学习队列概览</h3>
+          <div className="queue-overview-list">
+            {studentsWithQueue.filter(s => s.status !== 'studying').map(student => (
+              <div key={student.id} className="queue-overview-item">
+                <div className="queue-overview-header">
+                  <span className="student-name">{student.name}</span>
+                  <span className="student-level">Lv.{student.level}</span>
+                  <span className="queue-count">{student.courseQueue.length}门待学习</span>
+                </div>
+                {renderCourseQueue(student)}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="course-list">
         <h3>可选课程</h3>
@@ -515,36 +700,73 @@ function CourseModule() {
                     <span className="student-level">Lv.{student.level}</span>
                     <span className="stat-badge exp-badge">经验x{stats.expMultiplier / 100}</span>
                     <span className="stat-badge speed-badge">速度x{stats.courseSpeedMultiplier / 100}</span>
+                    {student.courseQueue.length > 0 && (
+                      <span className="queue-count-badge">📋 {student.courseQueue.length}门排队中</span>
+                    )}
                   </div>
-                  <select
-                    className="course-select"
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        handleAssignCourse(student.id, e.target.value);
-                      }
-                    }}
-                    defaultValue=""
-                  >
-                    <option value="" disabled>选择课程</option>
-                    {state.courses
-                      .filter(c => c.requiredLevel <= student.level)
-                      .map(course => {
-                        const expectedExp = course.effect.type === 'exp_gain' 
-                          ? calculateExpGain(course.effect.value, student)
-                          : null;
-                        const label = expectedExp !== null
-                          ? `${course.name} (${course.duration}天, 预计+${expectedExp}经验)`
-                          : `${course.name} (${course.duration}天)`;
-                        return (
-                          <option key={course.id} value={course.id}>{label}</option>
-                        );
-                      })}
-                  </select>
+                  {selectedStudentForQueue === student.id ? (
+                    renderQueueCourseSelector(student.id)
+                  ) : (
+                    <div className="assignment-actions">
+                      <select
+                        className="course-select"
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            handleAssignCourse(student.id, e.target.value);
+                            e.target.value = '';
+                          }
+                        }}
+                        defaultValue=""
+                      >
+                        <option value="" disabled>🎯 立即上课</option>
+                        {state.courses
+                          .filter(c => c.requiredLevel <= student.level)
+                          .map(course => {
+                            const conflict = checkCourseConflict(student.id, course.id);
+                            const expectedExp = course.effect.type === 'exp_gain' 
+                              ? calculateExpGain(course.effect.value, student)
+                              : null;
+                            const canAffordCourse = canAfford(course.cost);
+                            let label = expectedExp !== null
+                              ? `${course.name} (${course.duration}天, 预计+${expectedExp}经验)`
+                              : `${course.name} (${course.duration}天)`;
+                            if (conflict.hasConflict) label += ` - ${conflict.reason}`;
+                            else if (!canAffordCourse) label += ' - 资源不足';
+                            return (
+                              <option 
+                                key={course.id} 
+                                value={course.id}
+                                disabled={conflict.hasConflict || !canAffordCourse}
+                              >
+                                {label}
+                              </option>
+                            );
+                          })}
+                      </select>
+                      <button 
+                        className="queue-add-btn"
+                        onClick={() => setSelectedStudentForQueue(student.id)}
+                      >
+                        ➕ 加入队列
+                      </button>
+                    </div>
+                  )}
+                  {renderCourseQueue(student)}
                 </div>
               );
             })}
           </div>
         )}
+      </div>
+
+      <div className="auto-learning-info">
+        <h4>💡 自动连续学习说明</h4>
+        <ul>
+          <li>加入队列的课程会在当前课程完成后自动开始（需等级和资源足够）</li>
+          <li>可以使用 ↑↓ 按钮调整队列顺序，排在最前面的优先学习</li>
+          <li>课程即将完成时会有提醒，下一门课程会自动准备</li>
+          <li>资源不足或等级不够时，课程会自动跳过并提示</li>
+        </ul>
       </div>
     </div>
   );
@@ -828,7 +1050,10 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
   });
 
   const onCompleteRef = React.useRef(onComplete);
-  onCompleteRef.current = onComplete;
+  
+  React.useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
   const eligibleStudents = React.useMemo(
     () => students.filter(s => s.level >= dungeon.requiredLevel),
@@ -840,7 +1065,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
     [eligibleStudents]
   );
 
-  const canStudentBattle = (student: StudentType): { ok: boolean; reason?: string } => {
+  const canStudentBattle = React.useCallback((student: StudentType): { ok: boolean; reason?: string } => {
     if (student.status !== 'idle') {
       const course = student.assignedCourse ? courses.find(c => c.id === student.assignedCourse) : null;
       if (student.status === 'studying' && course) return { ok: false, reason: `正在学习${course.name}` };
@@ -855,23 +1080,9 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
       return { ok: false, reason: `士气过低(${student.morale}%)拒绝出战` };
     }
     return { ok: true };
-  };
+  }, [courses, dungeon.staminaCost]);
 
-  const availableBestTeamIds = React.useMemo(
-    () => dungeon.bestTeam.filter(id => {
-      const s = idleEligibleStudents.find(st => st.id === id);
-      return s && canStudentBattle(s).ok;
-    }),
-    [dungeon.bestTeam, idleEligibleStudents, canStudentBattle]
-  );
-
-  const handleFillBestTeam = React.useCallback(() => {
-    if (availableBestTeamIds.length > 0) {
-      setSelectedTeam(availableBestTeamIds);
-    }
-  }, [availableBestTeamIds]);
-
-  const generateEnemies = (wave: number): Enemy[] => {
+  const generateEnemies = React.useCallback((wave: number): Enemy[] => {
     const count = Math.min(1 + Math.floor(wave / 2), 3);
     const baseHp = 50 + wave * 30;
     const baseDamage = 10 + wave * 5;
@@ -888,7 +1099,21 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
         isBoss,
       };
     });
-  };
+  }, [dungeon.waves]);
+
+  const availableBestTeamIds = React.useMemo(
+    () => dungeon.bestTeam.filter(id => {
+      const s = idleEligibleStudents.find(st => st.id === id);
+      return s && canStudentBattle(s).ok;
+    }),
+    [dungeon.bestTeam, idleEligibleStudents, canStudentBattle]
+  );
+
+  const handleFillBestTeam = React.useCallback(() => {
+    if (availableBestTeamIds.length > 0) {
+      setSelectedTeam(availableBestTeamIds);
+    }
+  }, [availableBestTeamIds]);
 
   const calculateBattleResult = React.useCallback((victory: boolean): BattleResultData => {
     const { playerTeam, turnCount, teamIds } = battleRef.current;
@@ -899,7 +1124,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
     const currentHp = playerTeam.reduce((sum, p) => sum + Math.max(0, p.hp), 0);
     const averageHpPercent = totalHp > 0 ? currentHp / totalHp : 0;
 
-    const stars = victory ? calculateBattleStars(dungeon, survivingMembers, totalMembers, averageHpPercent, turnCount) : 0;
+    const stars = victory ? calculateBattleStars(dungeon, survivingMembers, totalMembers, averageHpPercent) : 0;
     const isFirstClear = !dungeon.firstCleared;
     const rewards = calculateDungeonRewards(dungeon, stars, isFirstClear);
 
@@ -962,7 +1187,10 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
   }, [battleResult]);
 
   const handleBattleEndRef = React.useRef(handleBattleEnd);
-  handleBattleEndRef.current = handleBattleEnd;
+  
+  React.useEffect(() => {
+    handleBattleEndRef.current = handleBattleEnd;
+  }, [handleBattleEnd]);
 
   React.useEffect(() => {
     if (!battleStarted || !canvasRef.current) return;
@@ -1116,7 +1344,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
         cancelAnimationFrame(battleRef.current.animationId);
       }
     };
-  }, [battleStarted, dungeon.waves]);
+  }, [battleStarted, dungeon.waves, calculateMoraleEfficiencyMultiplier, calculateStaminaEfficiencyMultiplier, generateEnemies]);
 
   const renderStars = (stars: number, maxStars: number = 3) => {
     return (

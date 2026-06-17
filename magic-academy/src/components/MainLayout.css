@@ -1841,3 +1841,382 @@ body {
   margin-top: 0.25rem;
   padding: 0.375rem 0.5rem;
 }
+
+.conflict-alert {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid var(--danger);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  color: var(--danger);
+  font-weight: 600;
+  text-align: center;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.reminder-section {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(239, 68, 68, 0.1));
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.reminder-section h3 {
+  color: var(--warning);
+  margin-bottom: 0.75rem;
+}
+
+.reminder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.reminder-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-dark);
+  border-radius: 0.5rem;
+  border-left: 3px solid var(--warning);
+}
+
+.reminder-icon {
+  font-size: 1.2rem;
+}
+
+.reminder-text {
+  flex: 1;
+  font-size: 0.9rem;
+}
+
+.reminder-text strong {
+  color: var(--text-primary);
+}
+
+.next-course-hint {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.studying-item {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.studying-main-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.studying-progress-bar {
+  width: 100%;
+  height: 8px;
+  background: var(--bg-dark);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--success));
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.studying-details {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.studying-item.almost-done {
+  border-color: var(--warning);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.course-queue-section {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border);
+}
+
+.queue-header {
+  margin-bottom: 0.5rem;
+}
+
+.queue-title {
+  font-size: 0.85rem;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  background: rgba(99, 102, 241, 0.05);
+  border-radius: 0.35rem;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.queue-order {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--primary);
+  background: rgba(99, 102, 241, 0.15);
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+}
+
+.queue-course-name {
+  flex: 1;
+  font-size: 0.85rem;
+}
+
+.queue-course-duration {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.queue-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.queue-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 0.25rem;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.queue-btn:hover:not(:disabled) {
+  background: var(--primary);
+  color: white;
+}
+
+.queue-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.queue-btn.remove:hover:not(:disabled) {
+  background: var(--danger);
+}
+
+.queue-selector {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.cancel-queue-btn {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--danger);
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--danger);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cancel-queue-btn:hover {
+  background: var(--danger);
+  color: white;
+}
+
+.queue-overview-section {
+  margin-bottom: 2rem;
+}
+
+.queue-overview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.queue-overview-item {
+  background: var(--bg-dark);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+}
+
+.queue-overview-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.queue-overview-header .queue-count {
+  font-size: 0.8rem;
+  color: var(--primary);
+  font-weight: 600;
+  background: rgba(99, 102, 241, 0.15);
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.35rem;
+}
+
+.assignment-item {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.assignment-student-info {
+  width: 100%;
+  margin-bottom: 0.5rem;
+}
+
+.queue-count-badge {
+  font-size: 0.75rem;
+  color: var(--primary);
+  font-weight: 600;
+  background: rgba(99, 102, 241, 0.15);
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.35rem;
+}
+
+.assignment-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.assignment-actions .course-select {
+  flex: 1;
+  min-width: 200px;
+}
+
+.queue-add-btn {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--success);
+  border-radius: 0.5rem;
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--success);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.queue-add-btn:hover {
+  background: var(--success);
+  color: white;
+}
+
+.auto-learning-info {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(139, 92, 246, 0.05));
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 0.75rem;
+  padding: 1rem 1.5rem;
+  margin-top: 2rem;
+}
+
+.auto-learning-info h4 {
+  color: var(--primary);
+  margin-bottom: 0.5rem;
+}
+
+.auto-learning-info ul {
+  list-style: none;
+  padding: 0;
+}
+
+.auto-learning-info li {
+  position: relative;
+  padding-left: 1.5rem;
+  margin-bottom: 0.35rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.auto-learning-info li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: var(--success);
+  font-weight: 700;
+}
+
+@media (max-width: 768px) {
+  .studying-main-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+  
+  .studying-details {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .assignment-actions {
+    flex-direction: column;
+  }
+  
+  .assignment-actions .course-select {
+    width: 100%;
+  }
+  
+  .queue-add-btn {
+    width: 100%;
+  }
+  
+  .queue-selector {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .cancel-queue-btn {
+    width: 100%;
+  }
+  
+  .queue-item {
+    flex-wrap: wrap;
+  }
+  
+  .queue-actions {
+    margin-left: auto;
+  }
+}
