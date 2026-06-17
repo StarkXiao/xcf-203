@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
 import type { GameState, Resource, TabType, Student as StudentType } from '../types/game';
 import { 
@@ -12,6 +13,9 @@ import {
   calculateExpGain,
   calculateCourseSpeed,
   calculateSkillDamage,
+  checkPrerequisites,
+  getActiveSynergies,
+  calculateSynergyBonus,
 } from '../data/gameData';
 
 type GameAction =
@@ -58,7 +62,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         },
       };
 
-    case 'SPEND_RESOURCE':
+    case 'SPEND_RESOURCE': {
       const newResources = {
         gold: state.resources.gold - (action.resource.gold || 0),
         mana: state.resources.mana - (action.resource.mana || 0),
@@ -69,10 +73,15 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         return state;
       }
       return { ...state, resources: newResources };
+    }
 
     case 'UPGRADE_BUILDING': {
       const building = state.buildings.find(b => b.id === action.buildingId);
       if (!building || building.level >= building.maxLevel) return state;
+      
+      const prereqCheck = checkPrerequisites(building, state.buildings);
+      if (!prereqCheck.met) return state;
+      
       const cost = {
         gold: building.cost.gold * building.level,
         mana: building.cost.mana * building.level,
@@ -183,7 +192,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
-    case 'COMPLETE_DUNGEON':
+    case 'COMPLETE_DUNGEON': {
       const dungeon = state.dungeons.find(d => d.id === action.dungeonId);
       if (!dungeon) return state;
       return {
@@ -198,10 +207,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           d.id === action.dungeonId ? { ...d, completed: true } : d
         ),
       };
+    }
 
     case 'NEXT_DAY': {
-      const courseSpeedBonus = state.buildings.find(b => b.id === 'library')?.level || 0;
-      const baseExpMultiplier = 1 + courseSpeedBonus * 0.1;
+      const libraryLevel = state.buildings.find(b => b.id === 'library')?.level || 0;
+      const efficiencyBonus = calculateSynergyBonus(state.buildings, 'efficiency');
+      const baseExpMultiplier = 1 + libraryLevel * 0.1 + efficiencyBonus * 0.01;
       
       const updatedStudents = state.students.map(student => {
         if (student.assignedCourse && student.status === 'studying') {
@@ -273,8 +284,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         return student;
       });
       
+      const diningHallLevel = state.buildings.find(b => b.id === 'dining_hall')?.level || 0;
       const reputationGain = state.buildings.find(b => b.id === 'dining_hall')?.effect.value || 0;
-      const totalReputationBonus = 5 + reputationGain * (state.buildings.find(b => b.id === 'dining_hall')?.level || 0);
+      const reputationBonus = calculateSynergyBonus(state.buildings, 'reputation');
+      const totalReputationBonus = 5 + reputationGain * diningHallLevel + reputationBonus;
       
       return {
         ...state,
@@ -308,6 +321,9 @@ interface GameContextType {
   recruitStudent: (quality: 'common' | 'rare' | 'epic' | 'legendary') => void;
   saveGame: () => void;
   loadGame: () => void;
+  checkPrerequisites: typeof checkPrerequisites;
+  getActiveSynergies: typeof getActiveSynergies;
+  calculateSynergyBonus: typeof calculateSynergyBonus;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -380,7 +396,19 @@ export function GameProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <GameContext.Provider value={{ state, dispatch, activeTab, setActiveTab, canAfford, recruitStudent, saveGame, loadGame }}>
+    <GameContext.Provider value={{ 
+      state, 
+      dispatch, 
+      activeTab, 
+      setActiveTab, 
+      canAfford, 
+      recruitStudent, 
+      saveGame, 
+      loadGame,
+      checkPrerequisites,
+      getActiveSynergies,
+      calculateSynergyBonus,
+    }}>
       {children}
     </GameContext.Provider>
   );

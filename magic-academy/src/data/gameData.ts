@@ -1,4 +1,4 @@
-import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity } from '../types/game';
+import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy } from '../types/game';
 
 export const INITIAL_RESOURCES: Resource = {
   gold: 1000,
@@ -34,6 +34,30 @@ export const INITIAL_BUILDINGS: Building[] = [
     cost: { gold: 250, mana: 150, food: 25, reputation: 5 },
     effect: { type: 'course_speed', value: 10 },
     description: '课程经验获取+10%',
+    prerequisites: [
+      { buildingId: 'main_building', requiredLevel: 2 },
+    ],
+    synergyBonus: [
+      {
+        name: '知识殿堂',
+        description: '图书馆与宿舍联动：学员学习效率与住宿容量双重提升',
+        requires: [
+          { buildingId: 'library', minLevel: 3 },
+          { buildingId: 'dormitory', minLevel: 3 },
+        ],
+        effect: { type: 'efficiency_bonus', value: 15, valuePerLevel: 3 },
+      },
+      {
+        name: '黄金三角',
+        description: '三大核心建筑联动：容量、效率、声望全面提升',
+        requires: [
+          { buildingId: 'library', minLevel: 5 },
+          { buildingId: 'dormitory', minLevel: 5 },
+          { buildingId: 'dining_hall', minLevel: 5 },
+        ],
+        effect: { type: 'all_stats_bonus', value: 10, valuePerLevel: 2 },
+      },
+    ],
   },
   {
     id: 'training_field',
@@ -52,6 +76,30 @@ export const INITIAL_BUILDINGS: Building[] = [
     cost: { gold: 150, mana: 80, food: 40, reputation: 0 },
     effect: { type: 'student_capacity', value: 4 },
     description: '增加4点学员容量',
+    prerequisites: [
+      { buildingId: 'main_building', requiredLevel: 2 },
+    ],
+    synergyBonus: [
+      {
+        name: '美食学府',
+        description: '宿舍与餐厅联动：学员居住满意度提升，容量与声望双增长',
+        requires: [
+          { buildingId: 'dormitory', minLevel: 3 },
+          { buildingId: 'dining_hall', minLevel: 3 },
+        ],
+        effect: { type: 'capacity_bonus', value: 3, valuePerLevel: 1 },
+      },
+      {
+        name: '黄金三角',
+        description: '三大核心建筑联动：容量、效率、声望全面提升',
+        requires: [
+          { buildingId: 'library', minLevel: 5 },
+          { buildingId: 'dormitory', minLevel: 5 },
+          { buildingId: 'dining_hall', minLevel: 5 },
+        ],
+        effect: { type: 'all_stats_bonus', value: 10, valuePerLevel: 2 },
+      },
+    ],
   },
   {
     id: 'dining_hall',
@@ -61,6 +109,30 @@ export const INITIAL_BUILDINGS: Building[] = [
     cost: { gold: 180, mana: 90, food: 10, reputation: 5 },
     effect: { type: 'reputation_gain', value: 5 },
     description: '声望获取+5',
+    prerequisites: [
+      { buildingId: 'main_building', requiredLevel: 2 },
+    ],
+    synergyBonus: [
+      {
+        name: '美食学府',
+        description: '宿舍与餐厅联动：学员居住满意度提升，容量与声望双增长',
+        requires: [
+          { buildingId: 'dormitory', minLevel: 3 },
+          { buildingId: 'dining_hall', minLevel: 3 },
+        ],
+        effect: { type: 'reputation_bonus', value: 8, valuePerLevel: 2 },
+      },
+      {
+        name: '黄金三角',
+        description: '三大核心建筑联动：容量、效率、声望全面提升',
+        requires: [
+          { buildingId: 'library', minLevel: 5 },
+          { buildingId: 'dormitory', minLevel: 5 },
+          { buildingId: 'dining_hall', minLevel: 5 },
+        ],
+        effect: { type: 'all_stats_bonus', value: 10, valuePerLevel: 2 },
+      },
+    ],
   },
 ];
 
@@ -456,4 +528,76 @@ export const getStudentStatsSummary = (student: { potential: number; traits: Tra
     expMultiplier: Math.round(expMultiplier * 100),
     courseSpeedMultiplier: Math.round(courseSpeedMultiplier * 100),
   };
+};
+
+export const checkPrerequisites = (
+  building: Building,
+  buildings: Building[]
+): { met: boolean; requirements: { name: string; current: number; required: number }[] } => {
+  if (!building.prerequisites || building.prerequisites.length === 0) {
+    return { met: true, requirements: [] };
+  }
+
+  const requirements = building.prerequisites.map(prereq => {
+    const prereqBuilding = buildings.find(b => b.id === prereq.buildingId);
+    return {
+      name: prereqBuilding?.name || prereq.buildingId,
+      current: prereqBuilding?.level || 0,
+      required: prereq.requiredLevel,
+    };
+  });
+
+  const met = requirements.every(req => req.current >= req.required);
+  return { met, requirements };
+};
+
+export const getActiveSynergies = (buildings: Building[]): { synergy: BuildingSynergy; totalValue: number }[] => {
+  const seenSynergies = new Set<string>();
+  const activeSynergies: { synergy: BuildingSynergy; totalValue: number }[] = [];
+
+  buildings.forEach(building => {
+    if (!building.synergyBonus) return;
+
+    building.synergyBonus.forEach(synergy => {
+      if (seenSynergies.has(synergy.name)) return;
+      seenSynergies.add(synergy.name);
+
+      const allMet = synergy.requires.every(req => {
+        const b = buildings.find(bl => bl.id === req.buildingId);
+        return b && b.level >= req.minLevel;
+      });
+
+      if (allMet) {
+        const minLevel = Math.min(...synergy.requires.map(req => {
+          const b = buildings.find(bl => bl.id === req.buildingId);
+          return b?.level || 0;
+        }));
+        const excessLevels = Math.max(0, minLevel - synergy.requires[0].minLevel);
+        const totalValue = synergy.effect.value + (synergy.effect.valuePerLevel || 0) * excessLevels;
+        activeSynergies.push({ synergy, totalValue });
+      }
+    });
+  });
+
+  return activeSynergies;
+};
+
+export const calculateSynergyBonus = (
+  buildings: Building[],
+  type: 'capacity' | 'efficiency' | 'reputation'
+): number => {
+  const synergies = getActiveSynergies(buildings);
+  return synergies.reduce((total, { synergy, totalValue }) => {
+    if (synergy.effect.type === 'all_stats_bonus') {
+      return total + totalValue;
+    }
+    if (
+      (type === 'capacity' && synergy.effect.type === 'capacity_bonus') ||
+      (type === 'efficiency' && synergy.effect.type === 'efficiency_bonus') ||
+      (type === 'reputation' && synergy.effect.type === 'reputation_bonus')
+    ) {
+      return total + totalValue;
+    }
+    return total;
+  }, 0);
 };

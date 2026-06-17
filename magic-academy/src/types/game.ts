@@ -13,6 +13,26 @@ export interface Building {
   cost: Resource;
   effect: BuildingEffect;
   description: string;
+  prerequisites?: BuildingPrerequisite[];
+  synergyBonus?: BuildingSynergy[];
+}
+
+export interface BuildingPrerequisite {
+  buildingId: string;
+  requiredLevel: number;
+}
+
+export interface BuildingSynergy {
+  name: string;
+  description: string;
+  requires: { buildingId: string; minLevel: number }[];
+  effect: SynergyEffect;
+}
+
+export interface SynergyEffect {
+  type: 'capacity_bonus' | 'efficiency_bonus' | 'reputation_bonus' | 'all_stats_bonus';
+  value: number;
+  valuePerLevel?: number;
 }
 
 export interface BuildingEffect {

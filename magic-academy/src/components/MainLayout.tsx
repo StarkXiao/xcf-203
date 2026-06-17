@@ -1,7 +1,7 @@
 import React from 'react';
 import { useGame } from '../store/GameContext';
 import type { TabType, Dungeon as DungeonType, Student as StudentType, Course as CourseType } from '../types/game';
-import { getStudentStatsSummary, calculateExpGain } from '../data/gameData';
+import { getStudentStatsSummary, calculateExpGain, calculateSynergyBonus } from '../data/gameData';
 import './MainLayout.css';
 
 interface TabConfig {
@@ -40,7 +40,8 @@ export default function MainLayout() {
       }
       return acc;
     }, 0);
-    return baseCapacity + buildingBonus;
+    const synergyBonus = calculateSynergyBonus(state.buildings, 'capacity');
+    return baseCapacity + buildingBonus + synergyBonus;
   };
 
   return (
@@ -85,11 +86,40 @@ export default function MainLayout() {
 }
 
 function AcademyModule() {
-  const { state, dispatch, canAfford } = useGame();
+  const { state, dispatch, canAfford, checkPrerequisites, getActiveSynergies } = useGame();
+  const activeSynergies = getActiveSynergies(state.buildings);
 
   return (
     <div className="module academy-module">
       <h2>🏰 学院建设</h2>
+      
+      {activeSynergies.length > 0 && (
+        <div className="synergy-section">
+          <h3>✨ 已激活联动效果</h3>
+          <div className="synergy-list">
+            {activeSynergies.map(({ synergy, totalValue }) => (
+              <div key={synergy.name} className="synergy-card active">
+                <div className="synergy-header">
+                  <span className="synergy-name">🌟 {synergy.name}</span>
+                  <span className="synergy-value">+{totalValue}</span>
+                </div>
+                <p className="synergy-desc">{synergy.description}</p>
+                <div className="synergy-requirements">
+                  {synergy.requires.map(req => {
+                    const b = state.buildings.find(bl => bl.id === req.buildingId);
+                    return (
+                      <span key={req.buildingId} className="synergy-req met">
+                        {b?.name} Lv.{b?.level}/{req.minLevel}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="building-grid">
         {state.buildings.map(building => {
           const cost = {
@@ -100,6 +130,8 @@ function AcademyModule() {
           };
           const affordable = canAfford(cost);
           const maxed = building.level >= building.maxLevel;
+          const prereqCheck = checkPrerequisites(building, state.buildings);
+          const canUpgrade = affordable && prereqCheck.met && !maxed;
 
           return (
             <div key={building.id} className="building-card">
@@ -111,6 +143,48 @@ function AcademyModule() {
               <div className="building-effect">
                 效果: +{building.effect.value * building.level}
               </div>
+              
+              {building.prerequisites && building.prerequisites.length > 0 && (
+                <div className="prerequisites">
+                  <div className="prereq-label">前置条件:</div>
+                  {prereqCheck.requirements.map((req, idx) => (
+                    <span 
+                      key={idx} 
+                      className={`prereq-item ${req.current >= req.required ? 'met' : 'not-met'}`}
+                    >
+                      {req.name} Lv.{req.current}/{req.required}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {building.synergyBonus && building.synergyBonus.length > 0 && (
+                <div className="synergy-info">
+                  <div className="synergy-label">联动效果:</div>
+                  {building.synergyBonus.map((synergy, idx) => {
+                    const isActive = activeSynergies.some(s => s.synergy.name === synergy.name);
+                    return (
+                      <div key={idx} className={`synergy-preview ${isActive ? 'active' : ''}`}>
+                        <span className="synergy-preview-name">
+                          {isActive ? '🌟' : '🔒'} {synergy.name}
+                        </span>
+                        <div className="synergy-preview-requires">
+                          {synergy.requires.map((req, i) => {
+                            const b = state.buildings.find(bl => bl.id === req.buildingId);
+                            const met = (b?.level || 0) >= req.minLevel;
+                            return (
+                              <span key={i} className={`synergy-req ${met ? 'met' : 'not-met'}`}>
+                                {b?.name} Lv.{b?.level}/{req.minLevel}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               {!maxed && (
                 <div className="building-cost">
                   <span className={cost.gold > state.resources.gold ? 'insufficient' : ''}>💰{cost.gold}</span>
@@ -121,11 +195,13 @@ function AcademyModule() {
               )}
               {maxed ? (
                 <div className="building-maxed">已满级</div>
+              ) : !prereqCheck.met ? (
+                <div className="prereq-blocked">前置条件未满足</div>
               ) : (
                 <button
-                  className={`upgrade-btn ${!affordable ? 'disabled' : ''}`}
-                  onClick={() => affordable && dispatch({ type: 'UPGRADE_BUILDING', buildingId: building.id })}
-                  disabled={!affordable}
+                  className={`upgrade-btn ${!canUpgrade ? 'disabled' : ''}`}
+                  onClick={() => canUpgrade && dispatch({ type: 'UPGRADE_BUILDING', buildingId: building.id })}
+                  disabled={!canUpgrade}
                 >
                   升级
                 </button>
@@ -148,7 +224,8 @@ function RecruitModule() {
       }
       return acc;
     }, 0);
-    return baseCapacity + buildingBonus;
+    const synergyBonus = calculateSynergyBonus(state.buildings, 'capacity');
+    return baseCapacity + buildingBonus + synergyBonus;
   };
 
   const tickets = [
@@ -773,18 +850,24 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
 }
 
 function SettlementModule() {
-  const { state, dispatch } = useGame();
+  const { state, dispatch, getActiveSynergies, calculateSynergyBonus } = useGame();
   const [daysToAdvance, setDaysToAdvance] = React.useState(1);
 
   const libraryLevel = state.buildings.find(b => b.id === 'library')?.level || 0;
   const diningHallLevel = state.buildings.find(b => b.id === 'dining_hall')?.level || 0;
   const manaTowerLevel = state.buildings.find(b => b.id === 'mana_tower')?.level || 0;
+  const dormitoryLevel = state.buildings.find(b => b.id === 'dormitory')?.level || 0;
+
+  const efficiencyBonus = calculateSynergyBonus(state.buildings, 'efficiency');
+  const reputationBonus = calculateSynergyBonus(state.buildings, 'reputation');
+  const capacityBonus = calculateSynergyBonus(state.buildings, 'capacity');
+  const activeSynergies = getActiveSynergies(state.buildings);
 
   const dailyIncome = {
     gold: 50 + diningHallLevel * 5,
     mana: 30 + manaTowerLevel * 10,
     food: 10 + diningHallLevel * 3,
-    reputation: 5 + diningHallLevel * 2,
+    reputation: 5 + diningHallLevel * 2 + reputationBonus,
   };
 
   const foodConsumption = Math.ceil(state.students.length * 0.5);
@@ -793,6 +876,26 @@ function SettlementModule() {
   return (
     <div className="module settlement-module">
       <h2>💰 资源结算</h2>
+
+      {activeSynergies.length > 0 && (
+        <div className="synergy-overview">
+          <h3>✨ 联动效果加成</h3>
+          <div className="synergy-overview-grid">
+            <div className="synergy-overview-item">
+              <span>👥 容量加成</span>
+              <span className="positive">+{capacityBonus}</span>
+            </div>
+            <div className="synergy-overview-item">
+              <span>📚 效率加成</span>
+              <span className="positive">+{efficiencyBonus}%</span>
+            </div>
+            <div className="synergy-overview-item">
+              <span>⭐ 声望加成</span>
+              <span className="positive">+{reputationBonus}/天</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="daily-production">
         <h3>每日产出与消耗</h3>
@@ -817,8 +920,18 @@ function SettlementModule() {
         
         <div className="production-bonus">
           <p>📚 图书馆 Lv.{libraryLevel}: 课程经验 +{libraryLevel * 10}%</p>
+          <p>🏠 宿舍 Lv.{dormitoryLevel}: 容量 +{dormitoryLevel * 4}</p>
           <p>🍽️ 餐厅 Lv.{diningHallLevel}: 产出 +{diningHallLevel * 5}金币, +{diningHallLevel * 3}食物</p>
           <p>🔮 魔力塔 Lv.{manaTowerLevel}: 魔力 +{manaTowerLevel * 10}</p>
+          {efficiencyBonus > 0 && (
+            <p className="synergy-text">✨ 联动效率: 课程经验额外 +{efficiencyBonus}%</p>
+          )}
+          {reputationBonus > 0 && (
+            <p className="synergy-text">✨ 联动声望: 每日额外 +{reputationBonus} 声望</p>
+          )}
+          {capacityBonus > 0 && (
+            <p className="synergy-text">✨ 联动容量: 学员上限额外 +{capacityBonus}</p>
+          )}
         </div>
         
         {studyingCount > 0 && (
