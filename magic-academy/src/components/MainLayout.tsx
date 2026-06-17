@@ -565,9 +565,25 @@ function DungeonModule() {
     );
   };
 
+  const canSweepDungeon = (dungeon: DungeonType): { ok: boolean; reason?: string } => {
+    if (!canSweep(dungeon)) return { ok: false, reason: '未解锁扫荡（需3星通关）' };
+    if (dungeon.bestTeam.length === 0) return { ok: false, reason: '无最佳阵容记录' };
+    const halfStamina = Math.ceil(dungeon.staminaCost * 0.5);
+    const availableMembers = dungeon.bestTeam.filter(id => {
+      const s = state.students.find(st => st.id === id);
+      return s && s.status === 'idle' && s.stamina >= halfStamina;
+    });
+    if (availableMembers.length === 0) {
+      return { ok: false, reason: `最佳阵容体力不足（需${halfStamina}/人）` };
+    }
+    return { ok: true };
+  };
+
   const handleSweep = (dungeonId: string) => {
     const dungeon = state.dungeons.find(d => d.id === dungeonId);
-    if (!dungeon || !canSweep(dungeon)) return;
+    if (!dungeon) return;
+    const sweepCheck = canSweepDungeon(dungeon);
+    if (!sweepCheck.ok) return;
     
     dispatch({ type: 'SWEEP_DUNGEON', dungeonId });
     setShowSweepConfirm(null);
@@ -587,10 +603,18 @@ function DungeonModule() {
       <div className="dungeon-grid">
         {state.dungeons.map(dungeon => {
           const eligibleCount = state.students.filter(s => s.level >= dungeon.requiredLevel).length;
-          const canChallenge = eligibleCount > 0;
+          const battleReadyCount = state.students.filter(s => 
+            s.level >= dungeon.requiredLevel && 
+            s.status === 'idle' && 
+            s.stamina >= dungeon.staminaCost &&
+            s.morale >= 15
+          ).length;
+          const canChallenge = battleReadyCount > 0;
           const sweepable = canSweep(dungeon);
           const hasBestTeam = dungeon.bestTeam.length > 0;
           const sweepRewards = calculateSweepRewards(dungeon);
+          const sweepCheck = canSweepDungeon(dungeon);
+          const halfStamina = Math.ceil(dungeon.staminaCost * 0.5);
           
           return (
             <div key={dungeon.id} className={`dungeon-card ${dungeon.firstCleared ? 'cleared' : ''}`}>
@@ -615,7 +639,7 @@ function DungeonModule() {
               <div className="dungeon-info">
                 <span>🌊 {dungeon.waves} 波</span>
                 <span>📍 需要 Lv.{dungeon.requiredLevel}</span>
-                <span>⚡ 消耗 {dungeon.staminaCost}</span>
+                <span>⚡ 消耗 {dungeon.staminaCost} (扫荡{halfStamina})</span>
               </div>
 
               <div className="dungeon-star-reqs">
@@ -663,7 +687,10 @@ function DungeonModule() {
                 <div className="best-team-info">
                   <span>👥 最佳阵容: {dungeon.bestTeam.map(id => {
                     const student = state.students.find(s => s.id === id);
-                    return student?.name || '未知';
+                    if (!student) return '未知';
+                    const statusEmoji = student.status === 'idle' ? '✅' : '⏳';
+                    const staminaOk = student.stamina >= halfStamina ? '' : '⚡低';
+                    return `${student.name}${statusEmoji}${staminaOk}`;
                   }).join(', ')}</span>
                 </div>
               )}
@@ -681,13 +708,15 @@ function DungeonModule() {
                     {showSweepConfirm === dungeon.id ? (
                       <div className="sweep-confirm">
                         <span>确认扫荡？</span>
-                        <button className="confirm-btn" onClick={() => handleSweep(dungeon.id)}>确定</button>
+                        <button className="confirm-btn" onClick={() => handleSweep(dungeon.id)} disabled={!sweepCheck.ok}>确定</button>
                         <button className="cancel-btn" onClick={() => setShowSweepConfirm(null)}>取消</button>
                       </div>
                     ) : (
                       <button
                         className="dungeon-btn sweep-btn"
                         onClick={() => setShowSweepConfirm(dungeon.id)}
+                        disabled={!sweepCheck.ok}
+                        title={sweepCheck.reason}
                       >
                         ⚡ 扫荡
                       </button>
@@ -698,7 +727,14 @@ function DungeonModule() {
 
               {!canChallenge && (
                 <div className="dungeon-locked">
-                  需要 {dungeon.requiredLevel} 级学员 ({eligibleCount}/{state.students.length} 人符合)
+                  {battleReadyCount === 0 && eligibleCount > 0
+                    ? `无符合条件的学员（需Lv.${dungeon.requiredLevel}+、体力≥${dungeon.staminaCost}、士气≥15%）`
+                    : `需要 Lv.${dungeon.requiredLevel}+ 学员 (${eligibleCount}/${state.students.length} 人等级达标)`}
+                </div>
+              )}
+              {canChallenge && sweepable && !sweepCheck.ok && sweepCheck.reason && (
+                <div className="dungeon-locked sweep-locked">
+                  扫荡不可用: {sweepCheck.reason}
                 </div>
               )}
             </div>
@@ -759,7 +795,7 @@ interface BattleResultData {
 }
 
 function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: DungeonBattleProps) {
-  const { calculateBattleStars, calculateDungeonRewards } = useGame();
+  const { calculateBattleStars, calculateDungeonRewards, getMoraleLabel, getStaminaLabel, calculateMoraleEfficiencyMultiplier, calculateStaminaEfficiencyMultiplier } = useGame();
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const [battleStarted, setBattleStarted] = React.useState(false);
   const [selectedTeam, setSelectedTeam] = React.useState<string[]>([]);
@@ -804,9 +840,29 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
     [eligibleStudents]
   );
 
+  const canStudentBattle = (student: StudentType): { ok: boolean; reason?: string } => {
+    if (student.status !== 'idle') {
+      const course = student.assignedCourse ? courses.find(c => c.id === student.assignedCourse) : null;
+      if (student.status === 'studying' && course) return { ok: false, reason: `正在学习${course.name}` };
+      if (student.status === 'resting') return { ok: false, reason: '正在休息' };
+      if (student.status === 'training') return { ok: false, reason: '正在训练' };
+      return { ok: false, reason: '状态不可用' };
+    }
+    if (student.stamina < dungeon.staminaCost) {
+      return { ok: false, reason: `体力不足(${student.stamina}/${dungeon.staminaCost})` };
+    }
+    if (student.morale < 15) {
+      return { ok: false, reason: `士气过低(${student.morale}%)拒绝出战` };
+    }
+    return { ok: true };
+  };
+
   const availableBestTeamIds = React.useMemo(
-    () => dungeon.bestTeam.filter(id => idleEligibleStudents.some(s => s.id === id)),
-    [dungeon.bestTeam, idleEligibleStudents]
+    () => dungeon.bestTeam.filter(id => {
+      const s = idleEligibleStudents.find(st => st.id === id);
+      return s && canStudentBattle(s).ok;
+    }),
+    [dungeon.bestTeam, idleEligibleStudents, canStudentBattle]
   );
 
   const handleFillBestTeam = React.useCallback(() => {
@@ -863,8 +919,11 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
   const startBattle = () => {
     if (selectedTeam.length === 0) return;
     const team = eligibleStudents.filter(s => selectedTeam.includes(s.id));
+    const validTeam = team.filter(s => canStudentBattle(s).ok);
+    if (validTeam.length === 0) return;
+
     battleRef.current = {
-      playerTeam: team.map(s => ({ 
+      playerTeam: validTeam.map(s => ({ 
         ...s, 
         hp: 100 + s.level * 20 + s.skills.length * 10,
         maxHp: 100 + s.level * 20 + s.skills.length * 10
@@ -878,7 +937,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
       enemyActionTimer: 0,
       attackLog: [],
       turnCount: 0,
-      teamIds: selectedTeam,
+      teamIds: validTeam.map(s => s.id),
     };
     setBattleStarted(true);
     setBattleResult(null);
@@ -948,10 +1007,13 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
         const target = enemyTeam[Math.floor(Math.random() * enemyTeam.length)];
         
         const skillBonus = attacker.skills.length > 0 ? attacker.skills[0].damage : 0;
-        const damage = playerBaseDamage + attacker.level * 3 + skillBonus;
+        const baseDamage = playerBaseDamage + attacker.level * 3 + skillBonus;
+        const moraleMult = calculateMoraleEfficiencyMultiplier(attacker.morale);
+        const staminaMult = calculateStaminaEfficiencyMultiplier(attacker.stamina);
+        const damage = Math.floor(baseDamage * moraleMult * staminaMult);
         
         target.hp -= damage;
-        attackLog.push(`${attacker.name} 对 ${target.name} 造成 ${damage} 伤害`);
+        attackLog.push(`${attacker.name} 对 ${target.name} 造成 ${damage} 伤害${(moraleMult * staminaMult !== 1) ? ` (×${(moraleMult * staminaMult).toFixed(2)})` : ''}`);
         
         if (attackLog.length > 5) attackLog.shift();
         
@@ -1089,13 +1151,16 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
               {eligibleStudents.map(student => {
                 const course = student.assignedCourse ? courses.find(c => c.id === student.assignedCourse) : null;
                 const isInBestTeam = dungeon.bestTeam.includes(student.id);
-                const isIdle = student.status === 'idle';
+                const battleCheck = canStudentBattle(student);
+                const isDisabled = !battleCheck.ok;
+                const moraleInfo = getMoraleLabel(student.morale);
+                const staminaInfo = getStaminaLabel(student.stamina);
                 return (
-                  <label key={student.id} className={`team-member-option ${!isIdle ? 'disabled' : ''} ${isInBestTeam ? 'best-team' : ''}`}>
+                  <label key={student.id} className={`team-member-option ${isDisabled ? 'disabled' : ''} ${isInBestTeam ? 'best-team' : ''}`}>
                     <input
                       type="checkbox"
                       checked={selectedTeam.includes(student.id)}
-                      disabled={!isIdle}
+                      disabled={isDisabled}
                       onChange={(e) => {
                         if (e.target.checked) {
                           setSelectedTeam([...selectedTeam, student.id]);
@@ -1104,15 +1169,34 @@ function DungeonBattle({ dungeon, students, courses, onClose, onComplete }: Dung
                         }
                       }}
                     />
-                    <span>
-                      {student.name} (Lv.{student.level})
-                      {student.skills.length > 0 && ` [${student.skills.length}技能]`}
-                      {!isIdle && course && ` - 正在${course.name}`}
-                      {isInBestTeam && ' ⭐最佳阵容'}
-                    </span>
+                    <div className="team-member-info">
+                      <div className="team-member-name">
+                        {student.name} (Lv.{student.level})
+                        {student.skills.length > 0 && ` [${student.skills.length}技能]`}
+                        {isInBestTeam && ' ⭐'}
+                      </div>
+                      <div className="team-member-stats">
+                        <span style={{ color: moraleInfo.color }}>😊{student.morale}%</span>
+                        <span style={{ color: staminaInfo.color }}>⚡{student.stamina}%</span>
+                        <span>需体力:{dungeon.staminaCost}</span>
+                      </div>
+                      {isDisabled && battleCheck.reason && (
+                        <div className="team-member-disabled-reason">
+                          ❌ {battleCheck.reason}
+                        </div>
+                      )}
+                      {!isDisabled && course && (
+                        <div className="team-member-status">
+                          📖 正在{course.name}
+                        </div>
+                      )}
+                    </div>
                   </label>
                 );
               })}
+            </div>
+            <div className="battle-hint">
+              <p>💡 提示: 士气和体力会影响战斗伤害(±80%~+32%)，注意让学员休息恢复</p>
             </div>
             <div className="battle-actions">
               <button onClick={startBattle} disabled={selectedTeam.length === 0}>开始战斗</button>

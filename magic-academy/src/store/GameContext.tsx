@@ -226,9 +226,39 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const dungeon = state.dungeons.find(d => d.id === action.dungeonId);
       if (!dungeon) return state;
 
+      const updatedStudents = state.students.map(s => {
+        if (!action.team.includes(s.id)) return s;
+
+        let staminaDelta = -dungeon.staminaCost;
+        let moraleDelta = 0;
+
+        if (action.stars <= 0) {
+          moraleDelta = -15;
+        } else if (action.stars === 1) {
+          moraleDelta = 0;
+        } else if (action.stars === 2) {
+          moraleDelta = 5;
+        } else {
+          moraleDelta = 15;
+        }
+
+        if (action.averageHpPercent < 0.3) {
+          moraleDelta -= 5;
+          staminaDelta -= 10;
+        }
+
+        return {
+          ...s,
+          morale: clamp(s.morale + moraleDelta, 0, 100),
+          stamina: clamp(s.stamina + staminaDelta, 0, 100),
+          status: 'idle' as const,
+        };
+      });
+
       if (action.stars <= 0) {
         return {
           ...state,
+          students: updatedStudents,
           dungeons: state.dungeons.map(d =>
             d.id === action.dungeonId ? {
               ...d,
@@ -246,6 +276,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       
       return {
         ...state,
+        students: updatedStudents,
         resources: {
           gold: state.resources.gold + rewards.gold,
           mana: state.resources.mana + rewards.mana,
@@ -271,9 +302,22 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       if (!dungeon || !canSweep(dungeon)) return state;
       
       const rewards = calculateSweepRewards(dungeon);
+      const teamIds = dungeon.bestTeam;
+
+      const updatedStudents = state.students.map(s => {
+        if (!teamIds.includes(s.id)) return s;
+        const staminaDelta = -Math.ceil(dungeon.staminaCost * 0.5);
+        const moraleDelta = 3;
+        return {
+          ...s,
+          morale: clamp(s.morale + moraleDelta, 0, 100),
+          stamina: clamp(s.stamina + staminaDelta, 0, 100),
+        };
+      });
       
       return {
         ...state,
+        students: updatedStudents,
         resources: {
           gold: state.resources.gold + rewards.gold,
           mana: state.resources.mana + rewards.mana,
