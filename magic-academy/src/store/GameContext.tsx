@@ -1527,12 +1527,58 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const recentLogs = state.dailyLogs.slice(-29);
       recentLogs.push(dailyLog);
 
+      const newDay = state.day + 1;
+
+      let newDailySnapshots = state.dailySnapshots;
+      if (state.autoSaveConfig.saveOnDayAdvance) {
+        const avgMorale = updatedStudents.length > 0
+          ? updatedStudents.reduce((sum, s) => sum + s.morale, 0) / updatedStudents.length
+          : 0;
+        const avgStamina = updatedStudents.length > 0
+          ? updatedStudents.reduce((sum, s) => sum + s.stamina, 0) / updatedStudents.length
+          : 0;
+        const studyingCount = updatedStudents.filter(s => s.status === 'studying').length;
+        const restingCount = updatedStudents.filter(s => s.status === 'resting').length;
+        const totalExp = updatedStudents.reduce((sum, s) => sum + s.exp, 0);
+        const buildingLevels: Record<string, number> = {};
+        state.buildings.forEach(b => { buildingLevels[b.id] = b.level; });
+
+        const dailySnapshot: DailySnapshot = {
+          day: state.day,
+          timestamp: Date.now(),
+          resources: { ...finalResources },
+          studentCount: updatedStudents.length,
+          buildingLevels,
+          avgMorale,
+          avgStamina,
+          studyingCount,
+          restingCount,
+          totalExp,
+          events: [...todayEvents],
+          income: { ...dailyIncome },
+          consumption: { food: actualFoodConsumed },
+          netChange: {
+            gold: finalResources.gold - state.resources.gold,
+            mana: finalResources.mana - state.resources.mana,
+            food: finalResources.food - state.resources.food,
+            reputation: finalResources.reputation - state.resources.reputation,
+          },
+        };
+
+        newDailySnapshots = [...state.dailySnapshots, dailySnapshot];
+        const maxSnapshots = state.autoSaveConfig.maxSnapshots;
+        if (newDailySnapshots.length > maxSnapshots) {
+          newDailySnapshots = newDailySnapshots.slice(newDailySnapshots.length - maxSnapshots);
+        }
+      }
+
       return {
         ...state,
-        day: state.day + 1,
+        day: newDay,
         students: updatedStudents,
         dailyLogs: recentLogs,
         resources: finalResources,
+        dailySnapshots: newDailySnapshots,
       };
     }
 
@@ -1915,12 +1961,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const nextDayWithSave = (days: number = 1) => {
     const safeDays = Math.max(1, Math.min(30, days));
-    if (state.autoSaveConfig.saveOnDayAdvance) {
-      recordDailySnapshot();
-      autoSaveIfEnabled();
-    }
     for (let i = 0; i < safeDays; i++) {
       dispatch({ type: 'NEXT_DAY' });
+    }
+    if (state.autoSaveConfig.enabled && state.autoSaveConfig.saveOnDayAdvance) {
+      saveGame();
+      dispatch({ type: 'UPDATE_AUTO_SAVE_CONFIG', config: { lastAutoSave: Date.now() } });
     }
   };
 

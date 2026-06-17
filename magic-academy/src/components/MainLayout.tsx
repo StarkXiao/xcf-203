@@ -2729,6 +2729,21 @@ function RecordsModule() {
       student: '学员',
       level: '等级',
       warning: '警告',
+      food_consumed: '食物',
+      food_shortage: '短缺',
+      morale_change: '士气',
+      student_left: '离开',
+      rest: '休息',
+      study: '学习',
+      course_complete: '完成',
+      course_queued: '队列',
+      course_started: '开课',
+      queue_empty: '空队列',
+      course_conflict: '冲突',
+      hp_heal: '治疗',
+      hp_natural_recovery: '回血',
+      battle_injury: '受伤',
+      cannot_battle_injured: '无法战斗',
     };
     return labels[type] || type;
   };
@@ -2827,6 +2842,36 @@ function RecordsModule() {
                     <div className="snapshot-card consumption">
                       <div className="snapshot-card-label">🍖 当日食物消耗</div>
                       <div className="snapshot-card-value">-{currentSnapshot.consumption.food}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="snapshot-section">
+                  <h4>📈 当日净变化</h4>
+                  <div className="snapshot-grid">
+                    <div className={`snapshot-card ${currentSnapshot.netChange.gold >= 0 ? 'income' : 'consumption'}`}>
+                      <div className="snapshot-card-label">💰 金币变化</div>
+                      <div className="snapshot-card-value">
+                        {currentSnapshot.netChange.gold >= 0 ? '+' : ''}{currentSnapshot.netChange.gold}
+                      </div>
+                    </div>
+                    <div className={`snapshot-card ${currentSnapshot.netChange.mana >= 0 ? 'income' : 'consumption'}`}>
+                      <div className="snapshot-card-label">🔮 魔力变化</div>
+                      <div className="snapshot-card-value">
+                        {currentSnapshot.netChange.mana >= 0 ? '+' : ''}{currentSnapshot.netChange.mana}
+                      </div>
+                    </div>
+                    <div className={`snapshot-card ${currentSnapshot.netChange.food >= 0 ? 'income' : 'consumption'}`}>
+                      <div className="snapshot-card-label">🍖 食物变化</div>
+                      <div className="snapshot-card-value">
+                        {currentSnapshot.netChange.food >= 0 ? '+' : ''}{currentSnapshot.netChange.food}
+                      </div>
+                    </div>
+                    <div className={`snapshot-card ${currentSnapshot.netChange.reputation >= 0 ? 'income' : 'consumption'}`}>
+                      <div className="snapshot-card-label">⭐ 声望变化</div>
+                      <div className="snapshot-card-value">
+                        {currentSnapshot.netChange.reputation >= 0 ? '+' : ''}{currentSnapshot.netChange.reputation}
+                      </div>
                     </div>
                   </div>
                 </div>
