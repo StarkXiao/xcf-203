@@ -96,12 +96,84 @@ export default function MainLayout() {
 }
 
 function AcademyModule() {
-  const { state, dispatch, canAfford, checkPrerequisites, getActiveSynergies } = useGame();
+  const { state, dispatch, canAfford, checkPrerequisites, getActiveSynergies, calculateSynergyBonus } = useGame();
   const activeSynergies = getActiveSynergies(state.buildings);
+
+  const getCapacity = () => {
+    const baseCapacity = 10;
+    const buildingBonus = state.buildings.reduce((acc, b) => {
+      if (b.effect.type === 'student_capacity') {
+        return acc + b.effect.value * b.level;
+      }
+      return acc;
+    }, 0);
+    const synergyBonus = calculateSynergyBonus(state.buildings, 'capacity');
+    return baseCapacity + buildingBonus + synergyBonus;
+  };
+
+  const capacity = getCapacity();
+  const idleStudents = state.students.filter(s => s.status === 'idle').length;
+  const studyingStudents = state.students.filter(s => s.status === 'studying').length;
+  const challengeableDungeons = state.dungeons.filter(dungeon => {
+    const battleReadyCount = state.students.filter(s => 
+      s.level >= dungeon.requiredLevel && 
+      s.status === 'idle' && 
+      s.stamina >= dungeon.staminaCost &&
+      s.morale >= 15
+    ).length;
+    return battleReadyCount > 0;
+  }).length;
+
+  const overviewItems = [
+    { 
+      icon: '👥', 
+      label: '学员容量', 
+      value: `${state.students.length}/${capacity}`, 
+      color: 'var(--primary)',
+      sub: `剩余 ${capacity - state.students.length} 名额`
+    },
+    { 
+      icon: '🟢', 
+      label: '空闲学员', 
+      value: `${idleStudents}`, 
+      color: 'var(--success)',
+      sub: idleStudents > 0 ? '可安排课程或挑战副本' : '无空闲学员'
+    },
+    { 
+      icon: '📚', 
+      label: '进行中课程', 
+      value: `${studyingStudents}`, 
+      color: '#3b82f6',
+      sub: studyingStudents > 0 ? '推进时间可完成课程' : '无课程进行中'
+    },
+    { 
+      icon: '⚔️', 
+      label: '可挑战副本', 
+      value: `${challengeableDungeons}`, 
+      color: 'var(--danger)',
+      sub: `共 ${state.dungeons.length} 个副本`
+    },
+  ];
 
   return (
     <div className="module academy-module">
       <h2>🏰 学院建设</h2>
+      
+      <div className="overview-card">
+        <h3 className="overview-title">📊 经营总览</h3>
+        <div className="overview-grid">
+          {overviewItems.map((item, idx) => (
+            <div key={idx} className="overview-item" style={{ borderTopColor: item.color }}>
+              <div className="overview-item-header">
+                <span className="overview-icon">{item.icon}</span>
+                <span className="overview-label">{item.label}</span>
+              </div>
+              <div className="overview-value" style={{ color: item.color }}>{item.value}</div>
+              <div className="overview-sub">{item.sub}</div>
+            </div>
+          ))}
+        </div>
+      </div>
       
       {activeSynergies.length > 0 && (
         <div className="synergy-section">
