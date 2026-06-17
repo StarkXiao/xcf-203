@@ -84,7 +84,8 @@ type GameAction =
   | { type: 'RESET_GAME' }
   | { type: 'ADD_DAILY_SNAPSHOT'; snapshot: DailySnapshot }
   | { type: 'UPDATE_AUTO_SAVE_CONFIG'; config: Partial<AutoSaveConfig> }
-  | { type: 'CLEAR_OLD_SNAPSHOTS' };
+  | { type: 'CLEAR_OLD_SNAPSHOTS' }
+  | { type: 'TRIGGER_CRITICAL_SAVE' };
 
 const MAX_STUDENT_CAPACITY = 20;
 
@@ -1618,6 +1619,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         dailySnapshots: state.dailySnapshots.slice(-state.autoSaveConfig.maxSnapshots),
       };
 
+    case 'TRIGGER_CRITICAL_SAVE':
+      return state;
+
     default:
       return state;
   }
@@ -1682,14 +1686,62 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(gameReducer, initialState);
   const [activeTab, setActiveTab] = React.useState<TabType>('academy');
 
+  const lastSavedDayRef = React.useRef<number>(state.day);
+  const lastSavedSnapshotsLenRef = React.useRef<number>(state.dailySnapshots.length);
+  const criticalSaveRequestedRef = React.useRef<number>(0);
+
   useEffect(() => {
     const result = loadAndMigrateSave();
     if (result) {
       dispatch({ type: 'LOAD_GAME', state: result.state });
+      lastSavedDayRef.current = result.state.day;
+      lastSavedSnapshotsLenRef.current = result.state.dailySnapshots.length;
     } else {
       dispatch({ type: 'RESET_GAME' });
+      lastSavedDayRef.current = initialState.day;
+      lastSavedSnapshotsLenRef.current = initialState.dailySnapshots.length;
     }
   }, []);
+
+  useEffect(() => {
+    const dayChanged = state.day !== lastSavedDayRef.current;
+    const snapshotAdded = state.dailySnapshots.length !== lastSavedSnapshotsLenRef.current;
+    const criticalSaveRequested = criticalSaveRequestedRef.current > 0;
+
+    const shouldSaveOnDayAdvance = (dayChanged || snapshotAdded) 
+      && state.autoSaveConfig.enabled 
+      && state.autoSaveConfig.saveOnDayAdvance;
+    const shouldSaveOnCritical = criticalSaveRequested 
+      && state.autoSaveConfig.enabled 
+      && state.autoSaveConfig.saveOnCriticalAction;
+
+    if (shouldSaveOnDayAdvance || shouldSaveOnCritical) {
+      try {
+        const saveData = JSON.stringify({
+          saveVersion: state.saveVersion,
+          state,
+          savedAt: new Date().toISOString(),
+        });
+        const backupData = localStorage.getItem('magicAcademySave');
+        if (backupData) {
+          localStorage.setItem('magicAcademyBackup', backupData);
+          localStorage.setItem('magicAcademyBackupTime', new Date().toISOString());
+        }
+        localStorage.setItem('magicAcademySave', saveData);
+        dispatch({ type: 'UPDATE_AUTO_SAVE_CONFIG', config: { lastAutoSave: Date.now() } });
+      } catch (err) {
+        console.error('Auto-save failed:', err);
+      }
+    }
+
+    if (dayChanged || snapshotAdded) {
+      lastSavedDayRef.current = state.day;
+      lastSavedSnapshotsLenRef.current = state.dailySnapshots.length;
+    }
+    if (criticalSaveRequested) {
+      criticalSaveRequestedRef.current = 0;
+    }
+  }, [state]);
 
   const canAfford = (cost: Partial<Resource>): boolean => {
     return (
@@ -1938,9 +1990,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
   };
 
   const autoSaveIfEnabled = () => {
-    if (state.autoSaveConfig.enabled) {
-      saveGame();
-      dispatch({ type: 'UPDATE_AUTO_SAVE_CONFIG', config: { lastAutoSave: Date.now() } });
+    if (state.autoSaveConfig.enabled && state.autoSaveConfig.saveOnCriticalAction) {
+      criticalSaveRequestedRef.current += 1;
+      dispatch({ type: 'TRIGGER_CRITICAL_SAVE' });
     }
   };
 
@@ -1963,10 +2015,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const safeDays = Math.max(1, Math.min(30, days));
     for (let i = 0; i < safeDays; i++) {
       dispatch({ type: 'NEXT_DAY' });
-    }
-    if (state.autoSaveConfig.enabled && state.autoSaveConfig.saveOnDayAdvance) {
-      saveGame();
-      dispatch({ type: 'UPDATE_AUTO_SAVE_CONFIG', config: { lastAutoSave: Date.now() } });
     }
   };
 
