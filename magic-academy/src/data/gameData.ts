@@ -1937,3 +1937,399 @@ export const checkWeeklyReset = (
 export const getCurrentWeek = (day: number): number => {
   return Math.floor((day - 1) / 7) + 1;
 };
+
+import type { SeasonGoal, SeasonStageReward, SeasonState, SeasonHistory, SeasonSettlement, SeasonGoalType } from '../types/game';
+import { SEASON_DURATION_DAYS, MAX_SEASON_HISTORY } from '../types/game';
+
+const SEASON_NAMES = [
+  '春季学园祭',
+  '夏季修炼营',
+  '秋季魔法节',
+  '冬季试炼季',
+  '星光盛典',
+  '龙魂觉醒',
+  '精灵之森',
+  '深渊探索',
+];
+
+const SEASON_GOAL_TEMPLATES: Omit<SeasonGoal, 'id' | 'current' | 'completed' | 'claimed'>[] = [
+  {
+    name: '🏗️ 基建先锋',
+    description: '升级建筑 5 次',
+    type: 'building',
+    target: 5,
+    reward: { gold: 800, mana: 500, reputation: 30 },
+    seasonPoints: 100,
+  },
+  {
+    name: '🏛️ 建筑大师',
+    description: '升级建筑 10 次',
+    type: 'building',
+    target: 10,
+    reward: { gold: 1500, mana: 1000, food: 100, reputation: 50 },
+    seasonPoints: 200,
+  },
+  {
+    name: '📚 知识海洋',
+    description: '完成课程 10 次',
+    type: 'course',
+    target: 10,
+    reward: { gold: 600, mana: 800, food: 60, reputation: 25 },
+    seasonPoints: 100,
+  },
+  {
+    name: '🎓 学业有成',
+    description: '完成课程 25 次',
+    type: 'course',
+    target: 25,
+    reward: { gold: 1200, mana: 1500, food: 120, reputation: 60 },
+    seasonPoints: 250,
+  },
+  {
+    name: '⚔️ 初出茅庐',
+    description: '挑战副本 3 次',
+    type: 'dungeon',
+    target: 3,
+    reward: { gold: 500, mana: 300, food: 30, reputation: 20 },
+    seasonPoints: 80,
+  },
+  {
+    name: '🗡️ 勇者无畏',
+    description: '挑战副本 10 次',
+    type: 'dungeon',
+    target: 10,
+    reward: { gold: 1500, mana: 800, food: 80, reputation: 60 },
+    seasonPoints: 220,
+  },
+  {
+    name: '📜 招贤纳士',
+    description: '招募学员 3 名',
+    type: 'recruit',
+    target: 3,
+    reward: { gold: 400, mana: 250, food: 80, reputation: 20 },
+    seasonPoints: 80,
+  },
+  {
+    name: '🌟 桃李满园',
+    description: '招募学员 8 名',
+    type: 'recruit',
+    target: 8,
+    reward: { gold: 1000, mana: 600, food: 200, reputation: 50 },
+    seasonPoints: 180,
+  },
+  {
+    name: '⭐ 声名鹊起',
+    description: '获得 200 点声望',
+    type: 'reputation',
+    target: 200,
+    reward: { gold: 800, mana: 500, food: 50 },
+    seasonPoints: 120,
+  },
+  {
+    name: '👑 传奇学院',
+    description: '获得 500 点声望',
+    type: 'reputation',
+    target: 500,
+    reward: { gold: 2000, mana: 1200, food: 150, reputation: 100 },
+    seasonPoints: 300,
+  },
+  {
+    name: '✨ 全能学院',
+    description: '升级建筑3次 + 完成课程5次 + 挑战副本2次 + 招募2人',
+    type: 'comprehensive',
+    target: 12,
+    reward: { gold: 1200, mana: 800, food: 100, reputation: 80 },
+    seasonPoints: 200,
+  },
+  {
+    name: '🏆 赛季巅峰',
+    description: '完成所有类型目标各5个进度',
+    type: 'comprehensive',
+    target: 25,
+    reward: { gold: 2500, mana: 1500, food: 200, reputation: 150 },
+    seasonPoints: 400,
+  },
+];
+
+const SEASON_STAGE_REWARDS: Omit<SeasonStageReward, 'claimed' | 'unlocked'>[] = [
+  {
+    id: 'season_stage_1',
+    stage: 1,
+    name: '起步奖励',
+    description: '赛季初始奖励包',
+    requiredPoints: 100,
+    reward: { gold: 500, mana: 300, food: 50 },
+  },
+  {
+    id: 'season_stage_2',
+    stage: 2,
+    name: '成长礼包',
+    description: '学院发展奖励',
+    requiredPoints: 300,
+    reward: { gold: 1000, mana: 600, food: 100, reputation: 20 },
+  },
+  {
+    id: 'season_stage_3',
+    stage: 3,
+    name: '精英奖励',
+    description: '精英学院专属奖励',
+    requiredPoints: 600,
+    reward: { gold: 1500, mana: 1000, food: 150, reputation: 50 },
+  },
+  {
+    id: 'season_stage_4',
+    stage: 4,
+    name: '荣耀礼包',
+    description: '荣耀学院专属奖励',
+    requiredPoints: 1000,
+    reward: { gold: 2500, mana: 1500, food: 200, reputation: 100 },
+  },
+  {
+    id: 'season_stage_5',
+    stage: 5,
+    name: '传奇奖励',
+    description: '传奇学院终极奖励',
+    requiredPoints: 1500,
+    reward: { gold: 4000, mana: 2500, food: 300, reputation: 200 },
+  },
+];
+
+export const generateSeasonGoals = (seasonNumber: number): SeasonGoal[] => {
+  const shuffled = [...SEASON_GOAL_TEMPLATES].sort(() => Math.random() - 0.5);
+  const selected = shuffled.slice(0, 6);
+  
+  return selected.map((template, index) => ({
+    ...template,
+    id: `season_${seasonNumber}_goal_${index}`,
+    current: 0,
+    completed: false,
+    claimed: false,
+  }));
+};
+
+export const generateSeasonStageRewards = (): SeasonStageReward[] => {
+  return SEASON_STAGE_REWARDS.map(stage => ({
+    ...stage,
+    claimed: false,
+    unlocked: stage.stage === 1,
+  }));
+};
+
+export const getSeasonName = (seasonNumber: number): string => {
+  const index = (seasonNumber - 1) % SEASON_NAMES.length;
+  return SEASON_NAMES[index];
+};
+
+export const INITIAL_SEASON_STATE: SeasonState = {
+  seasonNumber: 1,
+  seasonName: getSeasonName(1),
+  seasonStartDay: 1,
+  seasonDuration: SEASON_DURATION_DAYS,
+  currentDay: 1,
+  seasonPoints: 0,
+  totalPointsEarned: 0,
+  goals: generateSeasonGoals(1),
+  stageRewards: generateSeasonStageRewards(),
+  currentStage: 1,
+  seasonEnded: false,
+  seasonSettled: false,
+  settlementRank: null,
+  settlementRewards: null,
+  settlementClaimed: false,
+};
+
+export const updateSeasonGoalProgress = (
+  goals: SeasonGoal[],
+  type: SeasonGoalType,
+  amount: number = 1
+): { goals: SeasonGoal[]; pointsGained: number } => {
+  let pointsGained = 0;
+  
+  const updatedGoals = goals.map(goal => {
+    if (goal.completed || goal.claimed) return goal;
+    
+    let shouldUpdate = false;
+    
+    if (goal.type === type) {
+      shouldUpdate = true;
+    } else if (goal.type === 'comprehensive') {
+      shouldUpdate = true;
+    }
+    
+    if (shouldUpdate) {
+      const oldCurrent = goal.current;
+      const newCurrent = Math.min(oldCurrent + amount, goal.target);
+      const completed = newCurrent >= goal.target;
+      
+      if (completed && !goal.completed) {
+        pointsGained += goal.seasonPoints;
+      }
+      
+      return { ...goal, current: newCurrent, completed };
+    }
+    
+    return goal;
+  });
+  
+  return { goals: updatedGoals, pointsGained };
+};
+
+export const updateSeasonStageRewards = (
+  stageRewards: SeasonStageReward[],
+  totalPoints: number
+): SeasonStageReward[] => {
+  return stageRewards.map(stage => {
+    if (stage.unlocked && stage.claimed) return stage;
+    
+    const unlocked = totalPoints >= stage.requiredPoints;
+    return { ...stage, unlocked };
+  });
+};
+
+export const getCurrentSeasonStage = (
+  stageRewards: SeasonStageReward[],
+  totalPoints: number
+): number => {
+  let currentStage = 0;
+  for (const stage of stageRewards) {
+    if (totalPoints >= stage.requiredPoints) {
+      currentStage = stage.stage;
+    } else {
+      break;
+    }
+  }
+  return currentStage;
+};
+
+export const calculateSeasonRank = (totalPoints: number): 'S' | 'A' | 'B' | 'C' | 'D' => {
+  if (totalPoints >= 1200) return 'S';
+  if (totalPoints >= 800) return 'A';
+  if (totalPoints >= 500) return 'B';
+  if (totalPoints >= 200) return 'C';
+  return 'D';
+};
+
+export const getRankBonus = (rank: 'S' | 'A' | 'B' | 'C' | 'D'): Partial<Resource> => {
+  switch (rank) {
+    case 'S':
+      return { gold: 5000, mana: 3000, food: 500, reputation: 300 };
+    case 'A':
+      return { gold: 3000, mana: 1800, food: 300, reputation: 150 };
+    case 'B':
+      return { gold: 1500, mana: 900, food: 150, reputation: 80 };
+    case 'C':
+      return { gold: 600, mana: 350, food: 80, reputation: 30 };
+    default:
+      return { gold: 200, mana: 100, food: 30, reputation: 10 };
+  }
+};
+
+export const calculateSeasonSettlement = (
+  season: SeasonState
+): SeasonSettlement => {
+  const rank = calculateSeasonRank(season.totalPointsEarned);
+  const rankBonus = getRankBonus(rank);
+  
+  const completedGoals = season.goals.filter(g => g.completed).length;
+  const totalGoals = season.goals.length;
+  const claimedStages = season.stageRewards.filter(s => s.claimed).length;
+  const totalStages = season.stageRewards.length;
+  
+  let finalRewards: Partial<Resource> = { gold: 0, mana: 0, food: 0, reputation: 0 };
+  for (const goal of season.goals) {
+    if (goal.completed) {
+      finalRewards.gold = (finalRewards.gold || 0) + (goal.reward.gold || 0);
+      finalRewards.mana = (finalRewards.mana || 0) + (goal.reward.mana || 0);
+      finalRewards.food = (finalRewards.food || 0) + (goal.reward.food || 0);
+      finalRewards.reputation = (finalRewards.reputation || 0) + (goal.reward.reputation || 0);
+    }
+  }
+  
+  const carryOverBonus = {
+    gold: Math.floor((finalRewards.gold || 0) * 0.1),
+    mana: Math.floor((finalRewards.mana || 0) * 0.1),
+    food: Math.floor((finalRewards.food || 0) * 0.1),
+    reputation: Math.floor((finalRewards.reputation || 0) * 0.05),
+  };
+  
+  return {
+    seasonNumber: season.seasonNumber,
+    seasonName: season.seasonName,
+    totalPoints: season.totalPointsEarned,
+    rank,
+    goalsCompleted: completedGoals,
+    totalGoals,
+    stagesClaimed: claimedStages,
+    totalStages,
+    finalRewards,
+    rankBonus,
+    carryOverBonus,
+  };
+};
+
+export const checkSeasonEnd = (
+  currentDay: number,
+  seasonStartDay: number,
+  seasonDuration: number
+): boolean => {
+  return currentDay - seasonStartDay >= seasonDuration;
+};
+
+export const createSeasonHistory = (
+  season: SeasonState,
+  finalResources: Resource,
+  studentCount: number,
+  buildingLevels: Record<string, number>
+): SeasonHistory => {
+  const rank = calculateSeasonRank(season.totalPointsEarned);
+  const completedGoals = season.goals.filter(g => g.completed).length;
+  const claimedStages = season.stageRewards.filter(s => s.claimed).length;
+  
+  return {
+    seasonNumber: season.seasonNumber,
+    seasonName: season.seasonName,
+    startedAt: season.seasonStartDay,
+    endedAt: season.currentDay,
+    durationDays: season.currentDay - season.seasonStartDay,
+    finalPoints: season.totalPointsEarned,
+    goalsCompleted: completedGoals,
+    totalGoals: season.goals.length,
+    stagesClaimed: claimedStages,
+    totalStages: season.stageRewards.length,
+    finalResources,
+    studentCount,
+    buildingLevels,
+    rank,
+  };
+};
+
+export const initializeNewSeason = (seasonNumber: number): SeasonState => {
+  return {
+    seasonNumber,
+    seasonName: getSeasonName(seasonNumber),
+    seasonStartDay: 1,
+    seasonDuration: SEASON_DURATION_DAYS,
+    currentDay: 1,
+    seasonPoints: 0,
+    totalPointsEarned: 0,
+    goals: generateSeasonGoals(seasonNumber),
+    stageRewards: generateSeasonStageRewards(),
+    currentStage: 1,
+    seasonEnded: false,
+    seasonSettled: false,
+    settlementRank: null,
+    settlementRewards: null,
+    settlementClaimed: false,
+  };
+};
+
+export const addToSeasonHistory = (
+  history: SeasonHistory[],
+  record: SeasonHistory
+): SeasonHistory[] => {
+  const updated = [record, ...history];
+  if (updated.length > MAX_SEASON_HISTORY) {
+    return updated.slice(0, MAX_SEASON_HISTORY);
+  }
+  return updated;
+};

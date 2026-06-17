@@ -3,6 +3,7 @@ import { useGame } from '../store/GameContext';
 import type { TabType, Dungeon as DungeonType, Student as StudentType, Course as CourseType, DailyEvent, GachaResult, StudentQuality, GoalType, Resource } from '../types/game';
 import { getStudentStatsSummary, calculateExpGain, calculateSynergyBonus, isStudentBattleReady, calculateHpEfficiencyMultiplier, HP_BATTLE_THRESHOLD, calculateHealCost, getMaxHealableHp, RECRUITMENT_TICKETS } from '../data/gameData';
 import './MainLayout.css';
+import SeasonPanel from './SeasonPanel';
 
 interface TabConfig {
   id: TabType;
@@ -16,6 +17,7 @@ const tabs: TabConfig[] = [
   { id: 'course', label: '课程安排', icon: '📚' },
   { id: 'dungeon', label: '试炼副本', icon: '⚔️' },
   { id: 'goals', label: '目标任务', icon: '🎯' },
+  { id: 'season', label: '赛季系统', icon: '🏆' },
   { id: 'settlement', label: '资源结算', icon: '💰' },
   { id: 'records', label: '经营记录', icon: '📊' },
   { id: 'settings', label: '设置存档', icon: '⚙️' },
@@ -114,6 +116,7 @@ export default function MainLayout() {
         {activeTab === 'course' && <CourseModule onStudentClick={setSelectedStudentId} />}
         {activeTab === 'dungeon' && <DungeonModule onStudentClick={setSelectedStudentId} setConfirmDialog={setConfirmDialog} />}
         {activeTab === 'goals' && <GoalsModule />}
+        {activeTab === 'season' && <SeasonPanel />}
         {activeTab === 'settlement' && <SettlementModule setConfirmDialog={setConfirmDialog} />}
         {activeTab === 'records' && <RecordsModule />}
         {activeTab === 'settings' && <SettingsModule />}

@@ -12,6 +12,7 @@ import {
   INITIAL_GOAL_PROGRESS,
   INITIAL_WEEKLY_GOALS,
   INITIAL_STAGE_TASKS_STATE,
+  INITIAL_SEASON_STATE,
 } from './gameData';
 
 type SaveData = Record<string, unknown>;
@@ -419,6 +420,16 @@ function migrateV6ToV7(ctx: MigrationContext): SaveData {
   return data;
 }
 
+function migrateV7ToV8(ctx: MigrationContext): SaveData {
+  const data = { ...ctx.data };
+
+  data.season = { ...INITIAL_SEASON_STATE };
+  data.seasonHistory = [];
+
+  data.saveVersion = 8;
+  return data;
+}
+
 const MIGRATION_CHAIN: Record<number, MigrationStep> = {
   0: migrateV0ToV1,
   1: migrateV1ToV2,
@@ -427,6 +438,7 @@ const MIGRATION_CHAIN: Record<number, MigrationStep> = {
   4: migrateV4ToV5,
   5: migrateV5ToV6,
   6: migrateV6ToV7,
+  7: migrateV7ToV8,
 };
 
 export function migrateSave(rawData: SaveData): GameState {
@@ -619,6 +631,60 @@ function normalizeToGameState(data: SaveData): GameState {
   if (weeklyGoals.goals.length === 0) {
     weeklyGoals.goals = [...INITIAL_WEEKLY_GOALS.goals];
   }
+  
+  const season = data.season && typeof data.season === 'object'
+    ? {
+        seasonNumber: ensureNumber((data.season as Record<string, unknown>).seasonNumber, 1),
+        seasonName: ensureString((data.season as Record<string, unknown>).seasonName, '启航赛季'),
+        seasonStartDay: ensureNumber((data.season as Record<string, unknown>).seasonStartDay, 1),
+        seasonDuration: ensureNumber((data.season as Record<string, unknown>).seasonDuration, 30),
+        currentDay: ensureNumber((data.season as Record<string, unknown>).currentDay, 1),
+        seasonEnded: ensureBoolean((data.season as Record<string, unknown>).seasonEnded, false),
+        seasonSettled: ensureBoolean((data.season as Record<string, unknown>).seasonSettled, false),
+        seasonPoints: ensureNumber((data.season as Record<string, unknown>).seasonPoints, 0),
+        totalPointsEarned: ensureNumber((data.season as Record<string, unknown>).totalPointsEarned, 0),
+        currentStage: ensureNumber((data.season as Record<string, unknown>).currentStage, 1),
+        goals: ensureArray((data.season as Record<string, unknown>).goals, []),
+        stageRewards: ensureArray((data.season as Record<string, unknown>).stageRewards, []),
+        settlementRank: ((data.season as Record<string, unknown>).settlementRank as 'S' | 'A' | 'B' | 'C' | 'D') || null,
+        settlementRewards: ((data.season as Record<string, unknown>).settlementRewards as Partial<Resource> | undefined) || null,
+        settlementClaimed: ensureBoolean((data.season as Record<string, unknown>).settlementClaimed, false),
+      }
+    : { ...INITIAL_SEASON_STATE };
+  
+  if (season.goals.length === 0) {
+    season.goals = [...INITIAL_SEASON_STATE.goals];
+  }
+  
+  if (season.stageRewards.length === 0) {
+    season.stageRewards = [...INITIAL_SEASON_STATE.stageRewards];
+  }
+  
+  const seasonHistory = ensureArray<Record<string, unknown>>(data.seasonHistory, []).map(
+    (h: Record<string, unknown>) => ({
+      seasonNumber: ensureNumber(h.seasonNumber, 0),
+      seasonName: ensureString(h.seasonName, ''),
+      startedAt: ensureNumber(h.startedAt, 0),
+      endedAt: ensureNumber(h.endedAt, 0),
+      durationDays: ensureNumber(h.durationDays, 0),
+      finalPoints: ensureNumber(h.finalPoints, 0),
+      goalsCompleted: ensureNumber(h.goalsCompleted, 0),
+      totalGoals: ensureNumber(h.totalGoals, 0),
+      stagesClaimed: ensureNumber(h.stagesClaimed, 0),
+      totalStages: ensureNumber(h.totalStages, 0),
+      finalResources: ensureResource(
+        (h.finalResources as Partial<Resource> | undefined) || {},
+        { gold: 0, mana: 0, food: 0, reputation: 0 }
+      ),
+      studentCount: ensureNumber(h.studentCount, 0),
+      buildingLevels: h.buildingLevels && typeof h.buildingLevels === 'object'
+        ? (h.buildingLevels as Record<string, number>)
+        : {},
+      rank: (['S', 'A', 'B', 'C', 'D'].includes(h.rank as string) 
+        ? h.rank 
+        : 'D') as 'S' | 'A' | 'B' | 'C' | 'D',
+    })
+  );
 
   return {
     saveVersion: CURRENT_SAVE_VERSION,
@@ -641,6 +707,8 @@ function normalizeToGameState(data: SaveData): GameState {
     goalProgress,
     weeklyGoals,
     stageTasks,
+    season,
+    seasonHistory,
   };
 }
 

@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -67,6 +67,16 @@ import {
   checkWeeklyReset,
   generateWeeklyGoals,
   getCurrentWeek,
+  INITIAL_SEASON_STATE,
+  updateSeasonGoalProgress,
+  updateSeasonStageRewards,
+  getCurrentSeasonStage,
+  calculateSeasonSettlement,
+  checkSeasonEnd,
+  createSeasonHistory,
+  initializeNewSeason,
+  addToSeasonHistory,
+  getRankBonus,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -106,7 +116,14 @@ type GameAction =
   | { type: 'UPDATE_GOAL_PROGRESS'; goalType: GoalType; amount?: number }
   | { type: 'CLAIM_WEEKLY_GOAL'; goalId: string }
   | { type: 'CLAIM_STAGE_TASK'; taskId: string }
-  | { type: 'RESET_WEEKLY_GOALS' };
+  | { type: 'RESET_WEEKLY_GOALS' }
+  | { type: 'UPDATE_SEASON_GOAL_PROGRESS'; goalType: SeasonGoalType; amount?: number }
+  | { type: 'CLAIM_SEASON_GOAL'; goalId: string }
+  | { type: 'CLAIM_SEASON_STAGE_REWARD'; stageId: string }
+  | { type: 'END_SEASON' }
+  | { type: 'SETTLE_SEASON' }
+  | { type: 'CLAIM_SEASON_SETTLEMENT_REWARD' }
+  | { type: 'START_NEW_SEASON' };
 
 const MAX_STUDENT_CAPACITY = 20;
 
@@ -154,6 +171,8 @@ const initialState: GameState = {
   goalProgress: INITIAL_GOAL_PROGRESS,
   weeklyGoals: INITIAL_WEEKLY_GOALS,
   stageTasks: INITIAL_STAGE_TASKS_STATE,
+  season: INITIAL_SEASON_STATE,
+  seasonHistory: [],
 };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -218,6 +237,18 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         tasks: updateStageTaskProgress(state.stageTasks.tasks, 'building'),
       };
       
+      const { goals: newSeasonGoals, pointsGained } = updateSeasonGoalProgress(
+        state.season.goals,
+        'building',
+        1
+      );
+      const newSeasonTotalPoints = state.season.totalPointsEarned + pointsGained;
+      const newSeasonStageRewards = updateSeasonStageRewards(
+        state.season.stageRewards,
+        newSeasonTotalPoints
+      );
+      const newSeasonCurrentStage = getCurrentSeasonStage(newSeasonStageRewards, newSeasonTotalPoints);
+      
       return {
         ...state,
         resources: {
@@ -232,6 +263,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         goalProgress: newGoalProgress,
         weeklyGoals: newWeeklyGoals,
         stageTasks: newStageTasks,
+        season: {
+          ...state.season,
+          goals: newSeasonGoals,
+          totalPointsEarned: newSeasonTotalPoints,
+          seasonPoints: newSeasonTotalPoints,
+          stageRewards: newSeasonStageRewards,
+          currentStage: newSeasonCurrentStage,
+        },
       };
     }
 
@@ -278,6 +317,18 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         tasks: updateStageTaskProgress(state.stageTasks.tasks, 'recruit'),
       };
       
+      const { goals: newSeasonGoals, pointsGained } = updateSeasonGoalProgress(
+        state.season.goals,
+        'recruit',
+        1
+      );
+      const newSeasonTotalPoints = state.season.totalPointsEarned + pointsGained;
+      const newSeasonStageRewards = updateSeasonStageRewards(
+        state.season.stageRewards,
+        newSeasonTotalPoints
+      );
+      const newSeasonCurrentStage = getCurrentSeasonStage(newSeasonStageRewards, newSeasonTotalPoints);
+      
       return {
         ...state,
         pityCounters: newPityCounters,
@@ -292,6 +343,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         goalProgress: newGoalProgress,
         weeklyGoals: newWeeklyGoals,
         stageTasks: newStageTasks,
+        season: {
+          ...state.season,
+          goals: newSeasonGoals,
+          totalPointsEarned: newSeasonTotalPoints,
+          seasonPoints: newSeasonTotalPoints,
+          stageRewards: newSeasonStageRewards,
+          currentStage: newSeasonCurrentStage,
+        },
       };
     }
 
@@ -592,6 +651,18 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         tasks: updateStageTaskProgress(state.stageTasks.tasks, 'course'),
       };
       
+      const { goals: newSeasonGoals, pointsGained } = updateSeasonGoalProgress(
+        state.season.goals,
+        'course',
+        1
+      );
+      const newSeasonTotalPoints = state.season.totalPointsEarned + pointsGained;
+      const newSeasonStageRewards = updateSeasonStageRewards(
+        state.season.stageRewards,
+        newSeasonTotalPoints
+      );
+      const newSeasonCurrentStage = getCurrentSeasonStage(newSeasonStageRewards, newSeasonTotalPoints);
+      
       const dailyLog: DailyLog = {
         day: state.day,
         events: todayEvents,
@@ -606,6 +677,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         goalProgress: newGoalProgress,
         weeklyGoals: newWeeklyGoals,
         stageTasks: newStageTasks,
+        season: {
+          ...state.season,
+          goals: newSeasonGoals,
+          totalPointsEarned: newSeasonTotalPoints,
+          seasonPoints: newSeasonTotalPoints,
+          stageRewards: newSeasonStageRewards,
+          currentStage: newSeasonCurrentStage,
+        },
       };
     }
 
@@ -952,6 +1031,26 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         }
       }
       
+      let seasonGoals = state.season.goals;
+      let seasonPointsGained = 0;
+      
+      const dungeonUpdate = updateSeasonGoalProgress(seasonGoals, 'dungeon', 1);
+      seasonGoals = dungeonUpdate.goals;
+      seasonPointsGained += dungeonUpdate.pointsGained;
+      
+      if (rewards.reputation > 0) {
+        const reputationUpdate = updateSeasonGoalProgress(seasonGoals, 'reputation', rewards.reputation);
+        seasonGoals = reputationUpdate.goals;
+        seasonPointsGained += reputationUpdate.pointsGained;
+      }
+      
+      const newSeasonTotalPoints = state.season.totalPointsEarned + seasonPointsGained;
+      const newSeasonStageRewards = updateSeasonStageRewards(
+        state.season.stageRewards,
+        newSeasonTotalPoints
+      );
+      const newSeasonCurrentStage = getCurrentSeasonStage(newSeasonStageRewards, newSeasonTotalPoints);
+      
       return {
         ...state,
         students: updatedStudents,
@@ -976,6 +1075,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         goalProgress: newGoalProgress,
         weeklyGoals: newWeeklyGoals,
         stageTasks: newStageTasks,
+        season: {
+          ...state.season,
+          goals: seasonGoals,
+          totalPointsEarned: newSeasonTotalPoints,
+          seasonPoints: newSeasonTotalPoints,
+          stageRewards: newSeasonStageRewards,
+          currentStage: newSeasonCurrentStage,
+        },
       };
     }
 
@@ -1013,6 +1120,26 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         tasks: updateStageTaskProgress(state.stageTasks.tasks, 'dungeon'),
       };
       
+      let seasonGoals = state.season.goals;
+      let seasonPointsGained = 0;
+      
+      const dungeonUpdate = updateSeasonGoalProgress(seasonGoals, 'dungeon', 1);
+      seasonGoals = dungeonUpdate.goals;
+      seasonPointsGained += dungeonUpdate.pointsGained;
+      
+      if (rewards.reputation > 0) {
+        const reputationUpdate = updateSeasonGoalProgress(seasonGoals, 'reputation', rewards.reputation);
+        seasonGoals = reputationUpdate.goals;
+        seasonPointsGained += reputationUpdate.pointsGained;
+      }
+      
+      const newSeasonTotalPoints = state.season.totalPointsEarned + seasonPointsGained;
+      const newSeasonStageRewards = updateSeasonStageRewards(
+        state.season.stageRewards,
+        newSeasonTotalPoints
+      );
+      const newSeasonCurrentStage = getCurrentSeasonStage(newSeasonStageRewards, newSeasonTotalPoints);
+      
       return {
         ...state,
         students: updatedStudents,
@@ -1034,6 +1161,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         goalProgress: newGoalProgress,
         weeklyGoals: newWeeklyGoals,
         stageTasks: newStageTasks,
+        season: {
+          ...state.season,
+          goals: seasonGoals,
+          totalPointsEarned: newSeasonTotalPoints,
+          seasonPoints: newSeasonTotalPoints,
+          stageRewards: newSeasonStageRewards,
+          currentStage: newSeasonCurrentStage,
+        },
       };
     }
 
@@ -1230,6 +1365,162 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           goals: generateWeeklyGoals(newWeekNumber),
           weeklyResetCount: state.weeklyGoals.weeklyResetCount + 1,
         },
+      };
+    }
+
+    case 'UPDATE_SEASON_GOAL_PROGRESS': {
+      const amount = action.amount || 1;
+      const { goals: updatedGoals, pointsGained } = updateSeasonGoalProgress(
+        state.season.goals,
+        action.goalType,
+        amount
+      );
+      
+      const newTotalPoints = state.season.totalPointsEarned + pointsGained;
+      const updatedStageRewards = updateSeasonStageRewards(
+        state.season.stageRewards,
+        newTotalPoints
+      );
+      const newCurrentStage = getCurrentSeasonStage(updatedStageRewards, newTotalPoints);
+      
+      return {
+        ...state,
+        season: {
+          ...state.season,
+          goals: updatedGoals,
+          seasonPoints: newTotalPoints,
+          totalPointsEarned: newTotalPoints,
+          stageRewards: updatedStageRewards,
+          currentStage: newCurrentStage,
+        },
+      };
+    }
+
+    case 'CLAIM_SEASON_GOAL': {
+      const goal = state.season.goals.find(g => g.id === action.goalId);
+      if (!goal || !goal.completed || goal.claimed) return state;
+
+      const newGoals = state.season.goals.map(g =>
+        g.id === action.goalId ? { ...g, claimed: true } : g
+      );
+
+      return {
+        ...state,
+        resources: {
+          gold: state.resources.gold + (goal.reward.gold || 0),
+          mana: state.resources.mana + (goal.reward.mana || 0),
+          food: state.resources.food + (goal.reward.food || 0),
+          reputation: state.resources.reputation + (goal.reward.reputation || 0),
+        },
+        season: {
+          ...state.season,
+          goals: newGoals,
+        },
+      };
+    }
+
+    case 'CLAIM_SEASON_STAGE_REWARD': {
+      const stage = state.season.stageRewards.find(s => s.id === action.stageId);
+      if (!stage || !stage.unlocked || stage.claimed) return state;
+
+      const newStageRewards = state.season.stageRewards.map(s =>
+        s.id === action.stageId ? { ...s, claimed: true } : s
+      );
+
+      return {
+        ...state,
+        resources: {
+          gold: state.resources.gold + (stage.reward.gold || 0),
+          mana: state.resources.mana + (stage.reward.mana || 0),
+          food: state.resources.food + (stage.reward.food || 0),
+          reputation: state.resources.reputation + (stage.reward.reputation || 0),
+        },
+        season: {
+          ...state.season,
+          stageRewards: newStageRewards,
+        },
+      };
+    }
+
+    case 'END_SEASON': {
+      if (state.season.seasonEnded) return state;
+      
+      return {
+        ...state,
+        season: {
+          ...state.season,
+          seasonEnded: true,
+        },
+      };
+    }
+    
+    case 'SETTLE_SEASON': {
+      if (!state.season.seasonEnded || state.season.seasonSettled) return state;
+      
+      const settlement = calculateSeasonSettlement(state.season);
+      const rankBonus = getRankBonus(settlement.rank);
+      const totalRewards = {
+        gold: (rankBonus.gold || 0) + (settlement.carryOverBonus.gold || 0),
+        mana: (rankBonus.mana || 0) + (settlement.carryOverBonus.mana || 0),
+        food: (rankBonus.food || 0) + (settlement.carryOverBonus.food || 0),
+        reputation: (rankBonus.reputation || 0) + (settlement.carryOverBonus.reputation || 0),
+      };
+      
+      return {
+        ...state,
+        season: {
+          ...state.season,
+          seasonSettled: true,
+          settlementRank: settlement.rank,
+          settlementRewards: totalRewards,
+        },
+      };
+    }
+
+    case 'CLAIM_SEASON_SETTLEMENT_REWARD': {
+      if (!state.season.seasonSettled || state.season.settlementClaimed || !state.season.settlementRewards) return state;
+      
+      const buildingLevels: Record<string, number> = {};
+      state.buildings.forEach(b => {
+        buildingLevels[b.id] = b.level;
+      });
+      
+      const historyRecord = createSeasonHistory(
+        state.season,
+        state.resources,
+        state.students.length,
+        buildingLevels
+      );
+      
+      const newSeasonHistory = addToSeasonHistory(state.seasonHistory, historyRecord);
+      
+      return {
+        ...state,
+        resources: {
+          gold: state.resources.gold + (state.season.settlementRewards.gold || 0),
+          mana: state.resources.mana + (state.season.settlementRewards.mana || 0),
+          food: state.resources.food + (state.season.settlementRewards.food || 0),
+          reputation: state.resources.reputation + (state.season.settlementRewards.reputation || 0),
+        },
+        season: {
+          ...state.season,
+          settlementClaimed: true,
+        },
+        seasonHistory: newSeasonHistory,
+      };
+    }
+
+    case 'START_NEW_SEASON': {
+      if (!state.season.seasonEnded || !state.season.settlementClaimed) return state;
+      
+      const newSeasonNumber = state.season.seasonNumber + 1;
+      const newSeason = initializeNewSeason(newSeasonNumber);
+      newSeason.seasonStartDay = state.day;
+      newSeason.currentDay = state.day;
+      
+      return {
+        ...state,
+        season: newSeason,
       };
     }
 
@@ -1798,6 +2089,19 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         });
       }
 
+      let finalSeason = { ...state.season };
+      if (!state.season.seasonEnded) {
+        finalSeason.currentDay = newDay;
+        
+        if (checkSeasonEnd(newDay, state.season.seasonStartDay, state.season.seasonDuration)) {
+          finalSeason.seasonEnded = true;
+          todayEvents.push({
+            type: 'income',
+            message: `🏆 第${state.season.seasonNumber}赛季「${state.season.seasonName}」已结束！请到赛季页面领取结算奖励`,
+          });
+        }
+      }
+
       return {
         ...state,
         day: newDay,
@@ -1806,6 +2110,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         resources: finalResources,
         dailySnapshots: newDailySnapshots,
         weeklyGoals: finalWeeklyGoals,
+        season: finalSeason,
       };
     }
 
@@ -1916,6 +2221,12 @@ interface GameContextType {
   resetWeeklyGoals: () => void;
   getCurrentWeek: typeof getCurrentWeek;
   getWeeklyProgress: () => { current: number; total: number; daysLeft: number };
+  claimSeasonGoal: (goalId: string) => void;
+  claimSeasonStageReward: (stageId: string) => void;
+  settleSeason: () => void;
+  startNewSeason: () => void;
+  getSeasonProgress: () => { currentDay: number; daysLeft: number; totalDays: number };
+  claimSeasonSettlementReward: () => void;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -2283,6 +2594,43 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const daysLeft = Math.max(0, 7 - (state.day - state.weeklyGoals.weekStartDay));
     return { current: completed, total, daysLeft };
   };
+  
+  const claimSeasonGoal = (goalId: string) => {
+    dispatch({ type: 'CLAIM_SEASON_GOAL', goalId });
+    autoSaveIfEnabled();
+  };
+  
+  const claimSeasonStageReward = (stageId: string) => {
+    dispatch({ type: 'CLAIM_SEASON_STAGE_REWARD', stageId });
+    autoSaveIfEnabled();
+  };
+  
+  const settleSeason = () => {
+    dispatch({ type: 'SETTLE_SEASON' });
+    autoSaveIfEnabled();
+  };
+  
+  const startNewSeason = () => {
+    dispatch({ type: 'START_NEW_SEASON' });
+    autoSaveIfEnabled();
+  };
+  
+  const getSeasonProgress = () => {
+    const currentDay = state.season.seasonEnded 
+      ? state.season.seasonDuration 
+      : state.day - state.season.seasonStartDay + 1;
+    const daysLeft = Math.max(0, state.season.seasonDuration - currentDay + 1);
+    return { 
+      currentDay: Math.max(1, Math.min(currentDay, state.season.seasonDuration)), 
+      daysLeft, 
+      totalDays: state.season.seasonDuration 
+    };
+  };
+  
+  const claimSeasonSettlementReward = () => {
+    dispatch({ type: 'CLAIM_SEASON_SETTLEMENT_REWARD' });
+    autoSaveIfEnabled();
+  };
 
   return (
     <GameContext.Provider value={{ 
@@ -2348,6 +2696,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
       resetWeeklyGoals,
       getCurrentWeek,
       getWeeklyProgress,
+      claimSeasonGoal,
+      claimSeasonStageReward,
+      settleSeason,
+      startNewSeason,
+      getSeasonProgress,
+      claimSeasonSettlementReward,
     }}>
       {children}
     </GameContext.Provider>

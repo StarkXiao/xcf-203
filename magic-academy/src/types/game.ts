@@ -216,7 +216,85 @@ export interface Enemy {
   isBoss: boolean;
 }
 
-export const CURRENT_SAVE_VERSION = 7;
+export const CURRENT_SAVE_VERSION = 8;
+
+export type SeasonGoalType = 'building' | 'course' | 'dungeon' | 'recruit' | 'reputation' | 'comprehensive';
+
+export interface SeasonGoal {
+  id: string;
+  name: string;
+  description: string;
+  type: SeasonGoalType;
+  target: number;
+  current: number;
+  reward: Partial<Resource>;
+  completed: boolean;
+  claimed: boolean;
+  seasonPoints: number;
+}
+
+export interface SeasonStageReward {
+  id: string;
+  stage: number;
+  name: string;
+  description: string;
+  requiredPoints: number;
+  reward: Partial<Resource>;
+  claimed: boolean;
+  unlocked: boolean;
+}
+
+export interface SeasonState {
+  seasonNumber: number;
+  seasonName: string;
+  seasonStartDay: number;
+  seasonDuration: number;
+  currentDay: number;
+  seasonPoints: number;
+  totalPointsEarned: number;
+  goals: SeasonGoal[];
+  stageRewards: SeasonStageReward[];
+  currentStage: number;
+  seasonEnded: boolean;
+  seasonSettled: boolean;
+  settlementRank: 'S' | 'A' | 'B' | 'C' | 'D' | null;
+  settlementRewards: Partial<Resource> | null;
+  settlementClaimed: boolean;
+}
+
+export interface SeasonHistory {
+  seasonNumber: number;
+  seasonName: string;
+  startedAt: number;
+  endedAt: number;
+  durationDays: number;
+  finalPoints: number;
+  goalsCompleted: number;
+  totalGoals: number;
+  stagesClaimed: number;
+  totalStages: number;
+  finalResources: Resource;
+  studentCount: number;
+  buildingLevels: Record<string, number>;
+  rank: 'S' | 'A' | 'B' | 'C' | 'D';
+}
+
+export interface SeasonSettlement {
+  seasonNumber: number;
+  seasonName: string;
+  totalPoints: number;
+  rank: 'S' | 'A' | 'B' | 'C' | 'D';
+  goalsCompleted: number;
+  totalGoals: number;
+  stagesClaimed: number;
+  totalStages: number;
+  finalRewards: Partial<Resource>;
+  rankBonus: Partial<Resource>;
+  carryOverBonus: Partial<Resource>;
+}
+
+export const SEASON_DURATION_DAYS = 30;
+export const MAX_SEASON_HISTORY = 10;
 
 export type GoalType = 'building' | 'course' | 'dungeon' | 'recruit' | 'comprehensive';
 
@@ -346,6 +424,8 @@ export interface GameState {
   goalProgress: GoalProgress;
   weeklyGoals: WeeklyGoalsState;
   stageTasks: StageTasksState;
+  season: SeasonState;
+  seasonHistory: SeasonHistory[];
 }
 
 export interface CourseBenefitBreakdown {
@@ -380,7 +460,7 @@ export interface DungeonProgress {
   turnCount: number;
 }
 
-export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'goals' | 'settlement' | 'records' | 'settings';
+export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'goals' | 'settlement' | 'records' | 'settings' | 'season';
 
 export interface DailySnapshot {
   day: number;
