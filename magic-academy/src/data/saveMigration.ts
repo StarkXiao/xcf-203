@@ -1,4 +1,4 @@
-import type { GameState, Resource, Dungeon, Student, Building, Course, DailyEvent, Teacher, GoalProgress, WeeklyGoalsState, StageTasksState } from '../types/game';
+import type { GameState, Resource, Dungeon, Student, Building, Course, DailyEvent, Teacher } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import {
   INITIAL_RESOURCES,

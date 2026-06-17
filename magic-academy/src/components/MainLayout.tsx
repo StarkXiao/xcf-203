@@ -2404,13 +2404,6 @@ function GoalsModule() {
     dispatch({ type: 'CLAIM_STAGE_TASK', taskId });
   };
 
-  const getProgressColor = (current: number, target: number) => {
-    const ratio = current / target;
-    if (ratio >= 1) return 'bg-green-500';
-    if (ratio >= 0.5) return 'bg-yellow-500';
-    return 'bg-blue-500';
-  };
-
   const formatReward = (reward: Partial<Resource>) => {
     const parts: string[] = [];
     if (reward.gold) parts.push(`💰 ${reward.gold}`);
@@ -2426,8 +2419,7 @@ function GoalsModule() {
       case 'course': return '📚';
       case 'dungeon': return '⚔️';
       case 'recruit': return '👤';
-      case 'totalStudents': return '👥';
-      case 'reputation': return '⭐';
+      case 'comprehensive': return '✨';
       default: return '🎯';
     }
   };

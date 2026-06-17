@@ -380,7 +380,7 @@ export interface DungeonProgress {
   turnCount: number;
 }
 
-export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'settlement' | 'records' | 'settings';
+export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'goals' | 'settlement' | 'records' | 'settings';
 
 export interface DailySnapshot {
   day: number;

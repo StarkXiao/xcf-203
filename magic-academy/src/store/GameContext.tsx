@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, WeeklyGoal, StageTask, GoalType } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -940,7 +940,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         goals: updateWeeklyGoalProgress(state.weeklyGoals.goals, 'dungeon'),
       };
       
-      let newStageTasks = {
+      const newStageTasks = {
         ...state.stageTasks,
         tasks: updateStageTaskProgress(state.stageTasks.tasks, 'dungeon'),
       };
