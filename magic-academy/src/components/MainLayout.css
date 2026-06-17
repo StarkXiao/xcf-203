@@ -3294,6 +3294,27 @@ body {
   margin: 0.25rem 0;
 }
 
+.probability-current {
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px dashed var(--border);
+}
+
+.probability-base {
+  margin-bottom: 0.5rem;
+}
+
+.probability-section-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.4rem;
+}
+
+.probability-current .probability-section-title {
+  color: var(--primary);
+}
+
 .gacha-overlay,
 .history-overlay {
   position: fixed;

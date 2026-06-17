@@ -65,8 +65,8 @@ export const INITIAL_BUILDINGS: Building[] = [
     level: 1,
     maxLevel: 10,
     cost: { gold: 200, mana: 100, food: 30, reputation: 5 },
-    effect: { type: 'student_capacity', value: 3 },
-    description: '增加3点学员容量',
+    effect: { type: 'recruit_quality', value: 1 },
+    description: '招募品质加成+1/级',
   },
   {
     id: 'dormitory',
@@ -895,40 +895,9 @@ export const rollQuality = (
   pityCount: number,
   recruitQualityBonus: number = 0
 ): { quality: StudentQuality; isPity: boolean; adjustedProbabilities: Record<StudentQuality, number> } => {
-  const baseProbabilities = getProbabilities(ticketQuality);
+  const { adjusted: adjustedProbabilities } = computeAdjustedProbabilities(ticketQuality, pityCount, recruitQualityBonus);
   const pityThreshold = getPityThreshold(ticketQuality);
   const guaranteedQuality = getGuaranteedQuality(ticketQuality);
-
-  const adjustedProbabilities: Record<StudentQuality, number> = {
-    common: baseProbabilities.common,
-    rare: baseProbabilities.rare,
-    epic: baseProbabilities.epic,
-    legendary: baseProbabilities.legendary,
-  };
-
-  if (recruitQualityBonus > 0) {
-    const qualities: StudentQuality[] = ['common', 'rare', 'epic', 'legendary'];
-    for (let i = 0; i < qualities.length - 1; i++) {
-      const shift = Math.min(adjustedProbabilities[qualities[i]] * recruitQualityBonus * 0.1, adjustedProbabilities[qualities[i]] * 0.5);
-      adjustedProbabilities[qualities[i]] -= shift;
-      adjustedProbabilities[qualities[i + 1]] += shift;
-    }
-  }
-
-  const pityProgress = pityCount / pityThreshold;
-  if (pityProgress >= 0.5) {
-    const boostFactor = (pityProgress - 0.5) * 2;
-    const guaranteedOrder = getQualityOrder(guaranteedQuality);
-    const qualities: StudentQuality[] = ['common', 'rare', 'epic', 'legendary'];
-    
-    for (let i = 0; i < qualities.length; i++) {
-      if (i < guaranteedOrder) {
-        const reduction = adjustedProbabilities[qualities[i]] * boostFactor * 0.8;
-        adjustedProbabilities[qualities[i]] -= reduction;
-        adjustedProbabilities[guaranteedQuality] += reduction;
-      }
-    }
-  }
 
   const isPity = pityCount >= pityThreshold;
 
@@ -951,10 +920,66 @@ export const rollQuality = (
 };
 
 export const getRecruitQualityBonus = (buildings: Building[]): number => {
-  return buildings.reduce((acc, b) => {
-    if (b.effect.type === 'recruit_quality') {
-      return acc + b.effect.value * b.level;
+  const trainingFieldLevel = buildings.find(b => b.id === 'training_field')?.level || 0;
+  const libraryLevel = buildings.find(b => b.id === 'library')?.level || 0;
+  return trainingFieldLevel * 0.5 + libraryLevel * 0.3;
+};
+
+export const computeAdjustedProbabilities = (
+  ticketQuality: StudentQuality,
+  pityCount: number,
+  recruitQualityBonus: number = 0
+): { adjusted: Record<StudentQuality, number>; base: Record<StudentQuality, number> } => {
+  const baseProbabilities = getProbabilities(ticketQuality);
+  const adjusted: Record<StudentQuality, number> = {
+    common: baseProbabilities.common,
+    rare: baseProbabilities.rare,
+    epic: baseProbabilities.epic,
+    legendary: baseProbabilities.legendary,
+  };
+
+  const ticketWeight = QUALITY_WEIGHTS[ticketQuality];
+  const effectiveBonus = recruitQualityBonus * ticketWeight;
+
+  if (effectiveBonus > 0) {
+    const qualities: StudentQuality[] = ['common', 'rare', 'epic', 'legendary'];
+    for (let i = 0; i < qualities.length - 1; i++) {
+      const shift = Math.min(
+        adjusted[qualities[i]] * effectiveBonus * 0.1,
+        adjusted[qualities[i]] * 0.5
+      );
+      adjusted[qualities[i]] -= shift;
+      adjusted[qualities[i + 1]] += shift;
     }
-    return acc;
-  }, 0);
+  }
+
+  const pityThreshold = getPityThreshold(ticketQuality);
+  const pityProgress = pityCount / pityThreshold;
+  if (pityProgress >= 0.5) {
+    const guaranteedQuality = getGuaranteedQuality(ticketQuality);
+    const guaranteedOrder = getQualityOrder(guaranteedQuality);
+    const boostFactor = (pityProgress - 0.5) * 2;
+    const qualities: StudentQuality[] = ['common', 'rare', 'epic', 'legendary'];
+
+    for (let i = 0; i < qualities.length; i++) {
+      if (i < guaranteedOrder) {
+        const reduction = adjusted[qualities[i]] * boostFactor * 0.8;
+        adjusted[qualities[i]] -= reduction;
+        adjusted[guaranteedQuality] += reduction;
+      }
+    }
+  }
+
+  if (pityCount >= pityThreshold) {
+    const guaranteedQuality = getGuaranteedQuality(ticketQuality);
+    const qualities: StudentQuality[] = ['common', 'rare', 'epic', 'legendary'];
+    for (const q of qualities) {
+      if (q !== guaranteedQuality) {
+        adjusted[q] = 0;
+      }
+    }
+    adjusted[guaranteedQuality] = 1;
+  }
+
+  return { adjusted, base: baseProbabilities };
 };

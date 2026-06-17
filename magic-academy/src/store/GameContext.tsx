@@ -38,6 +38,8 @@ import {
   getQualityOrder,
   getRecruitQualityBonus,
   getProbabilities,
+  computeAdjustedProbabilities,
+  getGuaranteedQuality,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -169,24 +171,17 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
     case 'RECRUIT_STUDENT': {
       const { result } = action;
+      const guaranteedQuality = getGuaranteedQuality(result.ticketQuality);
+      const guaranteedOrder = getQualityOrder(guaranteedQuality);
       const resultQualityOrder = getQualityOrder(result.resultQuality);
-      const ticketQualityOrder = getQualityOrder(result.ticketQuality);
 
       const newPityCounters = { ...state.pityCounters };
-      const qualities: StudentQuality[] = ['common', 'rare', 'epic', 'legendary'];
-      
-      qualities.forEach((quality) => {
-        const qualityOrder = getQualityOrder(quality);
-        if (qualityOrder <= ticketQualityOrder) {
-          if (result.isPityTriggered || resultQualityOrder > qualityOrder) {
-            newPityCounters[quality] = 0;
-          } else if (quality === result.ticketQuality) {
-            newPityCounters[quality] += 1;
-          } else if (qualityOrder < ticketQualityOrder) {
-            newPityCounters[quality] += 1;
-          }
-        }
-      });
+
+      if (result.isPityTriggered || resultQualityOrder >= guaranteedOrder) {
+        newPityCounters[result.ticketQuality] = 0;
+      } else {
+        newPityCounters[result.ticketQuality] += 1;
+      }
 
       const newHistoryResults = [...state.gachaHistory.results, result];
       if (newHistoryResults.length > 100) {
@@ -1267,6 +1262,8 @@ interface GameContextType {
   getPityThreshold: typeof getPityThreshold;
   getProbabilities: typeof getProbabilities;
   getRecruitQualityBonus: typeof getRecruitQualityBonus;
+  computeAdjustedProbabilities: typeof computeAdjustedProbabilities;
+  getGuaranteedQuality: typeof getGuaranteedQuality;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -1517,6 +1514,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       getPityThreshold,
       getProbabilities,
       getRecruitQualityBonus,
+      computeAdjustedProbabilities,
+      getGuaranteedQuality,
     }}>
       {children}
     </GameContext.Provider>

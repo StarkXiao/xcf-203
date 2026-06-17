@@ -151,7 +151,11 @@ function AcademyModule() {
               </div>
               <p className="building-desc">{building.description}</p>
               <div className="building-effect">
-                效果: +{building.effect.value * building.level}
+                {building.effect.type === 'student_capacity' && `效果: 学员容量 +${building.effect.value * building.level}`}
+                {building.effect.type === 'mana_capacity' && `效果: 魔力上限 +${building.effect.value * building.level}`}
+                {building.effect.type === 'reputation_gain' && `效果: 声望获取 +${building.effect.value * building.level}`}
+                {building.effect.type === 'course_speed' && `效果: 课程速度 +${building.effect.value * building.level}%`}
+                {building.effect.type === 'recruit_quality' && `效果: 招募品质加成 +${(building.effect.value * building.level * 0.5).toFixed(1)}`}
               </div>
               
               {building.prerequisites && building.prerequisites.length > 0 && (
@@ -229,7 +233,7 @@ interface ModuleProps {
 }
 
 function RecruitModule({ onStudentClick }: ModuleProps) {
-  const { state, dispatch, canAfford, recruitStudent, assignStudentToRest, getMoraleLabel, getStaminaLabel, getPityThreshold, getProbabilities } = useGame();
+  const { state, dispatch, canAfford, recruitStudent, assignStudentToRest, getMoraleLabel, getStaminaLabel, getPityThreshold, computeAdjustedProbabilities, getRecruitQualityBonus, getGuaranteedQuality } = useGame();
   const [showProbability, setShowProbability] = useState<StudentQuality | null>(null);
   const [gachaAnimation, setGachaAnimation] = useState<{ showing: boolean; result: GachaResult | null; phase: 'rolling' | 'reveal' }>({ showing: false, result: null, phase: 'rolling' });
   const [showHistory, setShowHistory] = useState(false);
@@ -314,7 +318,7 @@ function RecruitModule({ onStudentClick }: ModuleProps) {
     const currentCount = state.pityCounters[quality];
     const threshold = getPityThreshold(quality);
     const progress = Math.min((currentCount / threshold) * 100, 100);
-    const guaranteedQuality = quality === 'common' ? 'rare' : quality === 'rare' ? 'epic' : quality === 'epic' ? 'legendary' : 'legendary';
+    const guaranteedQuality = getGuaranteedQuality(quality);
 
     return (
       <div className="pity-progress">
@@ -344,8 +348,13 @@ function RecruitModule({ onStudentClick }: ModuleProps) {
   };
 
   const renderProbabilityPanel = (quality: StudentQuality) => {
-    const probabilities = getProbabilities(quality);
+    const pityCount = state.pityCounters[quality];
+    const buildingBonus = getRecruitQualityBonus(state.buildings);
+    const { adjusted, base } = computeAdjustedProbabilities(quality, pityCount, buildingBonus);
     const qualities: StudentQuality[] = ['legendary', 'epic', 'rare', 'common'];
+    const hasAdjustment = buildingBonus > 0 || pityCount > 0;
+    const guaranteedQuality = getGuaranteedQuality(quality);
+    const threshold = getPityThreshold(quality);
 
     return (
       <div className="probability-panel">
@@ -353,26 +362,50 @@ function RecruitModule({ onStudentClick }: ModuleProps) {
           <span>📊 {qualityNames[quality]}招募概率</span>
           <button className="close-btn" onClick={() => setShowProbability(null)}>✕</button>
         </div>
-        <div className="probability-list">
-          {qualities.map(q => (
-            <div key={q} className="probability-item">
-              <span className="probability-quality" style={{ color: qualityColors[q] }}>{qualityNames[q]}</span>
-              <div className="probability-bar-wrapper">
-                <div 
-                  className="probability-bar-fill" 
-                  style={{ 
-                    width: `${probabilities[q] * 100}%`, 
-                    background: qualityColors[q] 
-                  }}
-                ></div>
-              </div>
-              <span className="probability-value">{(probabilities[q] * 100).toFixed(1)}%</span>
+        {hasAdjustment && (
+          <div className="probability-current">
+            <div className="probability-section-title">当前实际概率</div>
+            <div className="probability-list">
+              {qualities.map(q => (
+                <div key={q} className="probability-item">
+                  <span className="probability-quality" style={{ color: qualityColors[q] }}>{qualityNames[q]}</span>
+                  <div className="probability-bar-wrapper">
+                    <div 
+                      className="probability-bar-fill" 
+                      style={{ width: `${adjusted[q] * 100}%`, background: qualityColors[q] }}
+                    ></div>
+                  </div>
+                  <span className="probability-value">{(adjusted[q] * 100).toFixed(1)}%</span>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
+        )}
+        <div className="probability-base">
+          <div className="probability-section-title">{hasAdjustment ? '基础概率' : '当前概率'}</div>
+          <div className="probability-list">
+            {qualities.map(q => (
+              <div key={q} className="probability-item">
+                <span className="probability-quality" style={{ color: qualityColors[q] }}>{qualityNames[q]}</span>
+                <div className="probability-bar-wrapper">
+                  <div 
+                    className="probability-bar-fill" 
+                    style={{ width: `${base[q] * 100}%`, background: qualityColors[q] }}
+                  ></div>
+                </div>
+                <span className="probability-value">{(base[q] * 100).toFixed(1)}%</span>
+              </div>
+            ))}
+          </div>
         </div>
         <div className="probability-note">
-          <p>💡 提示：连续招募未获得高品质学员时，保底概率会逐渐提升</p>
-          <p>💡 达到保底次数后，下次招募必定获得保底品质或更高品质</p>
+          {buildingBonus > 0 && (
+            <p>🏗️ 建筑加成: 训练场/图书馆等级提供品质权重 ×{buildingBonus.toFixed(1)} 加成</p>
+          )}
+          {pityCount > 0 && (
+            <p>🎯 保底进度: {pityCount}/{threshold} (达到{threshold}次必出{qualityNames[guaranteedQuality]})</p>
+          )}
+          <p>💡 连续招募未获得保底品质时，保底概率逐渐提升</p>
         </div>
       </div>
     );
