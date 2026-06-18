@@ -216,7 +216,7 @@ export interface Enemy {
   isBoss: boolean;
 }
 
-export const CURRENT_SAVE_VERSION = 12;
+export const CURRENT_SAVE_VERSION = 13;
 
 export type MentorQuality = 'common' | 'rare' | 'epic' | 'legendary';
 export type MentorRank = 'novice' | 'apprentice' | 'journeyman' | 'expert' | 'master' | 'grandmaster';
@@ -817,6 +817,7 @@ export interface GameState {
   tradeHarbor: TradeHarborState;
   mentorState: MentorState;
   alchemy: AlchemyState;
+  eventCenter: EventCenterState;
 }
 
 export interface CourseBenefitBreakdown {
@@ -838,10 +839,92 @@ export interface CourseBenefitBreakdown {
   potionSpeedBoost: number;
 }
 
-export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade' | 'alchemy';
+export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade' | 'alchemy' | 'eventCenter';
+
+export type AcademyEventRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+export type AcademyEventCategory = 'crisis' | 'opportunity' | 'discovery' | 'intrigue' | 'natural' | 'festival';
+
+export interface AcademyEventChoice {
+  id: string;
+  text: string;
+  description: string;
+  resourceChange: Partial<Resource>;
+  moraleChange?: number;
+  staminaChange?: number;
+  hpChange?: number;
+  reputationBonus?: number;
+  riskProbability?: number;
+  riskResourceLoss?: Partial<Resource>;
+  riskMoraleLoss?: number;
+  riskStaminaLoss?: number;
+  studentTargetCount?: number;
+  targetMagicType?: MagicType;
+  outcomeText: string;
+  riskOutcomeText?: string;
+}
+
+export interface AcademyEventDefinition {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  category: AcademyEventCategory;
+  rarity: AcademyEventRarity;
+  choices: AcademyEventChoice[];
+  minDay: number;
+  minReputation: number;
+  minStudentCount: number;
+  cooldown: number;
+  weight: number;
+}
+
+export interface AcademyEventInstance {
+  id: string;
+  eventId: string;
+  day: number;
+  choiceId: string | null;
+  resolved: boolean;
+  wasRiskTriggered: boolean;
+  resourceChange: Partial<Resource>;
+  moraleChange: number;
+  staminaChange: number;
+  studentIdsAffected: string[];
+  outcomeText: string;
+}
+
+export interface AcademyEventCooldown {
+  eventId: string;
+  lastTriggeredDay: number;
+}
+
+export interface EventCenterStats {
+  totalEvents: number;
+  eventsByCategory: Record<AcademyEventCategory, number>;
+  eventsByRarity: Record<AcademyEventRarity, number>;
+  totalResourceGained: Resource;
+  totalResourceLost: Resource;
+  risksTriggered: number;
+  risksAvoided: number;
+  bestReward: Partial<Resource>;
+  worstLoss: Partial<Resource>;
+  streakResolved: number;
+  maxStreak: number;
+}
+
+export interface EventCenterState {
+  unlocked: boolean;
+  currentEvent: AcademyEventDefinition | null;
+  eventHistory: AcademyEventInstance[];
+  cooldowns: AcademyEventCooldown[];
+  stats: EventCenterStats;
+  pendingReward: Partial<Resource> | null;
+  lastEventDay: number;
+  eventChance: number;
+  minDaysBetweenEvents: number;
+}
 
 export interface DailyEvent {
-  type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning' | 'course_queued' | 'course_started' | 'queue_empty' | 'course_conflict' | 'hp_heal' | 'hp_natural_recovery' | 'battle_injury' | 'cannot_battle_injured' | 'club_task_complete' | 'club_joined' | 'club_shop_purchase' | 'club_level_up' | 'club_reputation_gain' | 'trade_order_placed' | 'trade_order_completed' | 'trade_shipment_arrived' | 'trade_price_changed' | 'trade_shipment_risk' | 'trade_harbor_upgrade' | 'mentor_recruited' | 'mentor_level_up' | 'mentor_rank_up' | 'mentor_assigned' | 'mentor_specialization_up' | 'academy_level_up' | 'mentor_salary_paid' | 'student_promoted' | 'alchemy_craft_complete' | 'alchemy_material_synthesized' | 'alchemy_potion_used' | 'alchemy_potion_sold' | 'alchemy_workshop_upgraded' | 'alchemy_recipe_unlocked';
+  type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning' | 'course_queued' | 'course_started' | 'queue_empty' | 'course_conflict' | 'hp_heal' | 'hp_natural_recovery' | 'battle_injury' | 'cannot_battle_injured' | 'club_task_complete' | 'club_joined' | 'club_shop_purchase' | 'club_level_up' | 'club_reputation_gain' | 'trade_order_placed' | 'trade_order_completed' | 'trade_shipment_arrived' | 'trade_price_changed' | 'trade_shipment_risk' | 'trade_harbor_upgrade' | 'mentor_recruited' | 'mentor_level_up' | 'mentor_rank_up' | 'mentor_assigned' | 'mentor_specialization_up' | 'academy_level_up' | 'mentor_salary_paid' | 'student_promoted' | 'alchemy_craft_complete' | 'alchemy_material_synthesized' | 'alchemy_potion_used' | 'alchemy_potion_sold' | 'alchemy_workshop_upgraded' | 'alchemy_recipe_unlocked' | 'event_center_triggered' | 'event_center_resolved' | 'event_center_risk';
   message: string;
   value?: number;
   studentId?: string;

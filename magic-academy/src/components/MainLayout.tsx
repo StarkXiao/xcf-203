@@ -12,6 +12,8 @@ import MentorPanel from './MentorPanel';
 import './MentorPanel.css';
 import AlchemyPanel from './AlchemyPanel';
 import './AlchemyPanel.css';
+import EventCenterPanel from './EventCenterPanel';
+import './EventCenterPanel.css';
 
 interface TabConfig {
   id: TabType;
@@ -30,6 +32,7 @@ const tabs: TabConfig[] = [
   { id: 'goals', label: '目标任务', icon: '🎯' },
   { id: 'club', label: '魔法社团', icon: '🎭' },
   { id: 'season', label: '赛季系统', icon: '🏆' },
+  { id: 'eventCenter', label: '事件中心', icon: '🎪' },
   { id: 'settlement', label: '资源结算', icon: '💰' },
   { id: 'records', label: '经营记录', icon: '📊' },
   { id: 'settings', label: '设置存档', icon: '⚙️' },
@@ -101,6 +104,15 @@ export default function MainLayout() {
         <div className="day-info">
           <span>第 {state.day} 天</span>
           <span>学员: {state.students.length}/{getCapacity()}</span>
+          {state.eventCenter.unlocked && state.eventCenter.currentEvent && (
+            <span
+              className="event-notification"
+              title="有新事件需要处理！"
+              onClick={() => setActiveTab('eventCenter')}
+            >
+              🎪 ⚡
+            </span>
+          )}
           {state.autoSaveConfig.enabled && (
             <span className="auto-save-indicator" title="自动保存已开启">
               💾
@@ -133,6 +145,7 @@ export default function MainLayout() {
         {activeTab === 'goals' && <GoalsModule />}
         {activeTab === 'club' && <ClubPanel />}
         {activeTab === 'season' && <SeasonPanel />}
+        {activeTab === 'eventCenter' && <EventCenterPanel />}
         {activeTab === 'settlement' && <SettlementModule setConfirmDialog={setConfirmDialog} />}
         {activeTab === 'records' && <RecordsModule />}
         {activeTab === 'settings' && <SettingsModule />}
@@ -3174,6 +3187,9 @@ function RecordsModule() {
       hp_natural_recovery: '回血',
       battle_injury: '受伤',
       cannot_battle_injured: '无法战斗',
+      event_center_triggered: '事件',
+      event_center_resolved: '事件解决',
+      event_center_risk: '事件风险',
     };
     return labels[type] || type;
   };

@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff, AcademyEventDefinition, EventCenterState } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -138,6 +138,14 @@ import {
   ALCHEMY_RARITY_NAMES,
   getPotionCourseBuffs,
   getPotionDungeonBuffs,
+  INITIAL_EVENT_CENTER_STATE,
+  selectRandomEvent,
+  resolveEventChoice,
+  ACADEMY_EVENTS,
+  EVENT_RARITY_COLORS,
+  EVENT_RARITY_NAMES,
+  EVENT_CATEGORY_ICONS,
+  EVENT_CATEGORY_NAMES,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -226,7 +234,11 @@ type GameAction =
   | { type: 'SELL_MATERIAL'; materialId: AlchemyMaterialId; quantity: number }
   | { type: 'ADD_DUNGEON_MATERIAL_DROPS'; dungeonId: string; stars: number }
   | { type: 'TICK_ALCHEMY_CRAFTINGS' }
-  | { type: 'EXPIRE_ALCHEMY_BUFFS' };
+  | { type: 'EXPIRE_ALCHEMY_BUFFS' }
+  | { type: 'UNLOCK_EVENT_CENTER' }
+  | { type: 'TRIGGER_EVENT_CENTER'; event: AcademyEventDefinition }
+  | { type: 'RESOLVE_EVENT_CENTER'; choiceId: string }
+  | { type: 'DISMISS_EVENT_CENTER' };
 
 const MAX_STUDENT_CAPACITY = 20;
 
@@ -286,6 +298,7 @@ const initialState: GameState = {
   tradeHarbor: INITIAL_TRADE_HARBOR_STATE,
   mentorState: INITIAL_MENTOR_STATE,
   alchemy: INITIAL_ALCHEMY_STATE,
+  eventCenter: INITIAL_EVENT_CENTER_STATE,
 };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -3359,7 +3372,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const newPotions = { ...state.alchemy.potions };
       newPotions[action.potionId] -= 1;
 
-      const newResources = { ...state.resources };
+      let newResources = { ...state.resources };
       const newStudents = [...state.students];
       const newBuffs = [...state.alchemy.activeBuffs];
       const useEvents: DailyEvent[] = [];
@@ -4557,6 +4570,35 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const alchemyCraftTickState = gameReducer(state, { type: 'TICK_ALCHEMY_CRAFTINGS' });
       const alchemyBuffExpireState = gameReducer(alchemyCraftTickState, { type: 'EXPIRE_ALCHEMY_BUFFS' });
 
+      let newEventCenter = { ...state.eventCenter };
+      if (state.eventCenter.unlocked && !state.eventCenter.currentEvent && state.students.length > 0) {
+        const daysSinceLastEvent = newDay - state.eventCenter.lastEventDay;
+        if (daysSinceLastEvent >= state.eventCenter.minDaysBetweenEvents) {
+          if (Math.random() < state.eventCenter.eventChance) {
+            const triggered = selectRandomEvent(
+              newDay,
+              state.resources.reputation,
+              updatedStudents.length,
+              state.eventCenter.cooldowns,
+              null
+            );
+            if (triggered) {
+              newEventCenter = { ...newEventCenter, currentEvent: triggered };
+              todayEvents.push({
+                type: 'event_center_triggered',
+                message: `${triggered.icon} 事件发生：${triggered.name}！请到事件中心处理`,
+              });
+            }
+          }
+        }
+      } else if (!state.eventCenter.unlocked && state.day >= 3 && updatedStudents.length >= 1) {
+        newEventCenter = { ...newEventCenter, unlocked: true };
+        todayEvents.push({
+          type: 'event_center_triggered',
+          message: '📢 学院事件中心已开启！每日推进时可能触发随机事件',
+        });
+      }
+
       return {
         ...state,
         day: newDay,
@@ -4582,6 +4624,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...alchemyBuffExpireState.alchemy,
           activeBuffs: alchemyBuffExpireState.alchemy.activeBuffs.filter(b => !dailyUsedPotionBuffIds.has(b.id)),
         },
+        eventCenter: newEventCenter,
       };
     }
 
@@ -4637,6 +4680,146 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
     case 'TRIGGER_CRITICAL_SAVE':
       return state;
+
+    case 'UNLOCK_EVENT_CENTER':
+      return {
+        ...state,
+        eventCenter: {
+          ...state.eventCenter,
+          unlocked: true,
+        },
+      };
+
+    case 'TRIGGER_EVENT_CENTER':
+      return {
+        ...state,
+        eventCenter: {
+          ...state.eventCenter,
+          currentEvent: action.event,
+        },
+      };
+
+    case 'RESOLVE_EVENT_CENTER': {
+      const event = state.eventCenter.currentEvent;
+      if (!event) return state;
+
+      const result = resolveEventChoice(
+        event,
+        action.choiceId,
+        state.students.map(s => ({ id: s.id, magicType: s.magicType }))
+      );
+
+      const instance = {
+        id: `event_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        eventId: event.id,
+        day: state.day,
+        choiceId: action.choiceId,
+        resolved: true,
+        wasRiskTriggered: result.wasRiskTriggered,
+        resourceChange: result.resourceChange,
+        moraleChange: result.moraleChange,
+        staminaChange: result.staminaChange,
+        studentIdsAffected: result.affectedStudentIds,
+        outcomeText: result.outcomeText,
+      };
+
+      const choice = event.choices.find(c => c.id === action.choiceId);
+      const newResources = {
+        gold: Math.max(0, state.resources.gold + (result.resourceChange.gold || 0)),
+        mana: Math.max(0, state.resources.mana + (result.resourceChange.mana || 0)),
+        food: Math.max(0, state.resources.food + (result.resourceChange.food || 0)),
+        reputation: Math.max(0, state.resources.reputation + (result.resourceChange.reputation || 0) + (choice?.reputationBonus || 0)),
+      };
+
+      const updatedStudents = state.students.map(s => {
+        const isAffected = result.affectedStudentIds.includes(s.id);
+        return {
+          ...s,
+          morale: isAffected ? Math.max(0, Math.min(100, s.morale + result.moraleChange)) : (result.moraleChange !== 0 ? Math.max(0, Math.min(100, s.morale + result.moraleChange)) : s.morale),
+          stamina: isAffected ? Math.max(0, Math.min(100, s.stamina + result.staminaChange)) : (result.staminaChange !== 0 ? Math.max(0, Math.min(100, s.stamina + result.staminaChange)) : s.stamina),
+          currentHp: isAffected && result.hpChange !== 0 ? Math.max(1, Math.min(s.maxHp, s.currentHp + result.hpChange)) : s.currentHp,
+        };
+      });
+
+      const cooldowns = [
+        ...state.eventCenter.cooldowns.filter(c => c.eventId !== event.id),
+        { eventId: event.id, lastTriggeredDay: state.day },
+      ];
+
+      const gained: Partial<Resource> = {};
+      const lost: Partial<Resource> = {};
+      for (const [key, val] of Object.entries(result.resourceChange)) {
+        const k = key as keyof Resource;
+        if ((val || 0) > 0) gained[k] = (gained[k] || 0) + val;
+        if ((val || 0) < 0) lost[k] = (lost[k] || 0) + Math.abs(val || 0);
+      }
+
+      const isGood = !result.wasRiskTriggered;
+      const newStreak = isGood ? state.eventCenter.stats.streakResolved + 1 : 0;
+
+      const eventLog: DailyEvent = {
+        type: result.wasRiskTriggered ? 'event_center_risk' : 'event_center_resolved',
+        message: `${event.icon} ${event.name}：${result.outcomeText}`,
+        value: Object.values(result.resourceChange).reduce((a, b) => a + (b || 0), 0),
+      };
+
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push({ day: state.day, events: [eventLog] });
+
+      return {
+        ...state,
+        resources: newResources,
+        students: updatedStudents,
+        dailyLogs: recentLogs,
+        eventCenter: {
+          ...state.eventCenter,
+          currentEvent: null,
+          eventHistory: [...state.eventCenter.eventHistory, instance].slice(-50),
+          cooldowns,
+          stats: {
+            ...state.eventCenter.stats,
+            totalEvents: state.eventCenter.stats.totalEvents + 1,
+            eventsByCategory: {
+              ...state.eventCenter.stats.eventsByCategory,
+              [event.category]: (state.eventCenter.stats.eventsByCategory[event.category] || 0) + 1,
+            },
+            eventsByRarity: {
+              ...state.eventCenter.stats.eventsByRarity,
+              [event.rarity]: (state.eventCenter.stats.eventsByRarity[event.rarity] || 0) + 1,
+            },
+            totalResourceGained: {
+              gold: state.eventCenter.stats.totalResourceGained.gold + (gained.gold || 0),
+              mana: state.eventCenter.stats.totalResourceGained.mana + (gained.mana || 0),
+              food: state.eventCenter.stats.totalResourceGained.food + (gained.food || 0),
+              reputation: state.eventCenter.stats.totalResourceGained.reputation + (gained.reputation || 0),
+            },
+            totalResourceLost: {
+              gold: state.eventCenter.stats.totalResourceLost.gold + (lost.gold || 0),
+              mana: state.eventCenter.stats.totalResourceLost.mana + (lost.mana || 0),
+              food: state.eventCenter.stats.totalResourceLost.food + (lost.food || 0),
+              reputation: state.eventCenter.stats.totalResourceLost.reputation + (lost.reputation || 0),
+            },
+            risksTriggered: state.eventCenter.stats.risksTriggered + (result.wasRiskTriggered ? 1 : 0),
+            risksAvoided: state.eventCenter.stats.risksAvoided + (!result.wasRiskTriggered && choice?.riskProbability ? 1 : 0),
+            bestReward: gained,
+            worstLoss: lost,
+            streakResolved: newStreak,
+            maxStreak: Math.max(newStreak, state.eventCenter.stats.maxStreak),
+          },
+          lastEventDay: state.day,
+        },
+      };
+    }
+
+    case 'DISMISS_EVENT_CENTER':
+      return {
+        ...state,
+        eventCenter: {
+          ...state.eventCenter,
+          currentEvent: null,
+          lastEventDay: state.day,
+        },
+      };
 
     default:
       return state;
@@ -4788,6 +4971,15 @@ interface GameContextType {
   getAlchemyMaterial: typeof getAlchemyMaterial;
   ALCHEMY_RARITY_COLORS: typeof ALCHEMY_RARITY_COLORS;
   ALCHEMY_RARITY_NAMES: typeof ALCHEMY_RARITY_NAMES;
+  unlockEventCenter: () => void;
+  resolveEventCenter: (choiceId: string) => void;
+  dismissEventCenter: () => void;
+  selectRandomEvent: typeof selectRandomEvent;
+  ACADEMY_EVENTS: typeof ACADEMY_EVENTS;
+  EVENT_RARITY_COLORS: typeof EVENT_RARITY_COLORS;
+  EVENT_RARITY_NAMES: typeof EVENT_RARITY_NAMES;
+  EVENT_CATEGORY_ICONS: typeof EVENT_CATEGORY_ICONS;
+  EVENT_CATEGORY_NAMES: typeof EVENT_CATEGORY_NAMES;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -5632,6 +5824,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
       getAlchemyMaterial,
       ALCHEMY_RARITY_COLORS,
       ALCHEMY_RARITY_NAMES,
+      unlockEventCenter: () => dispatch({ type: 'UNLOCK_EVENT_CENTER' }),
+      resolveEventCenter: (choiceId: string) => dispatch({ type: 'RESOLVE_EVENT_CENTER', choiceId }),
+      dismissEventCenter: () => dispatch({ type: 'DISMISS_EVENT_CENTER' }),
+      selectRandomEvent,
+      ACADEMY_EVENTS,
+      EVENT_RARITY_COLORS,
+      EVENT_RARITY_NAMES,
+      EVENT_CATEGORY_ICONS,
+      EVENT_CATEGORY_NAMES,
     }}>
       {children}
     </GameContext.Provider>

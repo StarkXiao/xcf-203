@@ -1,4 +1,4 @@
-import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff } from '../types/game';
+import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState } from '../types/game';
 import {
   HP_BATTLE_THRESHOLD,
   HP_COURSE_EFFICIENCY_THRESHOLD,
@@ -4845,4 +4845,661 @@ export const ALCHEMY_RARITY_NAMES: Record<AlchemyMaterialRarity, string> = {
   rare: '稀有',
   epic: '史诗',
   legendary: '传说',
+};
+
+export const EVENT_RARITY_COLORS: Record<AcademyEventRarity, string> = {
+  common: '#9e9e9e',
+  uncommon: '#4CAF50',
+  rare: '#2196f3',
+  epic: '#9c27b0',
+  legendary: '#ff9800',
+};
+
+export const EVENT_RARITY_NAMES: Record<AcademyEventRarity, string> = {
+  common: '普通',
+  uncommon: '优良',
+  rare: '稀有',
+  epic: '史诗',
+  legendary: '传说',
+};
+
+export const EVENT_CATEGORY_ICONS: Record<AcademyEventCategory, string> = {
+  crisis: '⚡',
+  opportunity: '🌟',
+  discovery: '🔍',
+  intrigue: '🎭',
+  natural: '🌍',
+  festival: '🎉',
+};
+
+export const EVENT_CATEGORY_NAMES: Record<AcademyEventCategory, string> = {
+  crisis: '危机',
+  opportunity: '机遇',
+  discovery: '发现',
+  intrigue: '阴谋',
+  natural: '自然',
+  festival: '庆典',
+};
+
+export const ACADEMY_EVENTS: AcademyEventDefinition[] = [
+  {
+    id: 'fire_outbreak',
+    name: '魔法失火',
+    icon: '🔥',
+    description: '学院实验室发生魔力失控，引发火灾！必须迅速决策以减少损失。',
+    category: 'crisis',
+    rarity: 'common',
+    minDay: 1,
+    minReputation: 0,
+    minStudentCount: 1,
+    cooldown: 10,
+    weight: 10,
+    choices: [
+      {
+        id: 'fire_fight',
+        text: '组织学员灭火',
+        description: '让火系和水系学员协作扑灭火灾',
+        resourceChange: { mana: -10, food: -5 },
+        moraleChange: -5,
+        staminaChange: -10,
+        riskProbability: 0.3,
+        riskResourceLoss: { gold: -30, mana: -20 },
+        riskMoraleLoss: -10,
+        outcomeText: '学员们齐心协力扑灭了火焰，虽然消耗了些资源但大家都安全。',
+        riskOutcomeText: '灭火过程中发生了魔力反噬，额外损失了大量资源，学员士气也受到影响。',
+      },
+      {
+        id: 'fire_evacuate',
+        text: '紧急疏散',
+        description: '优先保障人员安全，放弃部分物资',
+        resourceChange: { gold: -20, food: -10 },
+        moraleChange: -10,
+        outcomeText: '虽然损失了一些物资，但所有学员都安全撤离。',
+      },
+    ],
+  },
+  {
+    id: 'mana_surge',
+    name: '魔力潮涌',
+    icon: '💫',
+    description: '魔力节点突然涌出大量魔力，这是一个收集的良机，但也可能失控。',
+    category: 'opportunity',
+    rarity: 'uncommon',
+    minDay: 5,
+    minReputation: 10,
+    minStudentCount: 2,
+    cooldown: 15,
+    weight: 8,
+    choices: [
+      {
+        id: 'mana_collect',
+        text: '引导魔力收集',
+        description: '让学员引导魔力进入储存装置',
+        resourceChange: { mana: 40, gold: 10 },
+        moraleChange: 5,
+        riskProbability: 0.25,
+        riskResourceLoss: { mana: -20 },
+        riskMoraleLoss: -8,
+        outcomeText: '学员成功引导了魔力潮涌，获得了大量魔力资源！',
+        riskOutcomeText: '魔力引导过程中发生反噬，部分魔力外泄，学员受到惊吓。',
+      },
+      {
+        id: 'mana_stabilize',
+        text: '稳定节点',
+        description: '花费资源加固魔力节点，获得少量但稳定的收益',
+        resourceChange: { mana: 20, gold: -5 },
+        moraleChange: 3,
+        outcomeText: '节点被成功稳定，获得了适度的魔力回馈。',
+      },
+    ],
+  },
+  {
+    id: 'ancient_tome',
+    name: '古籍残卷',
+    icon: '📜',
+    description: '在学院图书馆的暗室中发现了一卷古老魔法典籍残卷，蕴含未知知识。',
+    category: 'discovery',
+    rarity: 'rare',
+    minDay: 10,
+    minReputation: 30,
+    minStudentCount: 3,
+    cooldown: 20,
+    weight: 5,
+    choices: [
+      {
+        id: 'tome_study',
+        text: '研读古籍',
+        description: '安排学员研读残卷，尝试解读其中的魔法知识',
+        resourceChange: { mana: -15 },
+        moraleChange: 10,
+        reputationBonus: 5,
+        staminaChange: -5,
+        riskProbability: 0.2,
+        riskResourceLoss: { mana: -10 },
+        riskMoraleLoss: -15,
+        outcomeText: '学员成功解读了部分古籍内容，领悟了新知识，学院声望也有所提升！',
+        riskOutcomeText: '古籍中蕴含的禁忌魔法侵蚀了研读者的心智，学员们精神受到了打击。',
+      },
+      {
+        id: 'tome_archive',
+        text: '封存典籍',
+        description: '将残卷妥善保管，避免潜在风险',
+        resourceChange: { gold: 5 },
+        moraleChange: 2,
+        reputationBonus: 2,
+        outcomeText: '残卷被安全封存在图书馆深处，为未来留下了研究机会。',
+      },
+    ],
+  },
+  {
+    id: 'rival_plot',
+    name: '对手阴谋',
+    icon: '🎭',
+    description: '情报显示竞争学院正在暗中策划挖走你的优秀学员！',
+    category: 'intrigue',
+    rarity: 'uncommon',
+    minDay: 7,
+    minReputation: 20,
+    minStudentCount: 3,
+    cooldown: 12,
+    weight: 7,
+    choices: [
+      {
+        id: 'rival_counter',
+        text: '反制策反',
+        description: '暗中调查并瓦解对方的阴谋',
+        resourceChange: { gold: -15 },
+        moraleChange: 8,
+        reputationBonus: 3,
+        riskProbability: 0.35,
+        riskResourceLoss: { reputation: -10 },
+        riskMoraleLoss: -12,
+        outcomeText: '成功瓦解了对手的阴谋，学员们更加团结，学院声望提升！',
+        riskOutcomeText: '反制行动失败，部分学员还是被对手挖走，学院声望受损。',
+      },
+      {
+        id: 'rival_improve',
+        text: '改善待遇',
+        description: '提高学员福利，让他们不愿离开',
+        resourceChange: { gold: -20, food: -10 },
+        moraleChange: 15,
+        outcomeText: '学员们感受到学院的关怀，士气大幅提升，不再受外界诱惑。',
+      },
+    ],
+  },
+  {
+    id: 'storm_warning',
+    name: '魔力风暴',
+    icon: '🌪️',
+    description: '一场罕见的魔力风暴正在逼近学院！需要做好防护准备。',
+    category: 'natural',
+    rarity: 'common',
+    minDay: 3,
+    minReputation: 0,
+    minStudentCount: 1,
+    cooldown: 8,
+    weight: 9,
+    choices: [
+      {
+        id: 'storm_shield',
+        text: '构筑防护结界',
+        description: '消耗魔力建立防护屏障保护学院',
+        resourceChange: { mana: -25 },
+        moraleChange: 5,
+        staminaChange: -5,
+        riskProbability: 0.15,
+        riskResourceLoss: { mana: -15, food: -5 },
+        outcomeText: '防护结界成功抵御了风暴，学员们对自己的防护能力更加自信！',
+        riskOutcomeText: '结界在风暴冲击下出现裂缝，额外消耗了魔力来修补。',
+      },
+      {
+        id: 'storm_hunker',
+        text: '坚守等待',
+        description: '让学员留在室内，等待风暴过去',
+        resourceChange: { food: -8 },
+        moraleChange: -5,
+        riskProbability: 0.4,
+        riskResourceLoss: { gold: -15, food: -10 },
+        riskMoraleLoss: -10,
+        outcomeText: '风暴过去了，虽然有些物资受损，但总体损失不大。',
+        riskOutcomeText: '风暴比预想的更猛烈，建筑和物资都遭受了严重损失。',
+      },
+    ],
+  },
+  {
+    id: 'festival_invitation',
+    name: '魔法庆典',
+    icon: '🎉',
+    description: '王国举办魔法庆典，邀请各学院参加！这是展示实力和获取资源的好机会。',
+    category: 'festival',
+    rarity: 'uncommon',
+    minDay: 8,
+    minReputation: 15,
+    minStudentCount: 3,
+    cooldown: 14,
+    weight: 7,
+    choices: [
+      {
+        id: 'festival_compete',
+        text: '参加比赛',
+        description: '派出精英学员参加魔法竞技',
+        resourceChange: { gold: -10, food: -5 },
+        moraleChange: 10,
+        reputationBonus: 8,
+        staminaChange: -15,
+        riskProbability: 0.3,
+        riskResourceLoss: { reputation: -5 },
+        riskMoraleLoss: -8,
+        outcomeText: '学员在比赛中表现出色，赢得了丰厚奖励和极高声誉！',
+        riskOutcomeText: '比赛失利，虽然获得了参与奖，但士气受到了一定打击。',
+      },
+      {
+        id: 'festival_showcase',
+        text: '学术展示',
+        description: '展示学院的研究成果和教学方法',
+        resourceChange: { gold: 5, mana: 5 },
+        moraleChange: 5,
+        reputationBonus: 4,
+        outcomeText: '学院的学术展示获得了广泛好评，吸引了一些关注。',
+      },
+    ],
+  },
+  {
+    id: 'plague_outbreak',
+    name: '魔力疫病',
+    icon: '☠️',
+    description: '一种神秘的魔力疫病在学员中蔓延，需要立刻采取措施！',
+    category: 'crisis',
+    rarity: 'rare',
+    minDay: 15,
+    minReputation: 25,
+    minStudentCount: 4,
+    cooldown: 25,
+    weight: 4,
+    choices: [
+      {
+        id: 'plague_quarantine',
+        text: '隔离治疗',
+        description: '立即隔离感染者，消耗资源研制解药',
+        resourceChange: { gold: -25, mana: -20, food: -10 },
+        moraleChange: -10,
+        hpChange: -20,
+        riskProbability: 0.2,
+        riskResourceLoss: { gold: -15, reputation: -8 },
+        riskMoraleLoss: -15,
+        outcomeText: '疫病被成功控制，虽然代价不小但保住了所有学员。',
+        riskOutcomeText: '疫病传播速度超出预期，更多学员被感染，学院声望也受到影响。',
+      },
+      {
+        id: 'plague_heal',
+        text: '全力救治',
+        description: '投入大量资源进行紧急治疗',
+        resourceChange: { gold: -35, mana: -15, food: -5 },
+        moraleChange: 5,
+        hpChange: -10,
+        reputationBonus: 3,
+        outcomeText: '全力救治奏效，所有学员恢复健康，学院的危机处理能力令人敬佩！',
+      },
+    ],
+  },
+  {
+    id: 'treasure_map',
+    name: '藏宝图',
+    icon: '🗺️',
+    description: '一位旅人带来了一张据称指向古代魔法宝库的地图碎片。',
+    category: 'discovery',
+    rarity: 'rare',
+    minDay: 12,
+    minReputation: 20,
+    minStudentCount: 3,
+    cooldown: 18,
+    weight: 5,
+    choices: [
+      {
+        id: 'treasure_explore',
+        text: '组队探索',
+        description: '派遣学员小队按地图探索',
+        resourceChange: { gold: -10, food: -10 },
+        moraleChange: 5,
+        staminaChange: -15,
+        riskProbability: 0.4,
+        riskResourceLoss: { gold: -20, food: -5 },
+        riskMoraleLoss: -8,
+        outcomeText: '探索小队找到了宝库，获得了丰厚的宝藏！',
+        riskOutcomeText: '地图是陷阱，探索小队遭遇了危险，损失了物资。',
+      },
+      {
+        id: 'treasure_trade',
+        text: '转卖地图',
+        description: '将地图碎片卖给收藏家',
+        resourceChange: { gold: 30 },
+        moraleChange: -2,
+        outcomeText: '地图卖了个好价钱，虽然有些可惜但获得了稳定的收益。',
+      },
+    ],
+  },
+  {
+    id: 'merchant_caravan',
+    name: '异域商队',
+    icon: '🐪',
+    description: '来自远方的异域商队路过学院，带来了稀有的魔法材料和珍贵的情报。',
+    category: 'opportunity',
+    rarity: 'common',
+    minDay: 3,
+    minReputation: 5,
+    minStudentCount: 1,
+    cooldown: 7,
+    weight: 10,
+    choices: [
+      {
+        id: 'merchant_trade',
+        text: '交易物资',
+        description: '用金币交换稀有材料',
+        resourceChange: { gold: -20, mana: 15, food: 10 },
+        moraleChange: 3,
+        outcomeText: '与商队达成了有利的交易，获得了不少稀缺资源。',
+      },
+      {
+        id: 'merchant_host',
+        text: '盛情款待',
+        description: '免费提供食宿，建立人脉关系',
+        resourceChange: { food: -15 },
+        moraleChange: 8,
+        reputationBonus: 5,
+        riskProbability: 0.1,
+        riskResourceLoss: { food: -5 },
+        outcomeText: '商队对学院的款待非常满意，承诺日后会有更多优惠！',
+        riskOutcomeText: '商队多住了几天，食物消耗比预期稍多。',
+      },
+    ],
+  },
+  {
+    id: 'dark_ritual',
+    name: '暗影仪式',
+    icon: '🌑',
+    description: '学院附近出现了可疑的暗影魔法痕迹，似乎是某个禁忌仪式的残留。',
+    category: 'intrigue',
+    rarity: 'epic',
+    minDay: 20,
+    minReputation: 50,
+    minStudentCount: 5,
+    cooldown: 30,
+    weight: 3,
+    choices: [
+      {
+        id: 'dark_investigate',
+        text: '深入调查',
+        description: '派遣精英学员调查暗影魔法的来源',
+        resourceChange: { mana: -20 },
+        moraleChange: -5,
+        staminaChange: -10,
+        reputationBonus: 10,
+        riskProbability: 0.35,
+        riskResourceLoss: { mana: -30, reputation: -10 },
+        riskMoraleLoss: -20,
+        outcomeText: '调查成功！暗影势力被揭露并驱逐，学院声望大幅提升！',
+        riskOutcomeText: '调查小队遭到暗影魔法侵蚀，多名学员精神受创，学院也受到质疑。',
+      },
+      {
+        id: 'dark_report',
+        text: '上报王国',
+        description: '将发现报告给王国魔法部，让专业人士处理',
+        resourceChange: { gold: 10 },
+        moraleChange: 3,
+        reputationBonus: 5,
+        outcomeText: '王国派遣了专家处理，并对学院的警觉性表示赞赏。',
+      },
+    ],
+  },
+  {
+    id: 'elemental_convergence',
+    name: '元素交汇',
+    icon: '✨',
+    description: '六系元素在学院上空交汇，形成罕见的元素共振现象，是强化魔法的绝佳时机！',
+    category: 'opportunity',
+    rarity: 'epic',
+    minDay: 18,
+    minReputation: 40,
+    minStudentCount: 4,
+    cooldown: 25,
+    weight: 3,
+    choices: [
+      {
+        id: 'element_absorb',
+        text: '吸收元素',
+        description: '让学员尝试吸收交汇的元素力量',
+        resourceChange: { mana: 30 },
+        moraleChange: 12,
+        reputationBonus: 8,
+        staminaChange: -10,
+        riskProbability: 0.3,
+        riskResourceLoss: { mana: -20 },
+        riskMoraleLoss: -15,
+        outcomeText: '学员成功吸收了元素之力，魔力大增，学院声望水涨船高！',
+        riskOutcomeText: '元素力量过于狂暴，部分学员受到冲击，精神和魔力都遭受了损失。',
+      },
+      {
+        id: 'element_observe',
+        text: '记录研究',
+        description: '安全地观察并记录这一罕见现象',
+        resourceChange: { mana: 10 },
+        moraleChange: 5,
+        reputationBonus: 3,
+        outcomeText: '详细的研究记录成为珍贵资料，学院获得了一定的学术声望。',
+      },
+    ],
+  },
+  {
+    id: 'legendary_summon',
+    name: '远古召唤',
+    icon: '🐲',
+    description: '学院地下深处传来了远古巨龙的低语，它愿意与学院达成某种契约。',
+    category: 'festival',
+    rarity: 'legendary',
+    minDay: 30,
+    minReputation: 80,
+    minStudentCount: 6,
+    cooldown: 0,
+    weight: 1,
+    choices: [
+      {
+        id: 'dragon_pact',
+        text: '签订契约',
+        description: '与巨龙签订守护契约',
+        resourceChange: { gold: -50, mana: -30, food: -20 },
+        moraleChange: 20,
+        reputationBonus: 20,
+        staminaChange: -10,
+        riskProbability: 0.25,
+        riskResourceLoss: { gold: -30, mana: -20, reputation: -15 },
+        riskMoraleLoss: -25,
+        outcomeText: '巨龙接受了契约，成为学院的守护者！声望暴涨，所有学员士气高昂！',
+        riskOutcomeText: '巨龙对学院的诚意不满，愤怒离去，带走了部分财宝，学院声望受损。',
+      },
+      {
+        id: 'dragon_gift',
+        text: '献上贡品',
+        description: '献上珍贵的魔法物品以示敬意',
+        resourceChange: { gold: -30, mana: -15 },
+        moraleChange: 10,
+        reputationBonus: 12,
+        outcomeText: '巨龙对贡品很满意，赐予了祝福，学院声望大幅提升！',
+      },
+    ],
+  },
+];
+
+export const EVENT_RARITY_WEIGHTS: Record<AcademyEventRarity, number> = {
+  common: 50,
+  uncommon: 30,
+  rare: 15,
+  epic: 4,
+  legendary: 1,
+};
+
+export function rollEventRarity(day: number): AcademyEventRarity {
+  const dayBonus = Math.min(day / 100, 0.5);
+  const roll = Math.random();
+  const epicThreshold = 0.02 + dayBonus * 0.03;
+  const rareThreshold = epicThreshold + 0.08 + dayBonus * 0.05;
+  const uncommonThreshold = rareThreshold + 0.25 + dayBonus * 0.05;
+  if (roll < epicThreshold * 0.2) return 'legendary';
+  if (roll < epicThreshold) return 'epic';
+  if (roll < rareThreshold) return 'rare';
+  if (roll < uncommonThreshold) return 'uncommon';
+  return 'common';
+}
+
+export function selectRandomEvent(
+  day: number,
+  reputation: number,
+  studentCount: number,
+  cooldowns: { eventId: string; lastTriggeredDay: number }[],
+  currentEventId: string | null
+): AcademyEventDefinition | null {
+  if (currentEventId) return null;
+
+  const eligible = ACADEMY_EVENTS.filter(e => {
+    if (day < e.minDay) return false;
+    if (reputation < e.minReputation) return false;
+    if (studentCount < e.minStudentCount) return false;
+    const cooldown = cooldowns.find(c => c.eventId === e.id);
+    if (cooldown && e.cooldown > 0 && day - cooldown.lastTriggeredDay < e.cooldown) return false;
+    return true;
+  });
+
+  if (eligible.length === 0) return null;
+
+  const rarity = rollEventRarity(day);
+  const rarityWeight = EVENT_RARITY_WEIGHTS[rarity];
+
+  const weighted = eligible.map(e => ({
+    event: e,
+    weight: e.weight * (EVENT_RARITY_WEIGHTS[e.rarity] / rarityWeight > 0.5 ? 1.5 : 1),
+  }));
+
+  const totalWeight = weighted.reduce((sum, w) => sum + w.weight, 0);
+  let roll = Math.random() * totalWeight;
+
+  for (const w of weighted) {
+    roll -= w.weight;
+    if (roll <= 0) return w.event;
+  }
+
+  return weighted[weighted.length - 1].event;
+}
+
+export function resolveEventChoice(
+  event: AcademyEventDefinition,
+  choiceId: string,
+  students: { id: string; magicType: MagicType }[]
+): {
+  resourceChange: Partial<Resource>;
+  moraleChange: number;
+  staminaChange: number;
+  hpChange: number;
+  wasRiskTriggered: boolean;
+  affectedStudentIds: string[];
+  outcomeText: string;
+} {
+  const choice = event.choices.find(c => c.id === choiceId);
+  if (!choice) {
+    return {
+      resourceChange: {},
+      moraleChange: 0,
+      staminaChange: 0,
+      hpChange: 0,
+      wasRiskTriggered: false,
+      affectedStudentIds: [],
+      outcomeText: '无效选择',
+    };
+  }
+
+  const wasRiskTriggered = choice.riskProbability != null && Math.random() < choice.riskProbability;
+
+  if (wasRiskTriggered) {
+    const riskResource = choice.riskResourceLoss || {};
+    const riskMorale = choice.riskMoraleLoss || 0;
+    const riskStamina = choice.riskStaminaLoss || 0;
+
+    let affectedStudentIds: string[] = [];
+    if (choice.studentTargetCount && choice.studentTargetCount > 0) {
+      const targetStudents = choice.targetMagicType
+        ? students.filter(s => s.magicType === choice.targetMagicType)
+        : students;
+      const shuffled = [...targetStudents].sort(() => Math.random() - 0.5);
+      affectedStudentIds = shuffled.slice(0, choice.studentTargetCount).map(s => s.id);
+    }
+
+    return {
+      resourceChange: {
+        gold: (choice.resourceChange.gold || 0) + (riskResource.gold || 0),
+        mana: (choice.resourceChange.mana || 0) + (riskResource.mana || 0),
+        food: (choice.resourceChange.food || 0) + (riskResource.food || 0),
+        reputation: (choice.resourceChange.reputation || 0) + (riskResource.reputation || 0),
+      },
+      moraleChange: choice.moraleChange + riskMorale,
+      staminaChange: (choice.staminaChange || 0) + riskStamina,
+      hpChange: choice.hpChange || 0,
+      wasRiskTriggered: true,
+      affectedStudentIds,
+      outcomeText: choice.riskOutcomeText || choice.outcomeText,
+    };
+  }
+
+  let affectedStudentIds: string[] = [];
+  if (choice.studentTargetCount && choice.studentTargetCount > 0) {
+    const targetStudents = choice.targetMagicType
+      ? students.filter(s => s.magicType === choice.targetMagicType)
+      : students;
+    const shuffled = [...targetStudents].sort(() => Math.random() - 0.5);
+    affectedStudentIds = shuffled.slice(0, choice.studentTargetCount).map(s => s.id);
+  }
+
+  return {
+    resourceChange: { ...choice.resourceChange },
+    moraleChange: choice.moraleChange || 0,
+    staminaChange: choice.staminaChange || 0,
+    hpChange: choice.hpChange || 0,
+    wasRiskTriggered: false,
+    affectedStudentIds,
+    outcomeText: choice.outcomeText,
+  };
+}
+
+export const INITIAL_EVENT_CENTER_STATE: EventCenterState = {
+  unlocked: false,
+  currentEvent: null,
+  eventHistory: [],
+  cooldowns: [],
+  stats: {
+    totalEvents: 0,
+    eventsByCategory: {
+      crisis: 0,
+      opportunity: 0,
+      discovery: 0,
+      intrigue: 0,
+      natural: 0,
+      festival: 0,
+    },
+    eventsByRarity: {
+      common: 0,
+      uncommon: 0,
+      rare: 0,
+      epic: 0,
+      legendary: 0,
+    },
+    totalResourceGained: { gold: 0, mana: 0, food: 0, reputation: 0 },
+    totalResourceLost: { gold: 0, mana: 0, food: 0, reputation: 0 },
+    risksTriggered: 0,
+    risksAvoided: 0,
+    bestReward: {},
+    worstLoss: {},
+    streakResolved: 0,
+    maxStreak: 0,
+  },
+  pendingReward: null,
+  lastEventDay: 0,
+  eventChance: 0.35,
+  minDaysBetweenEvents: 3,
 };
