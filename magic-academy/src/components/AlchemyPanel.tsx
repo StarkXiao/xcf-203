@@ -12,7 +12,7 @@ export default function AlchemyPanel() {
     upgradeAlchemyWorkshop,
     craftPotion,
     synthesizeMaterial,
-    usePotion,
+    consumePotion,
     sellPotion,
     sellMaterial,
     canCraftPotion,
@@ -156,7 +156,7 @@ export default function AlchemyPanel() {
   };
 
   const handleUsePotion = (potionId: PotionId) => {
-    usePotion(potionId, selectedStudentForPotion);
+    consumePotion(potionId, selectedStudentForPotion);
   };
 
   const renderOverview = () => (

@@ -3359,7 +3359,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const newPotions = { ...state.alchemy.potions };
       newPotions[action.potionId] -= 1;
 
-      let newResources = { ...state.resources };
+      const newResources = { ...state.resources };
       const newStudents = [...state.students];
       const newBuffs = [...state.alchemy.activeBuffs];
       const useEvents: DailyEvent[] = [];
@@ -4776,7 +4776,7 @@ interface GameContextType {
   upgradeAlchemyWorkshop: () => boolean;
   craftPotion: (potionId: PotionId, quantity: number) => boolean;
   synthesizeMaterial: (recipeId: string) => boolean;
-  usePotion: (potionId: PotionId, studentId?: string, dungeonId?: string) => boolean;
+  consumePotion: (potionId: PotionId, studentId?: string, dungeonId?: string) => boolean;
   sellPotion: (potionId: PotionId, quantity: number) => boolean;
   sellMaterial: (materialId: AlchemyMaterialId, quantity: number) => boolean;
   canCraftPotion: typeof canCraftPotion;
@@ -5608,7 +5608,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'SYNTHESIZE_MATERIAL', recipeId });
         return true;
       },
-      usePotion: (potionId, studentId, dungeonId) => {
+      consumePotion: (potionId, studentId, dungeonId) => {
         if ((state.alchemy.potions[potionId] || 0) <= 0) return false;
         dispatch({ type: 'USE_POTION', potionId, studentId, dungeonId });
         return true;
