@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff, AcademyEventDefinition, KingdomCommission, CommissionStageType } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff, AcademyEventDefinition, KingdomCommission, CommissionStageType, RestActivity, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, DormitoryEventInstance } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -161,6 +161,24 @@ import {
   claimCommissionReward,
   getMaxActiveCommissions,
   applyCommissionRewardBonus,
+  INITIAL_DORMITORY_STATE,
+  calculateDormitoryBonus,
+  calculateDormitoryComfort,
+  calculateRoomCapacity,
+  calculateRestActivityResult,
+  calculateRelationshipExpGain,
+  generateDormitoryRooms,
+  initializeRelationships,
+  triggerRandomDormitoryEvent,
+  getRelationshipLevel,
+  getRelationshipInfo,
+  getRelationshipLevelOrder,
+  getBattleRelationshipBonus,
+  RELATIONSHIP_LEVELS,
+  REST_ACTIVITIES,
+  DORMITORY_EVENTS,
+  getRestActivityIcon,
+  getRestActivityName,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -264,7 +282,12 @@ type GameAction =
   | { type: 'CLAIM_COMMISSION_STAGE_REWARD'; commissionId: string; stageId: string }
   | { type: 'CLAIM_COMMISSION_REWARD'; commissionId: string }
   | { type: 'ASSIGN_STUDENT_TO_COMMISSION'; commissionId: string; studentId: string }
-  | { type: 'UNASSIGN_STUDENT_FROM_COMMISSION'; commissionId: string; studentId: string };
+  | { type: 'UNASSIGN_STUDENT_FROM_COMMISSION'; commissionId: string; studentId: string }
+  | { type: 'ASSIGN_DORMITORY_ACTIVITY'; studentId: string; activity: RestActivity; day: number }
+  | { type: 'REASSIGN_DORMITORY_ROOM'; studentId: string; roomId: string }
+  | { type: 'RESOLVE_DORMITORY_EVENT'; eventInstanceId: string; choiceId?: string }
+  | { type: 'REFRESH_DORMITORY_ROOMS' }
+  | { type: 'UPDATE_DORMITORY_BONUSES' };
 
 const MAX_STUDENT_CAPACITY = 20;
 
@@ -326,6 +349,7 @@ const initialState: GameState = {
   alchemy: INITIAL_ALCHEMY_STATE,
   eventCenter: INITIAL_EVENT_CENTER_STATE,
   kingdomCommission: INITIAL_KINGDOM_COMMISSION_STATE,
+  dormitory: INITIAL_DORMITORY_STATE,
 };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -3774,6 +3798,18 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const efficiencyBonus = calculateSynergyBonus(state.buildings, 'efficiency');
       const baseExpMultiplier = 1 + libraryLevel * 0.1 + efficiencyBonus * 0.01;
 
+      const dormitoryBonus = state.dormitory.dailyBonus;
+      if (dormitoryBonus.courseEfficiency > 0 || dormitoryBonus.staminaRegenBonus > 0 || dormitoryBonus.moraleRegenBonus > 0) {
+        const bonusParts: string[] = [];
+        if (dormitoryBonus.courseEfficiency > 0) bonusParts.push(`课程效率+${dormitoryBonus.courseEfficiency}%`);
+        if (dormitoryBonus.staminaRegenBonus > 0) bonusParts.push(`体力恢复+${dormitoryBonus.staminaRegenBonus}%`);
+        if (dormitoryBonus.moraleRegenBonus > 0) bonusParts.push(`心情恢复+${dormitoryBonus.moraleRegenBonus}%`);
+        todayEvents.push({
+          type: 'dormitory_bonus_applied',
+          message: `🏠 宿舍加成生效: ${bonusParts.join(', ')}`,
+        });
+      }
+
       const dailyIncome = calculateDailyIncome(state.buildings, state.resources.reputation);
       todayEvents.push({
         type: 'income',
@@ -3823,8 +3859,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         const moraleChange = calculateDailyMoraleChange(student, hasEnoughFood, dormitoryLevel);
         const staminaChange = calculateDailyStaminaChange(student, diningHallLevel);
         const hpRecovery = calculateDailyHpRecovery(student, dormitoryLevel);
-        const newMorale = clamp(student.morale + moraleChange, 0, 100);
-        const newStamina = clamp(student.stamina + staminaChange, 0, 100);
+        const dormMoraleBonus = dormitoryBonus.moraleRegenBonus > 0 ? Math.ceil(dormitoryBonus.moraleRegenBonus) : 0;
+        const dormStaminaBonus = dormitoryBonus.staminaRegenBonus > 0 ? Math.ceil(dormitoryBonus.staminaRegenBonus) : 0;
+        const newMorale = clamp(student.morale + moraleChange + dormMoraleBonus, 0, 100);
+        const newStamina = clamp(student.stamina + staminaChange + dormStaminaBonus, 0, 100);
         const newCurrentHp = student.maxHp > 0 ? Math.min(student.currentHp + hpRecovery, student.maxHp) : student.currentHp;
 
         if (hpRecovery > 0) {
@@ -4698,6 +4736,50 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const alchemyCraftTickState = gameReducer(state, { type: 'TICK_ALCHEMY_CRAFTINGS' });
       const alchemyBuffExpireState = gameReducer(alchemyCraftTickState, { type: 'EXPIRE_ALCHEMY_BUFFS' });
 
+      const dormEventInstance = triggerRandomDormitoryEvent(
+        state.dormitory.relationships,
+        state.students.map(s => s.id),
+        newDay,
+        state.dormitory.lastEventDay
+      );
+      const newDormRecentEvents = [...state.dormitory.recentEvents];
+      if (dormEventInstance) {
+        newDormRecentEvents.push(dormEventInstance);
+        if (newDormRecentEvents.length > 20) newDormRecentEvents.shift();
+        const eventDef = DORMITORY_EVENTS.find(e => e.id === dormEventInstance.eventId);
+        if (eventDef) {
+          todayEvents.push({
+            type: 'dormitory_event',
+            message: `${eventDef.icon} 宿舍发生事件「${eventDef.name}」！`,
+            value: 1,
+          });
+        }
+      }
+
+      const dormUpdatedRelationships = state.dormitory.relationships.map(r => ({
+        ...r,
+        dailyInteracted: false,
+      }));
+
+      const dormAvgMorale = updatedStudents.length > 0 ? Math.round(updatedStudents.reduce((sum, s) => sum + s.morale, 0) / updatedStudents.length) : 0;
+      const dormAvgStamina = updatedStudents.length > 0 ? Math.round(updatedStudents.reduce((sum, s) => sum + s.stamina, 0) / updatedStudents.length) : 0;
+
+      const updatedDormitoryState: DormitoryState = {
+        ...state.dormitory,
+        relationships: dormUpdatedRelationships,
+        recentEvents: newDormRecentEvents,
+        lastEventDay: dormEventInstance ? newDay : state.dormitory.lastEventDay,
+        avgMorale: dormAvgMorale,
+        avgStamina: dormAvgStamina,
+      };
+      const recalculatedDormBonus = calculateDormitoryBonus(updatedDormitoryState, dormitoryLevel, diningHallLevel);
+      updatedDormitoryState.dailyBonus = recalculatedDormBonus;
+
+      const dormRepBonus = recalculatedDormBonus.reputationBonus > 0 ? Math.ceil(recalculatedDormBonus.reputationBonus) : 0;
+      if (dormRepBonus > 0) {
+        finalResources.reputation += dormRepBonus;
+      }
+
       return {
         ...state,
         day: newDay,
@@ -4724,6 +4806,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           activeBuffs: alchemyBuffExpireState.alchemy.activeBuffs.filter(b => !dailyUsedPotionBuffIds.has(b.id)),
         },
         eventCenter: newEventCenter,
+        dormitory: updatedDormitoryState,
       };
     }
 
@@ -5324,6 +5407,219 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
+    case 'ASSIGN_DORMITORY_ACTIVITY': {
+      const student = state.students.find(s => s.id === action.studentId);
+      if (!student) return state;
+      if (student.status !== 'resting' && student.status !== 'idle') return state;
+
+      const newSchedules = state.dormitory.schedules.filter(
+        s => !(s.studentId === action.studentId && s.day === action.day)
+      );
+      newSchedules.push({
+        studentId: action.studentId,
+        activity: action.activity,
+        day: action.day,
+      });
+
+      const activityDef = REST_ACTIVITIES.find(a => a.id === action.activity);
+      const activityEvent: DailyEvent = {
+        type: 'dormitory_rest_activity',
+        message: `${activityDef?.icon || '😴'} ${student.name} 进行「${activityDef?.name || action.activity}」`,
+        studentId: student.id,
+        studentName: student.name,
+      };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push({ day: state.day, events: [activityEvent] });
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        dormitory: {
+          ...state.dormitory,
+          schedules: newSchedules,
+        },
+      };
+    }
+
+    case 'REASSIGN_DORMITORY_ROOM': {
+      const student = state.students.find(s => s.id === action.studentId);
+      if (!student) return state;
+      const targetRoom = state.dormitory.rooms.find(r => r.id === action.roomId);
+      if (!targetRoom) return state;
+      if (targetRoom.residentIds.length >= targetRoom.capacity) return state;
+
+      const newRooms = state.dormitory.rooms.map(r => {
+        const hasStudent = r.residentIds.includes(action.studentId);
+        if (hasStudent) {
+          return { ...r, residentIds: r.residentIds.filter(id => id !== action.studentId) };
+        }
+        if (r.id === action.roomId) {
+          return { ...r, residentIds: [...r.residentIds, action.studentId] };
+        }
+        return r;
+      }).filter(r => r.residentIds.length > 0 || r.id === action.roomId);
+
+      const roomEvent: DailyEvent = {
+        type: 'dormitory_room_assigned',
+        message: `🏠 ${student.name} 搬入了${targetRoom.id.replace('room_', '房间')}`,
+        studentId: student.id,
+        studentName: student.name,
+      };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push({ day: state.day, events: [roomEvent] });
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        dormitory: {
+          ...state.dormitory,
+          rooms: newRooms,
+        },
+      };
+    }
+
+    case 'RESOLVE_DORMITORY_EVENT': {
+      const eventInstance = state.dormitory.recentEvents.find(e => e.id === action.eventInstanceId);
+      if (!eventInstance || eventInstance.resolved) return state;
+
+      const eventDef = DORMITORY_EVENTS.find(e => e.id === eventInstance.eventId);
+      if (!eventDef) return state;
+
+      let finalEffects = { ...eventInstance.effects };
+      let wasRiskTriggered = false;
+
+      if (action.choiceId && eventDef.choices) {
+        const choice = eventDef.choices.find(c => c.id === action.choiceId);
+        if (choice) {
+          finalEffects = { ...choice.effects };
+          if (choice.riskProbability && Math.random() < choice.riskProbability && choice.riskEffects) {
+            wasRiskTriggered = true;
+            for (const key of Object.keys(choice.riskEffects)) {
+              const k = key as keyof typeof choice.riskEffects;
+              if (choice.riskEffects[k] !== undefined) {
+                (finalEffects as Record<string, number>)[k] = ((finalEffects as Record<string, number>)[k] || 0) + (choice.riskEffects[k] || 0);
+              }
+            }
+          }
+        }
+      }
+
+      const updatedStudents = state.students.map(s => {
+        if (!eventInstance.participantIds.includes(s.id)) return s;
+        return {
+          ...s,
+          morale: clamp(s.morale + (finalEffects.moraleChange || 0), 0, 100),
+          stamina: clamp(s.stamina + (finalEffects.staminaChange || 0), 0, 100),
+          currentHp: Math.max(1, Math.min(s.maxHp, s.currentHp + (finalEffects.hpChange || 0))),
+        };
+      });
+
+      const updatedRelationships = state.dormitory.relationships.map(r => {
+        const involvesParticipants = eventInstance.participantIds.includes(r.studentId1) && eventInstance.participantIds.includes(r.studentId2);
+        if (!involvesParticipants) return r;
+        const expChange = finalEffects.relationshipExpChange || 0;
+        const newExp = Math.max(0, r.exp + expChange);
+        const newLevel = getRelationshipLevel(newExp);
+        const nextLevelIndex = RELATIONSHIP_LEVELS.findIndex(l => l.level === newLevel) + 1;
+        const nextLevel = nextLevelIndex < RELATIONSHIP_LEVELS.length ? RELATIONSHIP_LEVELS[nextLevelIndex] : null;
+        return {
+          ...r,
+          exp: newExp,
+          level: newLevel,
+          expToNext: nextLevel ? nextLevel.minExp - newExp : 0,
+          dailyInteracted: true,
+        };
+      });
+
+      const eventEvent: DailyEvent = {
+        type: 'dormitory_event',
+        message: `${eventDef.icon} 宿舍事件「${eventDef.name}」已解决${wasRiskTriggered ? '（风险触发！）' : ''}`,
+        value: finalEffects.moraleChange || 0,
+      };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push({ day: state.day, events: [eventEvent] });
+
+      const newReputationChange = finalEffects.reputationChange || 0;
+
+      const bestRelLevel = updatedRelationships.reduce((best, r) => {
+        return getRelationshipLevelOrder(r.level) > getRelationshipLevelOrder(best) ? r.level : best;
+      }, state.dormitory.bestRelationshipLevel);
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        students: updatedStudents,
+        resources: {
+          ...state.resources,
+          reputation: state.resources.reputation + newReputationChange,
+        },
+        dormitory: {
+          ...state.dormitory,
+          relationships: updatedRelationships,
+          recentEvents: state.dormitory.recentEvents.map(e =>
+            e.id === action.eventInstanceId ? { ...e, resolved: true, chosenOption: action.choiceId, wasRiskTriggered, effects: finalEffects } : e
+          ),
+          totalEventsTriggered: state.dormitory.totalEventsTriggered + 1,
+          bestRelationshipLevel: bestRelLevel,
+          totalSocialInteractions: state.dormitory.totalSocialInteractions + (finalEffects.relationshipExpChange && finalEffects.relationshipExpChange > 0 ? 1 : 0),
+        },
+      };
+    }
+
+    case 'REFRESH_DORMITORY_ROOMS': {
+      const dormitoryLevel = state.buildings.find(b => b.id === 'dormitory')?.level || 0;
+      const diningHallLevel = state.buildings.find(b => b.id === 'dining_hall')?.level || 0;
+      const studentIds = state.students.map(s => s.id);
+      const rooms = generateDormitoryRooms(studentIds, dormitoryLevel);
+      
+      const missingRelationships = initializeRelationships(studentIds);
+      const existingPairs = new Set(state.dormitory.relationships.map(r => `${r.studentId1}_${r.studentId2}`));
+      const newRelationships = [
+        ...state.dormitory.relationships,
+        ...missingRelationships.filter(r => !existingPairs.has(`${r.studentId1}_${r.studentId2}`)),
+      ];
+
+      const avgMorale = state.students.length > 0 ? Math.round(state.students.reduce((sum, s) => sum + s.morale, 0) / state.students.length) : 0;
+      const avgStamina = state.students.length > 0 ? Math.round(state.students.reduce((sum, s) => sum + s.stamina, 0) / state.students.length) : 0;
+      
+      const updatedState: DormitoryState = {
+        ...state.dormitory,
+        rooms,
+        relationships: newRelationships,
+        avgMorale,
+        avgStamina,
+      };
+      
+      const dailyBonus = calculateDormitoryBonus(updatedState, dormitoryLevel, diningHallLevel);
+      updatedState.dailyBonus = dailyBonus;
+
+      return {
+        ...state,
+        dormitory: updatedState,
+      };
+    }
+
+    case 'UPDATE_DORMITORY_BONUSES': {
+      const dormitoryLevel = state.buildings.find(b => b.id === 'dormitory')?.level || 0;
+      const diningHallLevel = state.buildings.find(b => b.id === 'dining_hall')?.level || 0;
+      const avgMorale = state.students.length > 0 ? Math.round(state.students.reduce((sum, s) => sum + s.morale, 0) / state.students.length) : 0;
+      const avgStamina = state.students.length > 0 ? Math.round(state.students.reduce((sum, s) => sum + s.stamina, 0) / state.students.length) : 0;
+      
+      const updatedState: DormitoryState = {
+        ...state.dormitory,
+        avgMorale,
+        avgStamina,
+      };
+      
+      const dailyBonus = calculateDormitoryBonus(updatedState, dormitoryLevel, diningHallLevel);
+      updatedState.dailyBonus = dailyBonus;
+
+      return {
+        ...state,
+        dormitory: updatedState,
+      };
+    }
+
     default:
       return state;
   }
@@ -5502,6 +5798,25 @@ interface GameContextType {
   COMMISSION_DIFFICULTY_COLORS: typeof COMMISSION_DIFFICULTY_COLORS;
   COMMISSION_TYPE_NAMES: typeof COMMISSION_TYPE_NAMES;
   COMMISSION_TYPE_ICONS: typeof COMMISSION_TYPE_ICONS;
+  assignDormitoryActivity: (studentId: string, activity: RestActivity, day: number) => void;
+  reassignDormitoryRoom: (studentId: string, roomId: string) => void;
+  resolveDormitoryEvent: (eventInstanceId: string, choiceId?: string) => void;
+  refreshDormitoryRooms: () => void;
+  updateDormitoryBonuses: () => void;
+  calculateDormitoryBonus: typeof calculateDormitoryBonus;
+  calculateDormitoryComfort: typeof calculateDormitoryComfort;
+  calculateRoomCapacity: typeof calculateRoomCapacity;
+  calculateRestActivityResult: typeof calculateRestActivityResult;
+  calculateRelationshipExpGain: typeof calculateRelationshipExpGain;
+  getBattleRelationshipBonus: typeof getBattleRelationshipBonus;
+  getRelationshipLevel: typeof getRelationshipLevel;
+  getRelationshipInfo: typeof getRelationshipInfo;
+  getRelationshipLevelOrder: typeof getRelationshipLevelOrder;
+  RELATIONSHIP_LEVELS: typeof RELATIONSHIP_LEVELS;
+  REST_ACTIVITIES: typeof REST_ACTIVITIES;
+  DORMITORY_EVENTS: typeof DORMITORY_EVENTS;
+  getRestActivityIcon: typeof getRestActivityIcon;
+  getRestActivityName: typeof getRestActivityName;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -6405,6 +6720,25 @@ export function GameProvider({ children }: { children: ReactNode }) {
       COMMISSION_DIFFICULTY_COLORS,
       COMMISSION_TYPE_NAMES,
       COMMISSION_TYPE_ICONS,
+      assignDormitoryActivity: (studentId: string, activity: RestActivity, day: number) => dispatch({ type: 'ASSIGN_DORMITORY_ACTIVITY', studentId, activity, day }),
+      reassignDormitoryRoom: (studentId: string, roomId: string) => dispatch({ type: 'REASSIGN_DORMITORY_ROOM', studentId, roomId }),
+      resolveDormitoryEvent: (eventInstanceId: string, choiceId?: string) => dispatch({ type: 'RESOLVE_DORMITORY_EVENT', eventInstanceId, choiceId }),
+      refreshDormitoryRooms: () => dispatch({ type: 'REFRESH_DORMITORY_ROOMS' }),
+      updateDormitoryBonuses: () => dispatch({ type: 'UPDATE_DORMITORY_BONUSES' }),
+      calculateDormitoryBonus,
+      calculateDormitoryComfort,
+      calculateRoomCapacity,
+      calculateRestActivityResult,
+      calculateRelationshipExpGain,
+      getBattleRelationshipBonus,
+      getRelationshipLevel,
+      getRelationshipInfo,
+      getRelationshipLevelOrder,
+      RELATIONSHIP_LEVELS,
+      REST_ACTIVITIES,
+      DORMITORY_EVENTS,
+      getRestActivityIcon,
+      getRestActivityName,
     }}>
       {children}
     </GameContext.Provider>

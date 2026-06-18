@@ -19,6 +19,7 @@ import {
   INITIAL_ALCHEMY_STATE,
   INITIAL_EVENT_CENTER_STATE,
   INITIAL_KINGDOM_COMMISSION_STATE,
+  INITIAL_DORMITORY_STATE,
 } from './gameData';
 
 type SaveData = Record<string, unknown>;
@@ -500,6 +501,15 @@ function migrateV13ToV14(ctx: MigrationContext): SaveData {
   return data;
 }
 
+function migrateV14ToV15(ctx: MigrationContext): SaveData {
+  const data = { ...ctx.data };
+
+  data.dormitory = { ...INITIAL_DORMITORY_STATE };
+
+  data.saveVersion = 15;
+  return data;
+}
+
 const MIGRATION_CHAIN: Record<number, MigrationStep> = {
   0: migrateV0ToV1,
   1: migrateV1ToV2,
@@ -515,6 +525,7 @@ const MIGRATION_CHAIN: Record<number, MigrationStep> = {
   11: migrateV11ToV12,
   12: migrateV12ToV13,
   13: migrateV13ToV14,
+  14: migrateV14ToV15,
 };
 
 export function migrateSave(rawData: SaveData): GameState {
@@ -824,6 +835,10 @@ function normalizeToGameState(data: SaveData): GameState {
     ? { ...INITIAL_KINGDOM_COMMISSION_STATE, ...(data.kingdomCommission as Record<string, unknown>) }
     : INITIAL_KINGDOM_COMMISSION_STATE;
 
+  const dormitory = data.dormitory && typeof data.dormitory === 'object'
+    ? { ...INITIAL_DORMITORY_STATE, ...(data.dormitory as Record<string, unknown>) }
+    : INITIAL_DORMITORY_STATE;
+
   return {
     saveVersion: CURRENT_SAVE_VERSION,
     resources,
@@ -854,6 +869,7 @@ function normalizeToGameState(data: SaveData): GameState {
     alchemy,
     eventCenter,
     kingdomCommission,
+    dormitory,
   };
 }
 

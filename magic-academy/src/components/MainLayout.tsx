@@ -16,6 +16,8 @@ import EventCenterPanel from './EventCenterPanel';
 import './EventCenterPanel.css';
 import KingdomCommissionPanel from './KingdomCommissionPanel';
 import './KingdomCommissionPanel.css';
+import DormitoryPanel from './DormitoryPanel';
+import './DormitoryPanel.css';
 
 interface TabConfig {
   id: TabType;
@@ -36,6 +38,7 @@ const tabs: TabConfig[] = [
   { id: 'club', label: '魔法社团', icon: '🎭' },
   { id: 'season', label: '赛季系统', icon: '🏆' },
   { id: 'eventCenter', label: '事件中心', icon: '🎪' },
+  { id: 'dormitory', label: '宿舍生活', icon: '🏠' },
   { id: 'settlement', label: '资源结算', icon: '💰' },
   { id: 'records', label: '经营记录', icon: '📊' },
   { id: 'settings', label: '设置存档', icon: '⚙️' },
@@ -150,6 +153,7 @@ export default function MainLayout() {
         {activeTab === 'season' && <SeasonPanel />}
         {activeTab === 'eventCenter' && <EventCenterPanel />}
         {activeTab === 'kingdomCommission' && <KingdomCommissionPanel />}
+        {activeTab === 'dormitory' && <DormitoryPanel />}
         {activeTab === 'settlement' && <SettlementModule setConfirmDialog={setConfirmDialog} />}
         {activeTab === 'records' && <RecordsModule />}
         {activeTab === 'settings' && <SettingsModule />}

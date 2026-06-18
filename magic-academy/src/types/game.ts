@@ -216,7 +216,105 @@ export interface Enemy {
   isBoss: boolean;
 }
 
-export const CURRENT_SAVE_VERSION = 14;
+export type RelationshipLevel = 'stranger' | 'acquaintance' | 'friend' | 'close_friend' | 'bonded';
+export type RestActivity = 'sleep' | 'socialize' | 'train_light' | 'meditate' | 'study_leisure';
+export type DormitoryEventCategory = 'social' | 'conflict' | 'celebration' | 'accident' | 'growth';
+
+export interface StudentRelationship {
+  studentId1: string;
+  studentId2: string;
+  level: RelationshipLevel;
+  exp: number;
+  expToNext: number;
+  dailyInteracted: boolean;
+}
+
+export interface DormitoryRoom {
+  id: string;
+  residentIds: string[];
+  capacity: number;
+  comfort: number;
+  roomLevel: number;
+}
+
+export interface DormitoryScheduleSlot {
+  studentId: string;
+  activity: RestActivity;
+  day: number;
+}
+
+export interface DormitoryEventDef {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  category: DormitoryEventCategory;
+  effects: {
+    moraleChange?: number;
+    staminaChange?: number;
+    relationshipExpChange?: number;
+    reputationChange?: number;
+    hpChange?: number;
+  };
+  probability: number;
+  minRelationship?: RelationshipLevel;
+  requiresRoommates?: boolean;
+  choices?: DormitoryEventChoice[];
+}
+
+export interface DormitoryEventChoice {
+  id: string;
+  text: string;
+  description: string;
+  effects: {
+    moraleChange?: number;
+    staminaChange?: number;
+    relationshipExpChange?: number;
+    reputationChange?: number;
+    hpChange?: number;
+  };
+  riskProbability?: number;
+  riskEffects?: {
+    moraleChange?: number;
+    staminaChange?: number;
+    relationshipExpChange?: number;
+    reputationChange?: number;
+    hpChange?: number;
+  };
+}
+
+export interface DormitoryEventInstance {
+  id: string;
+  eventId: string;
+  day: number;
+  participantIds: string[];
+  effects: DormitoryEventDef['effects'];
+  resolved: boolean;
+  chosenOption?: string;
+  wasRiskTriggered?: boolean;
+}
+
+export interface DormitoryState {
+  rooms: DormitoryRoom[];
+  relationships: StudentRelationship[];
+  schedules: DormitoryScheduleSlot[];
+  recentEvents: DormitoryEventInstance[];
+  dailyBonus: {
+    courseEfficiency: number;
+    battleBonus: number;
+    reputationBonus: number;
+    staminaRegenBonus: number;
+    moraleRegenBonus: number;
+  };
+  totalEventsTriggered: number;
+  lastEventDay: number;
+  totalSocialInteractions: number;
+  bestRelationshipLevel: RelationshipLevel;
+  avgMorale: number;
+  avgStamina: number;
+}
+
+export const CURRENT_SAVE_VERSION = 15;
 
 export type MentorQuality = 'common' | 'rare' | 'epic' | 'legendary';
 export type MentorRank = 'novice' | 'apprentice' | 'journeyman' | 'expert' | 'master' | 'grandmaster';
@@ -819,6 +917,7 @@ export interface GameState {
   alchemy: AlchemyState;
   eventCenter: EventCenterState;
   kingdomCommission: KingdomCommissionState;
+  dormitory: DormitoryState;
 }
 
 export interface CourseBenefitBreakdown {
@@ -840,7 +939,7 @@ export interface CourseBenefitBreakdown {
   potionSpeedBoost: number;
 }
 
-export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade' | 'alchemy' | 'eventCenter' | 'kingdomCommission';
+export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade' | 'alchemy' | 'eventCenter' | 'kingdomCommission' | 'dormitory';
 
 export type CommissionType = 'course_training' | 'dungeon_dispatch' | 'resource_delivery' | 'comprehensive';
 export type CommissionDifficulty = 'easy' | 'normal' | 'hard' | 'epic' | 'legendary';
@@ -1009,7 +1108,8 @@ export interface EventCenterState {
 }
 
 export interface DailyEvent {
-  type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning' | 'course_queued' | 'course_started' | 'queue_empty' | 'course_conflict' | 'hp_heal' | 'hp_natural_recovery' | 'battle_injury' | 'cannot_battle_injured' | 'club_task_complete' | 'club_joined' | 'club_shop_purchase' | 'club_level_up' | 'club_reputation_gain' | 'trade_order_placed' | 'trade_order_completed' | 'trade_shipment_arrived' | 'trade_price_changed' | 'trade_shipment_risk' | 'trade_harbor_upgrade' | 'mentor_recruited' | 'mentor_level_up' | 'mentor_rank_up' | 'mentor_assigned' | 'mentor_specialization_up' | 'academy_level_up' | 'mentor_salary_paid' | 'student_promoted' | 'alchemy_craft_complete' | 'alchemy_material_synthesized' | 'alchemy_potion_used' | 'alchemy_potion_sold' | 'alchemy_workshop_upgraded' | 'alchemy_recipe_unlocked' | 'event_center_triggered' | 'event_center_resolved' | 'event_center_risk';
+  type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning' | 'course_queued' | 'course_started' | 'queue_empty' | 'course_conflict' | 'hp_heal' | 'hp_natural_recovery' | 'battle_injury' | 'cannot_battle_injured' | 'club_task_complete' | 'club_joined' | 'club_shop_purchase' | 'club_level_up' | 'club_reputation_gain' | 'trade_order_placed' | 'trade_order_completed' | 'trade_shipment_arrived' | 'trade_price_changed' | 'trade_shipment_risk' | 'trade_harbor_upgrade' | 'mentor_recruited' | 'mentor_level_up' | 'mentor_rank_up' | 'mentor_assigned' | 'mentor_specialization_up' | 'academy_level_up' | 'mentor_salary_paid' | 'student_promoted' | 'alchemy_craft_complete' | 'alchemy_material_synthesized' | 'alchemy_potion_used' | 'alchemy_potion_sold' | 'alchemy_workshop_upgraded' | 'alchemy_recipe_unlocked' | 'event_center_triggered' | 'event_center_resolved' | 'event_center_risk'
+  | 'dormitory_event' | 'dormitory_relationship_up' | 'dormitory_room_assigned' | 'dormitory_rest_activity' | 'dormitory_bonus_applied';
   message: string;
   value?: number;
   studentId?: string;

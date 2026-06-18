@@ -1,4 +1,4 @@
-import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState, KingdomCommission, CommissionStage, CommissionType, CommissionDifficulty, CommissionStageType, CommissionRankInfo, KingdomCommissionState } from '../types/game';
+import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState, KingdomCommission, CommissionStage, CommissionType, CommissionDifficulty, CommissionStageType, CommissionRankInfo, KingdomCommissionState, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, RestActivity, DormitoryEventDef, DormitoryScheduleSlot, DormitoryEventInstance } from '../types/game';
 import {
   HP_BATTLE_THRESHOLD,
   HP_COURSE_EFFICIENCY_THRESHOLD,
@@ -6123,4 +6123,421 @@ export const INITIAL_KINGDOM_COMMISSION_STATE: KingdomCommissionState = {
   refreshCost: { gold: 100, reputation: 10 },
   commissionHistory: [],
   maxHistorySize: 50,
+};
+
+export const RELATIONSHIP_LEVELS: { level: RelationshipLevel; name: string; minExp: number; color: string }[] = [
+  { level: 'stranger', name: '陌生', minExp: 0, color: '#9E9E9E' },
+  { level: 'acquaintance', name: '认识', minExp: 20, color: '#78909C' },
+  { level: 'friend', name: '朋友', minExp: 60, color: '#42A5F5' },
+  { level: 'close_friend', name: '挚友', minExp: 150, color: '#AB47BC' },
+  { level: 'bonded', name: '羁绊', minExp: 300, color: '#FFD700' },
+];
+
+export const REST_ACTIVITIES: { id: RestActivity; name: string; icon: string; description: string; staminaEffect: number; moraleEffect: number; hpEffect: number; specialEffect?: string }[] = [
+  { id: 'sleep', name: '深度睡眠', icon: '😴', description: '充足休息，大幅恢复体力与生命', staminaEffect: 35, moraleEffect: 5, hpEffect: 25, specialEffect: 'stamina_regen' },
+  { id: 'socialize', name: '社交活动', icon: '💬', description: '与室友互动，增进关系与心情', staminaEffect: 10, moraleEffect: 15, hpEffect: 5, specialEffect: 'relationship_boost' },
+  { id: 'train_light', name: '轻度训练', icon: '🏃', description: '保持运动习惯，小幅提升全属性', staminaEffect: -5, moraleEffect: 5, hpEffect: 10, specialEffect: 'battle_bonus' },
+  { id: 'meditate', name: '冥想修炼', icon: '🧘', description: '精神修养，大幅恢复心情与魔力感知', staminaEffect: 15, moraleEffect: 20, hpEffect: 15, specialEffect: 'course_bonus' },
+  { id: 'study_leisure', name: '休闲阅读', icon: '📖', description: '轻松学习，小幅获得经验', staminaEffect: 5, moraleEffect: 10, hpEffect: 5, specialEffect: 'exp_bonus' },
+];
+
+export const DORMITORY_EVENTS: DormitoryEventDef[] = [
+  {
+    id: 'dorm_bonfire_night',
+    name: '篝火晚会',
+    description: '宿舍区举办了一场温馨的篝火晚会，学员们围坐分享故事。',
+    icon: '🔥',
+    category: 'celebration',
+    effects: { moraleChange: 15, relationshipExpChange: 25 },
+    probability: 0.08,
+    minRelationship: 'acquaintance',
+    requiresRoommates: true,
+  },
+  {
+    id: 'dorm_roommate_conflict',
+    name: '室友争执',
+    description: '两位室友因生活琐事发生了争吵，气氛紧张。',
+    icon: '⚡',
+    category: 'conflict',
+    effects: { moraleChange: -10, relationshipExpChange: -15 },
+    probability: 0.06,
+    choices: [
+      {
+        id: 'mediate',
+        text: '调解劝和',
+        description: '出面调解，帮助双方化解矛盾',
+        effects: { moraleChange: 5, relationshipExpChange: 10 },
+        riskProbability: 0.3,
+        riskEffects: { moraleChange: -5, relationshipExpChange: -5 },
+      },
+      {
+        id: 'ignore',
+        text: '不介入',
+        description: '让他们自行解决',
+        effects: { moraleChange: -3, relationshipExpChange: -5 },
+      },
+    ],
+  },
+  {
+    id: 'dorm_magic_practice',
+    name: '宿舍魔法练习',
+    description: '几位学员在宿舍里互相切磋魔法，热闹非凡。',
+    icon: '✨',
+    category: 'growth',
+    effects: { moraleChange: 5, staminaChange: -5, relationshipExpChange: 15 },
+    probability: 0.1,
+    requiresRoommates: true,
+  },
+  {
+    id: 'dorm_midnight_snack',
+    name: '深夜食堂',
+    description: '有人悄悄在公共厨房做夜宵，香气弥漫整个宿舍。',
+    icon: '🍜',
+    category: 'social',
+    effects: { moraleChange: 10, staminaChange: 5 },
+    probability: 0.1,
+  },
+  {
+    id: 'dorm_nightmare',
+    name: '噩梦侵袭',
+    description: '一位学员被噩梦惊醒，整晚无法入眠。',
+    icon: '🌙',
+    category: 'accident',
+    effects: { moraleChange: -8, staminaChange: -10 },
+    probability: 0.05,
+  },
+  {
+    id: 'dorm_birthday_party',
+    name: '生日派对',
+    description: '今天是一位室友的生日，大家偷偷准备了惊喜！',
+    icon: '🎂',
+    category: 'celebration',
+    effects: { moraleChange: 20, relationshipExpChange: 30, reputationChange: 3 },
+    probability: 0.04,
+    requiresRoommates: true,
+  },
+  {
+    id: 'dorm_stargazing',
+    name: '观星之夜',
+    description: '晴朗的夜晚，学员们一起在宿舍楼顶观星冥想。',
+    icon: '⭐',
+    category: 'social',
+    effects: { moraleChange: 12, staminaChange: 5, relationshipExpChange: 10 },
+    probability: 0.07,
+  },
+  {
+    id: 'dorm_water_leak',
+    name: '水管爆裂',
+    description: '宿舍的水管突然爆裂，一片混乱！',
+    icon: '💦',
+    category: 'accident',
+    effects: { moraleChange: -12, staminaChange: -8 },
+    probability: 0.04,
+    choices: [
+      {
+        id: 'help_fix',
+        text: '帮忙抢修',
+        description: '齐心协力修理水管，可能获得好感',
+        effects: { moraleChange: 3, relationshipExpChange: 15, staminaChange: -5 },
+        riskProbability: 0.2,
+        riskEffects: { moraleChange: -5, staminaChange: -10 },
+      },
+      {
+        id: 'evacuate',
+        text: '撤离转移',
+        description: '先离开危险区域，等待专业人员处理',
+        effects: { moraleChange: -5, staminaChange: -3 },
+      },
+    ],
+  },
+  {
+    id: 'dorm_study_group',
+    name: '学习小组',
+    description: '几位学员自发组成了学习小组，互相辅导功课。',
+    icon: '📚',
+    category: 'growth',
+    effects: { moraleChange: 5, relationshipExpChange: 20 },
+    probability: 0.09,
+    requiresRoommates: true,
+  },
+  {
+    id: 'dorm_hidden_treasure',
+    name: '意外发现',
+    description: '打扫宿舍时，在角落发现了一本尘封的魔法笔记！',
+    icon: '📜',
+    category: 'growth',
+    effects: { moraleChange: 10, reputationChange: 2 },
+    probability: 0.03,
+  },
+];
+
+export const getRelationshipLevel = (exp: number): RelationshipLevel => {
+  for (let i = RELATIONSHIP_LEVELS.length - 1; i >= 0; i--) {
+    if (exp >= RELATIONSHIP_LEVELS[i].minExp) {
+      return RELATIONSHIP_LEVELS[i].level;
+    }
+  }
+  return 'stranger';
+};
+
+export const getRelationshipInfo = (exp: number): { level: RelationshipLevel; name: string; color: string; expToNext: number } => {
+  const level = getRelationshipLevel(exp);
+  const levelInfo = RELATIONSHIP_LEVELS.find(l => l.level === level)!;
+  const nextLevelIndex = RELATIONSHIP_LEVELS.findIndex(l => l.level === level) + 1;
+  const nextLevel = nextLevelIndex < RELATIONSHIP_LEVELS.length ? RELATIONSHIP_LEVELS[nextLevelIndex] : null;
+  return {
+    level,
+    name: levelInfo.name,
+    color: levelInfo.color,
+    expToNext: nextLevel ? nextLevel.minExp - exp : 0,
+  };
+};
+
+export const calculateDormitoryComfort = (dormitoryLevel: number, diningHallLevel: number): number => {
+  return 50 + dormitoryLevel * 5 + Math.floor(diningHallLevel * 2);
+};
+
+export const calculateRoomCapacity = (dormitoryLevel: number): number => {
+  if (dormitoryLevel >= 8) return 3;
+  if (dormitoryLevel >= 5) return 2;
+  return 2;
+};
+
+export const calculateDormitoryBonus = (
+  dormitoryState: DormitoryState,
+  dormitoryLevel: number,
+  diningHallLevel: number
+): DormitoryState['dailyBonus'] => {
+  const comfort = calculateDormitoryComfort(dormitoryLevel, diningHallLevel);
+  const comfortBonus = (comfort - 50) / 100;
+  
+  const friendCount = dormitoryState.relationships.filter(r => 
+    r.level === 'friend' || r.level === 'close_friend' || r.level === 'bonded'
+  ).length;
+  const relationshipBonus = Math.min(friendCount * 0.5, 15);
+  
+  const avgMorale = dormitoryState.avgMorale;
+  const moraleBonus = avgMorale >= 80 ? 5 : avgMorale >= 60 ? 2 : 0;
+  
+  const courseEfficiency = comfortBonus * 5 + moraleBonus * 0.5;
+  const battleBonus = relationshipBonus * 0.3;
+  const reputationBonus = moraleBonus * 0.2 + (dormitoryState.totalSocialInteractions > 20 ? 2 : 0);
+  const staminaRegenBonus = comfortBonus * 3 + dormitoryLevel * 0.5;
+  const moraleRegenBonus = comfortBonus * 2 + diningHallLevel * 0.3;
+  
+  return {
+    courseEfficiency: Math.round(courseEfficiency * 10) / 10,
+    battleBonus: Math.round(battleBonus * 10) / 10,
+    reputationBonus: Math.round(reputationBonus * 10) / 10,
+    staminaRegenBonus: Math.round(staminaRegenBonus * 10) / 10,
+    moraleRegenBonus: Math.round(moraleRegenBonus * 10) / 10,
+  };
+};
+
+export const calculateRelationshipExpGain = (
+  activity: RestActivity,
+  areRoommates: boolean,
+  roomComfort: number
+): number => {
+  let base = 0;
+  switch (activity) {
+    case 'socialize': base = 8; break;
+    case 'study_leisure': base = 3; break;
+    case 'train_light': base = 2; break;
+    case 'meditate': base = 1; break;
+    default: base = 0;
+  }
+  if (areRoommates) base *= 1.5;
+  base *= (1 + roomComfort / 200);
+  return Math.floor(base);
+};
+
+export const calculateRestActivityResult = (
+  activity: RestActivity,
+  dormitoryLevel: number,
+  diningHallLevel: number,
+  roomComfort: number
+): { staminaChange: number; moraleChange: number; hpChange: number } => {
+  const activityDef = REST_ACTIVITIES.find(a => a.id === activity);
+  if (!activityDef) return { staminaChange: 0, moraleChange: 0, hpChange: 0 };
+  
+  const comfortMult = 1 + roomComfort / 200;
+  const dormMult = 1 + dormitoryLevel * 0.03;
+  const diningMult = 1 + diningHallLevel * 0.02;
+  
+  return {
+    staminaChange: Math.floor(activityDef.staminaEffect * comfortMult * dormMult),
+    moraleChange: Math.floor(activityDef.moraleEffect * comfortMult * diningMult),
+    hpChange: Math.floor(activityDef.hpEffect * comfortMult * dormMult),
+  };
+};
+
+export const getBattleRelationshipBonus = (relationships: StudentRelationship[], teamIds: string[]): { damageBonus: number; hpBonus: number; description: string } => {
+  const teamRels = relationships.filter(r => 
+    teamIds.includes(r.studentId1) && teamIds.includes(r.studentId2)
+  );
+  
+  let totalBonus = 0;
+  const descriptions: string[] = [];
+  
+  for (const rel of teamRels) {
+    const info = RELATIONSHIP_LEVELS.find(l => l.level === rel.level);
+    switch (rel.level) {
+      case 'bonded':
+        totalBonus += 0.12;
+        descriptions.push('羁绊加成+12%');
+        break;
+      case 'close_friend':
+        totalBonus += 0.08;
+        descriptions.push('挚友加成+8%');
+        break;
+      case 'friend':
+        totalBonus += 0.05;
+        descriptions.push('友情加成+5%');
+        break;
+      case 'acquaintance':
+        totalBonus += 0.02;
+        break;
+      default:
+        break;
+    }
+  }
+  
+  const maxBonus = 0.25;
+  const cappedBonus = Math.min(totalBonus, maxBonus);
+  
+  return {
+    damageBonus: cappedBonus,
+    hpBonus: Math.floor(cappedBonus * 50),
+    description: descriptions.length > 0 ? descriptions.slice(0, 3).join(', ') : '',
+  };
+};
+
+export const generateDormitoryRooms = (studentIds: string[], dormitoryLevel: number): DormitoryRoom[] => {
+  const capacity = calculateRoomCapacity(dormitoryLevel);
+  const rooms: DormitoryRoom[] = [];
+  const comfort = calculateDormitoryComfort(dormitoryLevel, 0);
+  
+  let roomIndex = 0;
+  for (let i = 0; i < studentIds.length; i += capacity) {
+    const roomResidentIds = studentIds.slice(i, i + capacity);
+    rooms.push({
+      id: `room_${roomIndex + 1}`,
+      residentIds: roomResidentIds,
+      capacity,
+      comfort,
+      roomLevel: dormitoryLevel,
+    });
+    roomIndex++;
+  }
+  
+  return rooms;
+};
+
+export const initializeRelationships = (studentIds: string[]): StudentRelationship[] => {
+  const relationships: StudentRelationship[] = [];
+  for (let i = 0; i < studentIds.length; i++) {
+    for (let j = i + 1; j < studentIds.length; j++) {
+      relationships.push({
+        studentId1: studentIds[i],
+        studentId2: studentIds[j],
+        level: 'stranger',
+        exp: 0,
+        expToNext: RELATIONSHIP_LEVELS[1].minExp,
+        dailyInteracted: false,
+      });
+    }
+  }
+  return relationships;
+};
+
+export const triggerRandomDormitoryEvent = (
+  relationships: StudentRelationship[],
+  studentIds: string[],
+  day: number,
+  lastEventDay: number
+): DormitoryEventInstance | null => {
+  if (day - lastEventDay < 2) return null;
+  if (studentIds.length < 2) return null;
+  
+  const eligibleEvents = DORMITORY_EVENTS.filter(e => {
+    if (e.requiresRoommates && studentIds.length < 2) return false;
+    if (e.minRelationship) {
+      const hasMinRel = relationships.some(r => {
+        const relInfo = RELATIONSHIP_LEVELS.findIndex(l => l.level === r.level);
+        const minIndex = RELATIONSHIP_LEVELS.findIndex(l => l.level === e.minRelationship);
+        return relInfo >= minIndex;
+      });
+      if (!hasMinRel) return false;
+    }
+    return true;
+  });
+  
+  if (eligibleEvents.length === 0) return null;
+  
+  const totalWeight = eligibleEvents.reduce((sum, e) => sum + e.probability, 0);
+  let roll = Math.random() * totalWeight;
+  let selectedEvent: DormitoryEventDef | null = null;
+  
+  for (const event of eligibleEvents) {
+    roll -= event.probability;
+    if (roll <= 0) {
+      selectedEvent = event;
+      break;
+    }
+  }
+  
+  if (!selectedEvent) selectedEvent = eligibleEvents[0];
+  
+  const participantCount = Math.min(selectedEvent.requiresRoommates ? Math.floor(Math.random() * 2) + 2 : Math.floor(Math.random() * 3) + 1, studentIds.length);
+  const shuffled = [...studentIds].sort(() => Math.random() - 0.5);
+  const participantIds = shuffled.slice(0, participantCount);
+  
+  return {
+    id: `dorm_event_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    eventId: selectedEvent.id,
+    day,
+    participantIds,
+    effects: selectedEvent.effects,
+    resolved: false,
+  };
+};
+
+export const INITIAL_DORMITORY_STATE: DormitoryState = {
+  rooms: [],
+  relationships: [],
+  schedules: [],
+  recentEvents: [],
+  dailyBonus: {
+    courseEfficiency: 0,
+    battleBonus: 0,
+    reputationBonus: 0,
+    staminaRegenBonus: 0,
+    moraleRegenBonus: 0,
+  },
+  totalEventsTriggered: 0,
+  lastEventDay: 0,
+  totalSocialInteractions: 0,
+  bestRelationshipLevel: 'stranger',
+  avgMorale: 0,
+  avgStamina: 0,
+};
+
+export const getRelationshipLevelOrder = (level: RelationshipLevel): number => {
+  const order: Record<RelationshipLevel, number> = {
+    stranger: 0,
+    acquaintance: 1,
+    friend: 2,
+    close_friend: 3,
+    bonded: 4,
+  };
+  return order[level];
+};
+
+export const getRestActivityIcon = (activity: RestActivity): string => {
+  return REST_ACTIVITIES.find(a => a.id === activity)?.icon || '😴';
+};
+
+export const getRestActivityName = (activity: RestActivity): string => {
+  return REST_ACTIVITIES.find(a => a.id === activity)?.name || activity;
 };
