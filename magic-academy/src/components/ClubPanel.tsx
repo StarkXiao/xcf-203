@@ -73,7 +73,7 @@ export default function ClubPanel() {
     return labels[cat] || cat;
   };
 
-  const formatReward = (reward: any) => {
+  const formatReward = (reward: Partial<{ gold: number; mana: number; food: number; reputation: number; contributionPoints: number }>) => {
     const parts: string[] = [];
     if (reward.gold) parts.push(`💰${reward.gold}`);
     if (reward.mana) parts.push(`💎${reward.mana}`);
@@ -83,7 +83,7 @@ export default function ClubPanel() {
     return parts.join(' ');
   };
 
-  const formatCost = (cost: any) => {
+  const formatCost = (cost: Partial<{ gold: number; mana: number; food: number; reputation: number; contributionPoints: number }>) => {
     const parts: string[] = [];
     if (cost.contributionPoints) parts.push(`🏅${cost.contributionPoints}`);
     if (cost.gold) parts.push(`💰${cost.gold}`);

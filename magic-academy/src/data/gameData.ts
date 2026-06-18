@@ -1090,23 +1090,25 @@ export const calculateBattleStars = (
 export const calculateDungeonRewards = (
   dungeon: Dungeon,
   stars: number,
-  isFirstClear: boolean
+  isFirstClear: boolean,
+  mentorBonus?: MentorDungeonBonus
 ): Resource => {
   const baseRewards = dungeon.rewards;
   const starMultiplier = stars === 3 ? 1.5 : stars === 2 ? 1.2 : 1.0;
+  const rewardMultiplier = mentorBonus?.rewardMultiplier ?? 1;
 
   const rewards: Resource = {
-    gold: Math.floor(baseRewards.gold * starMultiplier),
-    mana: Math.floor(baseRewards.mana * starMultiplier),
-    food: Math.floor(baseRewards.food * starMultiplier),
-    reputation: Math.floor(baseRewards.reputation * starMultiplier),
+    gold: Math.floor(baseRewards.gold * starMultiplier * rewardMultiplier),
+    mana: Math.floor(baseRewards.mana * starMultiplier * rewardMultiplier),
+    food: Math.floor(baseRewards.food * starMultiplier * rewardMultiplier),
+    reputation: Math.floor(baseRewards.reputation * starMultiplier * rewardMultiplier),
   };
 
   if (isFirstClear) {
-    rewards.gold += dungeon.firstClearRewards.gold;
-    rewards.mana += dungeon.firstClearRewards.mana;
-    rewards.food += dungeon.firstClearRewards.food;
-    rewards.reputation += dungeon.firstClearRewards.reputation;
+    rewards.gold += Math.floor(dungeon.firstClearRewards.gold * rewardMultiplier);
+    rewards.mana += Math.floor(dungeon.firstClearRewards.mana * rewardMultiplier);
+    rewards.food += Math.floor(dungeon.firstClearRewards.food * rewardMultiplier);
+    rewards.reputation += Math.floor(dungeon.firstClearRewards.reputation * rewardMultiplier);
   }
 
   return rewards;
@@ -3050,7 +3052,7 @@ export const calculateClubTaskProgress = (
     if (!task.unlocked) return task;
     
     let shouldUpdate = false;
-    let updateAmount = amount;
+    const updateAmount = amount;
     
     switch (task.type) {
       case 'course':
@@ -3852,8 +3854,7 @@ export const generateMentorSpecializations = (magicType: MagicType, quality: Men
 };
 
 export const generateRandomMentor = (
-  quality: MentorQuality,
-  _day: number
+  quality: MentorQuality
 ): Omit<Mentor, 'id' | 'status' | 'assignedCourses' | 'assignedDungeon' | 'recruitedAt' | 'totalStudentsTaught' | 'totalDungeonsLed'> => {
   const magicTypes: MagicType[] = ['fire', 'water', 'earth', 'wind', 'light', 'dark'];
   const magicType = magicTypes[Math.floor(Math.random() * magicTypes.length)];
@@ -3953,7 +3954,7 @@ export const generateRecruitmentOption = (
   quality: MentorQuality,
   currentDay: number
 ): MentorRecruitmentOption => {
-  const mentorTemplate = generateRandomMentor(quality, currentDay);
+  const mentorTemplate = generateRandomMentor(quality);
   const qualityMult = getMentorQualityMultiplier(quality);
   
   const cost: Resource = {

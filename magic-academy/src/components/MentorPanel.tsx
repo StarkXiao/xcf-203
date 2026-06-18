@@ -70,7 +70,7 @@ export default function MentorPanel() {
     return labels[status] || labels.idle;
   };
 
-  const formatCost = (cost: any) => {
+  const formatCost = (cost: Partial<{ gold: number; mana: number; food: number; reputation: number }>) => {
     const parts: string[] = [];
     if (cost.gold) parts.push(`💰${cost.gold}`);
     if (cost.mana) parts.push(`💎${cost.mana}`);
@@ -79,7 +79,7 @@ export default function MentorPanel() {
     return parts.join(' ') || '免费';
   };
 
-  const canAffordCost = (cost: any) => {
+  const canAffordCost = (cost: Partial<{ gold: number; mana: number; food: number; reputation: number }>) => {
     return (
       state.resources.gold >= (cost.gold || 0) &&
       state.resources.mana >= (cost.mana || 0) &&

@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -519,7 +519,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           student,
           course,
           state.buildings,
-          state.teachers
+          state.teachers,
+          state.mentorState.mentors,
+          state.mentorState.academies
         );
         
         const benefitText = formatBenefitBreakdown(breakdown);
@@ -561,7 +563,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
                 s,
                 course,
                 state.buildings,
-                state.teachers
+                state.teachers,
+                state.mentorState.mentors,
+                state.mentorState.academies
               );
               expGained = breakdown.totalExp;
               
@@ -773,6 +777,28 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         1
       );
       
+      const courseMentors = state.mentorState.mentors.filter(m => m.assignedCourses.includes(course.id));
+      const updatedMentorsForCourse = state.mentorState.mentors.map(m => {
+        if (!courseMentors.find(cm => cm.id === m.id)) return m;
+        const mentorExpGain = 5 + course.level * 2;
+        let newMentorExp = m.exp + mentorExpGain;
+        let newMentorRank = m.rank;
+        let newExpToNext = m.expToNextRank;
+        const nextRank = getNextMentorRank(m.rank);
+        if (nextRank && newMentorExp >= m.expToNextRank) {
+          newMentorExp -= m.expToNextRank;
+          newMentorRank = nextRank;
+          newExpToNext = getMentorRankExpRequirement(nextRank);
+        }
+        return {
+          ...m,
+          exp: newMentorExp,
+          rank: newMentorRank,
+          expToNextRank: newExpToNext,
+          totalStudentsTaught: m.totalStudentsTaught + 1,
+        };
+      });
+      
       return {
         ...newState,
         dailyLogs: recentLogs,
@@ -790,6 +816,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         clubs: {
           ...state.clubs,
           tasks: updatedClubTasks,
+        },
+        mentorState: {
+          ...state.mentorState,
+          mentors: updatedMentorsForCourse,
         },
       };
     }
@@ -1008,7 +1038,19 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       if (!dungeon) return state;
 
       const isFirstClear = !dungeon.firstCleared;
-      const rewards = action.stars > 0 ? calculateDungeonRewards(dungeon, action.stars, isFirstClear) : { gold: 0, mana: 0, food: 0, reputation: 0 };
+      const teamStudents = state.students.filter(s => action.team.includes(s.id));
+      const assignedMentor = state.mentorState.mentors.find(m => m.assignedDungeon === action.dungeonId);
+      let mentorDungeonBonus: MentorDungeonBonus | undefined;
+      if (assignedMentor) {
+        const leadResult = calculateMentorDungeonBonus(
+          dungeon,
+          teamStudents,
+          [assignedMentor],
+          state.mentorState.academies
+        );
+        mentorDungeonBonus = leadResult;
+      }
+      const rewards = action.stars > 0 ? calculateDungeonRewards(dungeon, action.stars, isFirstClear, mentorDungeonBonus) : { gold: 0, mana: 0, food: 0, reputation: 0 };
       const victory = action.stars > 0;
       const battleEvents: DailyEvent[] = [];
 
@@ -1080,6 +1122,32 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           isFirstClear,
         };
 
+        let newExp = s.exp;
+        let newLevel = s.level;
+        const newGrowthRecords = [...s.growthRecords];
+        let leveledUp = false;
+        if (victory) {
+          const baseExp = 15 + dungeon.level * 5 + action.stars * 10;
+          const expMultiplier = mentorDungeonBonus?.expMultiplier ?? 1;
+          const gainedExp = Math.floor(baseExp * expMultiplier);
+          newExp += gainedExp;
+          const oldLevel = s.level;
+          while (newExp >= newLevel * 100) {
+            newExp -= newLevel * 100;
+            newLevel++;
+            leveledUp = true;
+          }
+          if (leveledUp) {
+            newGrowthRecords.push({
+              id: `growth_${s.id}_dungeon_${Date.now()}`,
+              type: 'level_up',
+              day: state.day,
+              description: `副本升级: Lv.${oldLevel} → Lv.${newLevel}`,
+              details: { oldLevel, newLevel, source: 'dungeon' },
+            });
+          }
+        }
+
         return {
           ...s,
           currentHp: newCurrentHp,
@@ -1087,9 +1155,36 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           morale: clamp(s.morale + moraleDelta, 0, 100),
           stamina: clamp(s.stamina + staminaDelta, 0, 100),
           status: 'idle' as const,
+          exp: newExp,
+          level: newLevel,
+          growthRecords: newGrowthRecords,
           dungeonHistory: [...s.dungeonHistory, dungeonEntry],
         };
       });
+
+      let updatedMentors = state.mentorState.mentors;
+      if (assignedMentor && victory) {
+        updatedMentors = state.mentorState.mentors.map(m => {
+          if (m.id !== assignedMentor.id) return m;
+          const mentorExpGain = 10 + dungeon.level * 3;
+          let newMentorExp = m.exp + mentorExpGain;
+          let newMentorRank = m.rank;
+          let newExpToNext = m.expToNextRank;
+          const nextRank = getNextMentorRank(m.rank);
+          if (nextRank && newMentorExp >= m.expToNextRank) {
+            newMentorExp -= m.expToNextRank;
+            newMentorRank = nextRank;
+            newExpToNext = getMentorRankExpRequirement(nextRank);
+          }
+          return {
+            ...m,
+            exp: newMentorExp,
+            rank: newMentorRank,
+            expToNextRank: newExpToNext,
+            totalDungeonsLed: m.totalDungeonsLed + 1,
+          };
+        });
+      }
 
       const recentLogs = state.dailyLogs.slice(-29);
       if (battleEvents.length > 0) {
@@ -1107,6 +1202,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               clearedCount: d.clearedCount + 1,
             } : d
           ),
+          mentorState: {
+            ...state.mentorState,
+            mentors: updatedMentors,
+          },
         };
       }
       
@@ -1200,6 +1299,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         clubs: {
           ...state.clubs,
           tasks: updatedClubTasks,
+        },
+        mentorState: {
+          ...state.mentorState,
+          mentors: updatedMentors,
         },
       };
     }
@@ -1895,9 +1998,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       if ((discountedCost.food || 0) > state.resources.food) return state;
       if ((discountedCost.reputation || 0) > state.resources.reputation) return state;
       
-      let newResources = { ...state.resources };
-      let newClubState = { ...state.clubs };
-      let newActiveBuffs = [...state.clubs.activeBuffs];
+      const newResources = { ...state.resources };
+      const newClubState = { ...state.clubs };
+      const newActiveBuffs = [...state.clubs.activeBuffs];
       const events: DailyEvent[] = [];
       
       newResources.gold -= (discountedCost.gold || 0);
@@ -1927,9 +2030,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       
       switch (item.effect.type) {
         case 'resource_gain': {
-          const target = item.effect.target as keyof typeof newResources;
+          const target = item.effect.target as keyof Resource;
           if (target && target in newResources) {
-            (newResources as any)[target] += item.effect.value;
+            newResources[target] += item.effect.value;
           }
           break;
         }
@@ -1959,7 +2062,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               name: item.name,
               description: item.description,
               effect: {
-                type: item.effect.target as any,
+                type: item.effect.target as ClubBuffEffect['type'],
                 value: item.effect.value,
               },
               remainingDays: item.effect.duration,
@@ -2258,7 +2361,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const material = getTradeMaterial(order.materialId);
       const penaltyPrice = Math.round(order.totalPrice * 0.3);
 
-      let newMaterials = { ...state.tradeHarbor.materials };
+      const newMaterials = { ...state.tradeHarbor.materials };
       let goldRefund = 0;
 
       if (order.type === 'buy') {
@@ -2320,9 +2423,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       }
 
       const actualQuantity = shipment.quantity - lossAmount;
-      let newMaterials = { ...state.tradeHarbor.materials };
+      const newMaterials = { ...state.tradeHarbor.materials };
       let newGold = state.resources.gold;
-      let profitLoss = 0;
 
       if (order.type === 'buy') {
         const warehouseUsed = getTotalWarehouseUsed(newMaterials);
@@ -2332,12 +2434,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         if (finalQuantity < actualQuantity) {
           lossAmount += actualQuantity - finalQuantity;
         }
-        profitLoss = -order.totalPrice;
       } else {
         const actualRevenue = Math.round(order.unitPrice * actualQuantity);
         newGold += actualRevenue;
-        profitLoss = actualRevenue - order.unitPrice * order.quantity;
       }
+      const profitLoss = order.type === 'buy'
+        ? -order.totalPrice
+        : Math.round(order.unitPrice * actualQuantity) - order.unitPrice * order.quantity;
 
       const completeEvents: DailyEvent[] = [];
       if (lossAmount > 0) {
@@ -2818,8 +2921,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const mentor = state.mentorState.mentors.find(m => m.id === action.mentorId);
       if (!mentor) return state;
 
-      let newAcademies = state.mentorState.academies;
-
       if (action.academyId) {
         const academy = state.mentorState.academies.find(a => a.id === action.academyId);
         if (!academy || !academy.unlocked) return state;
@@ -2827,7 +2928,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         if (currentAcademyMentors.length >= academy.maxMentors) return state;
       }
 
-      newAcademies = state.mentorState.academies.map(a => {
+      const newAcademies = state.mentorState.academies.map(a => {
         if (mentor.academyId && a.id === mentor.academyId) {
           return { ...a, mentors: a.mentors.filter(id => id !== action.mentorId) };
         }
@@ -2981,7 +3082,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         }
       });
 
-      const completedCourses: { studentId: string; studentName: string; courseName: string }[] = [];
+      const completedCourses: { studentId: string; studentName: string; courseId: string; courseName: string }[] = [];
       const leftStudents: { id: string; name: string }[] = [];
 
       const workingResources = {
@@ -3109,7 +3210,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             student,
             course,
             state.buildings,
-            state.teachers
+            state.teachers,
+            state.mentorState.mentors,
+            state.mentorState.academies
           );
           const dailyExp = dailyBreakdown.totalExp;
           let newExp = student.exp + dailyExp;
@@ -3131,7 +3234,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
                 student,
                 course,
                 state.buildings,
-                state.teachers
+                state.teachers,
+                state.mentorState.mentors,
+                state.mentorState.academies
               );
               finalBreakdown = breakdown;
               finalExpGain = breakdown.totalExp;
@@ -3212,7 +3317,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               skillUnlocked,
             };
 
-            completedCourses.push({ studentId: student.id, studentName: student.name, courseName: course.name });
+            completedCourses.push({ studentId: student.id, studentName: student.name, courseId: course.id, courseName: course.name });
             
             if (finalBreakdown && finalBreakdown.totalExp > 0) {
               const benefitText = formatBenefitBreakdown(finalBreakdown);
@@ -3455,7 +3560,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         newTradeHarbor.currentPrices = prices;
         newTradeHarbor.priceTrends = trends;
 
-        let tempMaterials = { ...newTradeHarbor.materials };
+        const tempMaterials = { ...newTradeHarbor.materials };
         let tempGold = finalResources.gold;
         const completedShipmentIds: string[] = [];
         const completedOrderIds: string[] = [];
@@ -3480,7 +3585,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
           const actualQuantity = shipment.quantity - lossAmount;
           let finalReceivedQuantity = actualQuantity;
-          let profitLoss = 0;
 
           if (order.type === 'buy') {
             const warehouseUsed = getTotalWarehouseUsed(tempMaterials);
@@ -3490,12 +3594,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             if (finalReceivedQuantity < actualQuantity) {
               lossAmount += actualQuantity - finalReceivedQuantity;
             }
-            profitLoss = -order.totalPrice;
           } else {
             const actualRevenue = Math.round(order.unitPrice * actualQuantity);
             tempGold += actualRevenue;
-            profitLoss = actualRevenue - order.unitPrice * order.quantity;
           }
+          const profitLoss = order.type === 'buy'
+            ? -order.totalPrice
+            : Math.round(order.unitPrice * actualQuantity) - order.unitPrice * order.quantity;
 
           if (lossAmount > 0) {
             todayEvents.push({
@@ -3656,6 +3761,41 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         });
       }
 
+      const completedCourseIds = [...new Set(completedCourses.map(c => c.courseId))];
+      const dailyMentorUpdates = new Map<string, { exp: number; students: number }>();
+      for (const courseId of completedCourseIds) {
+        const course = state.courses.find(c => c.id === courseId);
+        if (!course) continue;
+        const courseMentors = state.mentorState.mentors.filter(m => m.assignedCourses.includes(courseId));
+        for (const mentor of courseMentors) {
+          const existing = dailyMentorUpdates.get(mentor.id) || { exp: 0, students: 0 };
+          dailyMentorUpdates.set(mentor.id, {
+            exp: existing.exp + 5 + course.level * 2,
+            students: existing.students + completedCourses.filter(c => c.courseId === courseId).length,
+          });
+        }
+      }
+      const updatedDailyMentors = state.mentorState.mentors.map(m => {
+        const update = dailyMentorUpdates.get(m.id);
+        if (!update) return m;
+        let newMentorExp = m.exp + update.exp;
+        let newMentorRank = m.rank;
+        let newExpToNext = m.expToNextRank;
+        const nextRank = getNextMentorRank(m.rank);
+        if (nextRank && newMentorExp >= m.expToNextRank) {
+          newMentorExp -= m.expToNextRank;
+          newMentorRank = nextRank;
+          newExpToNext = getMentorRankExpRequirement(nextRank);
+        }
+        return {
+          ...m,
+          exp: newMentorExp,
+          rank: newMentorRank,
+          expToNextRank: newExpToNext,
+          totalStudentsTaught: m.totalStudentsTaught + update.students,
+        };
+      });
+
       return {
         ...state,
         day: newDay,
@@ -3671,6 +3811,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           activeBuffs: updatedClubBuffs,
         },
         tradeHarbor: newTradeHarbor,
+        mentorState: {
+          ...state.mentorState,
+          mentors: updatedDailyMentors,
+        },
       };
     }
 
@@ -3816,7 +3960,7 @@ interface GameContextType {
   getClubMemberBonus: typeof getClubMemberBonus;
   CLUB_REPUTATION_LEVELS: typeof CLUB_REPUTATION_LEVELS;
   INITIAL_CLUBS: typeof INITIAL_CLUBS;
-  useRecruitTicket: (quality: 'common' | 'rare' | 'epic' | 'legendary') => boolean;
+  consumeRecruitTicket: (quality: 'common' | 'rare' | 'epic' | 'legendary') => boolean;
   addRecruitTicket: (quality: 'common' | 'rare' | 'epic' | 'legendary', amount: number) => void;
   unlockTradeHarbor: () => void;
   placeTradeOrder: (orderType: TradeOrderType, materialId: TradeMaterialType, quantity: number, route: 'local' | 'regional' | 'intercontinental') => boolean;
@@ -4302,7 +4446,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     autoSaveIfEnabled();
   };
 
-  const useRecruitTicket = (quality: 'common' | 'rare' | 'epic' | 'legendary'): boolean => {
+  const consumeRecruitTicket = (quality: 'common' | 'rare' | 'epic' | 'legendary'): boolean => {
     if (state.recruitTickets[quality] <= 0) return false;
     dispatch({ type: 'USE_RECRUIT_TICKET', quality });
     return true;
@@ -4606,7 +4750,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       getClubMemberBonus,
       CLUB_REPUTATION_LEVELS,
       INITIAL_CLUBS,
-      useRecruitTicket,
+      consumeRecruitTicket,
       addRecruitTicket,
       unlockTradeHarbor,
       placeTradeOrder,

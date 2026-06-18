@@ -385,7 +385,7 @@ interface ModuleProps {
 }
 
 function RecruitModule({ onStudentClick, setConfirmDialog }: ModuleProps) {
-  const { state, dispatch, canAfford, recruitStudent, assignStudentToRest, getMoraleLabel, getStaminaLabel, getPityThreshold, computeAdjustedProbabilities, getRecruitQualityBonus, getGuaranteedQuality, shouldConfirmAction, autoSaveIfEnabled, canAccessRecruitmentTicket, getReputationLevel, useRecruitTicket } = useGame();
+  const { state, dispatch, canAfford, recruitStudent, assignStudentToRest, getMoraleLabel, getStaminaLabel, getPityThreshold, computeAdjustedProbabilities, getRecruitQualityBonus, getGuaranteedQuality, shouldConfirmAction, autoSaveIfEnabled, canAccessRecruitmentTicket, getReputationLevel, consumeRecruitTicket } = useGame();
   const [showProbability, setShowProbability] = useState<StudentQuality | null>(null);
   const [gachaAnimation, setGachaAnimation] = useState<{ showing: boolean; result: GachaResult | null; phase: 'rolling' | 'reveal' }>({ showing: false, result: null, phase: 'rolling' });
   const [showHistory, setShowHistory] = useState(false);
@@ -453,7 +453,7 @@ function RecruitModule({ onStudentClick, setConfirmDialog }: ModuleProps) {
 
   const doRecruitWithTicket = (ticketQuality: StudentQuality) => {
     const ticket = tickets.find(t => t.quality === ticketQuality);
-    if (!ticket || !useRecruitTicket(ticketQuality) || isFull) return;
+    if (!ticket || !consumeRecruitTicket(ticketQuality) || isFull) return;
 
     const result = recruitStudent(ticketQuality);
     
