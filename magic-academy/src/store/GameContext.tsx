@@ -869,6 +869,29 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         };
       });
       
+      const kc = state.kingdomCommission;
+      let newKingdomCommission = kc;
+      if (kc.unlocked && kc.activeCommissions.length > 0) {
+        const { updated, completedStages, completedCommissions } = updateCommissionStageProgress(
+          kc.activeCommissions,
+          'course',
+          1
+        );
+        
+        if (completedStages.length > 0 || completedCommissions.length > 0) {
+          const completedCommList = updated.filter(c => c.status === 'stage_complete');
+          const stillActive = updated.filter(c => c.status !== 'stage_complete');
+          
+          newKingdomCommission = {
+            ...kc,
+            activeCommissions: stillActive,
+            completedCommissions: [...kc.completedCommissions, ...completedCommList],
+          };
+        } else {
+          newKingdomCommission = { ...kc, activeCommissions: updated };
+        }
+      }
+      
       return {
         ...newState,
         dailyLogs: recentLogs,
@@ -895,6 +918,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...state.alchemy,
           activeBuffs: state.alchemy.activeBuffs.filter(b => !potionBuffs.usedBuffIds.includes(b.id)),
         },
+        kingdomCommission: newKingdomCommission,
       };
     }
 
@@ -1412,6 +1436,29 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         isThreeStar
       );
       
+      const dungeonKc = state.kingdomCommission;
+      let newDungeonKingdomCommission = dungeonKc;
+      if (dungeonKc.unlocked && dungeonKc.activeCommissions.length > 0) {
+        const { updated, completedStages, completedCommissions } = updateCommissionStageProgress(
+          dungeonKc.activeCommissions,
+          'dungeon',
+          1
+        );
+        
+        if (completedStages.length > 0 || completedCommissions.length > 0) {
+          const completedCommList = updated.filter(c => c.status === 'stage_complete');
+          const stillActive = updated.filter(c => c.status !== 'stage_complete');
+          
+          newDungeonKingdomCommission = {
+            ...dungeonKc,
+            activeCommissions: stillActive,
+            completedCommissions: [...dungeonKc.completedCommissions, ...completedCommList],
+          };
+        } else {
+          newDungeonKingdomCommission = { ...dungeonKc, activeCommissions: updated };
+        }
+      }
+      
       return {
         ...state,
         students: updatedStudents,
@@ -1456,6 +1503,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...state.alchemy,
           activeBuffs: state.alchemy.activeBuffs.filter(b => !potionDungeonBuffs.usedBuffIds.includes(b.id)),
         },
+        kingdomCommission: newDungeonKingdomCommission,
       };
     }
 
@@ -1528,6 +1576,29 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         sweepLogs.push({ day: state.day, events: sweepEvents });
       }
 
+      const sweepKc = state.kingdomCommission;
+      let newSweepKingdomCommission = sweepKc;
+      if (sweepKc.unlocked && sweepKc.activeCommissions.length > 0) {
+        const { updated, completedStages, completedCommissions } = updateCommissionStageProgress(
+          sweepKc.activeCommissions,
+          'dungeon',
+          1
+        );
+        
+        if (completedStages.length > 0 || completedCommissions.length > 0) {
+          const completedCommList = updated.filter(c => c.status === 'stage_complete');
+          const stillActive = updated.filter(c => c.status !== 'stage_complete');
+          
+          newSweepKingdomCommission = {
+            ...sweepKc,
+            activeCommissions: stillActive,
+            completedCommissions: [...sweepKc.completedCommissions, ...completedCommList],
+          };
+        } else {
+          newSweepKingdomCommission = { ...sweepKc, activeCommissions: updated };
+        }
+      }
+
       return {
         ...state,
         students: updatedStudents,
@@ -1562,6 +1633,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...state.alchemy,
           activeBuffs: state.alchemy.activeBuffs.filter(b => !potionDungeonBuffs.usedBuffIds.includes(b.id)),
         },
+        kingdomCommission: newSweepKingdomCommission,
       };
     }
 
@@ -3399,7 +3471,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const newPotions = { ...state.alchemy.potions };
       newPotions[action.potionId] -= 1;
 
-      let newResources = { ...state.resources };
+      const newResources = { ...state.resources };
       const newStudents = [...state.students];
       const newBuffs = [...state.alchemy.activeBuffs];
       const useEvents: DailyEvent[] = [];
@@ -4895,7 +4967,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const claimLog: DailyEvent = {
         type: 'event_center_resolved',
         message: `🎁 已领取事件结局奖励：${Object.entries(reward)
-          .filter(([_, v]) => v && v > 0)
+          .filter(([, v]) => v && v > 0)
           .map(([k, v]) => {
             const icons: Record<string, string> = { gold: '💰', mana: '🔮', food: '🍖', reputation: '⭐' };
             return `${icons[k] || ''}+${v}`;
@@ -5161,7 +5233,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const claimLog: DailyEvent = {
         type: 'warning',
         message: `🏆 完成委托「${commission.name}」：获得${Object.entries(bonusReward)
-          .filter(([_, v]) => v && v > 0)
+          .filter(([, v]) => v && v > 0)
           .map(([k, v]) => {
             const icons: Record<string, string> = { gold: '💰', mana: '🔮', food: '🍖', reputation: '⭐' };
             return `${icons[k] || ''}${v}`;

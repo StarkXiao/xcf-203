@@ -5796,12 +5796,13 @@ const generateStages = (
         stageGenerators.push(generateResourceStage);
       }
       break;
-    case 'comprehensive':
+    case 'comprehensive': {
       const allGenerators = [generateCourseStage, generateDungeonStage, generateResourceStage, generateReputationStage];
       for (let i = 0; i < stageCount; i++) {
         stageGenerators.push(allGenerators[i % allGenerators.length]);
       }
       break;
+    }
   }
   
   for (let i = 0; i < stageCount; i++) {
