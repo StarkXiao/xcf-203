@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useGame } from '../store/GameContext';
-import type { ClassId, SpecializationBranchId, SkillTreeNodeId, Student } from '../types/game';
+import type { ClassId, SkillTreeNodeEffect, StudentQuality } from '../types/game';
 import {
   CLASS_DEFINITIONS,
   CLASS_TRANSFER_NAMES,
@@ -18,6 +18,28 @@ import './ClassTransferPanel.css';
 
 type ClassTransferSubTab = 'overview' | 'transfer' | 'skillTree' | 'specialization';
 
+const EFFECT_DISPLAY: Record<string, { icon: string; label: string; isPercent: boolean }> = {
+  attack_bonus: { icon: '⚔', label: '攻击', isPercent: true },
+  defense_bonus: { icon: '🛡', label: '防御', isPercent: true },
+  hp_bonus: { icon: '❤', label: '生命', isPercent: true },
+  speed_bonus: { icon: '💨', label: '速度', isPercent: true },
+  crit_chance: { icon: '💥', label: '暴击率', isPercent: true },
+  crit_damage: { icon: '🔥', label: '暴击伤害', isPercent: true },
+  skill_damage_bonus: { icon: '🎯', label: '技能伤害', isPercent: true },
+  exp_bonus: { icon: '📈', label: '经验', isPercent: true },
+  dungeon_bonus: { icon: '🏛️', label: '副本加成', isPercent: true },
+  course_speed_bonus: { icon: '⚡', label: '课程速度', isPercent: true },
+  special_skill: { icon: '✨', label: '特殊技能', isPercent: false },
+};
+
+const getEffectDisplay = (effect: SkillTreeNodeEffect): { icon: string; label: string; value: string } => {
+  const display = EFFECT_DISPLAY[effect.type] || { icon: '✨', label: effect.type, isPercent: true };
+  const valueStr = display.isPercent ? `${(effect.value * 100).toFixed(0)}%` : `${effect.value}`;
+  return { icon: display.icon, label: display.label, value: valueStr };
+};
+
+const qualityOrder: Record<StudentQuality, number> = { common: 0, rare: 1, epic: 2, legendary: 3 };
+
 export default function ClassTransferPanel() {
   const {
     state,
@@ -26,7 +48,6 @@ export default function ClassTransferPanel() {
     unlockSkillNode,
     unlockSpecializationBranch,
     addSpecializationPoint,
-    addClassExp,
   } = useGame();
 
   const [subTab, setSubTab] = useState<ClassTransferSubTab>('overview');
@@ -212,6 +233,13 @@ export default function ClassTransferPanel() {
       );
     }
 
+    const hasCourse = (courseId: string | null) =>
+      courseId ? student.courseHistory.some(ch => ch.courseId === courseId) : true;
+    const hasDungeon = (dungeonId: string | null) =>
+      dungeonId ? student.dungeonHistory.some(dh => dh.dungeonId === dungeonId && dh.victory) : true;
+    const hasMentor = (magicType: string | null) =>
+      magicType ? state.mentorState.mentors.some(m => m.magicType === magicType) : true;
+
     return (
       <div className="ct-transfer">
         <div className="ct-transfer-student-select">
@@ -221,7 +249,10 @@ export default function ClassTransferPanel() {
               <div
                 key={s.id}
                 className={`ct-transfer-student ${student.id === s.id ? 'selected' : ''}`}
-                onClick={() => setSelectedStudentId(s.id)}
+                onClick={() => {
+                  setSelectedStudentId(s.id);
+                  setSelectedClassId(null);
+                }}
               >
                 <span className="ct-ts-name">{s.name}</span>
                 <span className="ct-ts-level">Lv.{s.level}</span>
@@ -239,6 +270,12 @@ export default function ClassTransferPanel() {
                 classDef, student, state.mentorState.mentors, state.resources, false
               );
               const isSelected = selectedClassId === classDef.id;
+              const req = classDef.requirements;
+              const meetsLevel = student.level >= req.requiredLevel;
+              const meetsQuality = qualityOrder[student.quality] >= qualityOrder[req.requiredQuality];
+              const meetsCourse = hasCourse(req.requiredCourseId);
+              const meetsDungeon = hasDungeon(req.requiredDungeonId);
+              const meetsMentor = hasMentor(req.requiredMentorMagicType);
 
               return (
                 <div
@@ -252,35 +289,40 @@ export default function ClassTransferPanel() {
                   </div>
                   <p className="ct-class-desc">{classDef.description}</p>
                   <div className="ct-class-reqs">
-                    <div className={`ct-req-mini ${student.level >= classDef.requirements.requiredLevel ? 'met' : 'unmet'}`}>
-                      等级 ≥ {classDef.requirements.requiredLevel}
+                    <div className={`ct-req-mini ${meetsLevel ? 'met' : 'unmet'}`}>
+                      等级 ≥ {req.requiredLevel}
                     </div>
-                    <div className={`ct-req-mini ${(['common', 'rare', 'epic', 'legendary'].indexOf(student.quality) >= ['common', 'rare', 'epic', 'legendary'].indexOf(classDef.requirements.requiredQuality)) ? 'met' : 'unmet'}`}>
-                      品质 ≥ {classDef.requirements.requiredQuality}
+                    <div className={`ct-req-mini ${meetsQuality ? 'met' : 'unmet'}`}>
+                      品质 ≥ {req.requiredQuality}
                     </div>
-                    {classDef.requirements.requiredCourseId && (
-                      <div className={`ct-req-mini ${state.courses.find(c => c.id === classDef.requirements.requiredCourseId)?.level ? 'met' : 'unmet'}`}>
-                        课程: {classDef.requirements.requiredCourseId}
+                    {req.requiredCourseId && (
+                      <div className={`ct-req-mini ${meetsCourse ? 'met' : 'unmet'}`}>
+                        课程: {req.requiredCourseId}
                       </div>
                     )}
-                    {classDef.requirements.requiredDungeonId && (
-                      <div className={`ct-req-mini ${(state.dungeons.find(d => d.id === classDef.requirements.requiredDungeonId)?.stars || 0) > 0 ? 'met' : 'unmet'}`}>
-                        副本: {classDef.requirements.requiredDungeonId}
+                    {req.requiredDungeonId && (
+                      <div className={`ct-req-mini ${meetsDungeon ? 'met' : 'unmet'}`}>
+                        副本: {req.requiredDungeonId}
+                      </div>
+                    )}
+                    {req.requiredMentorMagicType && (
+                      <div className={`ct-req-mini ${meetsMentor ? 'met' : 'unmet'}`}>
+                        导师: {req.requiredMentorMagicType}系
                       </div>
                     )}
                   </div>
                   {unmetRequirements.length > 0 && (
                     <div className="ct-unmet-list">
                       {unmetRequirements.map((req, i) => (
-                        <div key={i} className="ct-unmet-item">❌ {req}</div>
+                        <div key={i} className="ct-unmet-item">❌ {req.description}: {req.current} / {req.required}</div>
                       ))}
                     </div>
                   )}
                   <div className="ct-class-cost">
-                    <span>💰{classDef.requirements.cost.gold}</span>
-                    <span>💎{classDef.requirements.cost.mana}</span>
-                    <span>🍞{classDef.requirements.cost.food}</span>
-                    <span>⭐{classDef.requirements.cost.reputation}</span>
+                    <span>💰{req.cost.gold}</span>
+                    <span>💎{req.cost.mana}</span>
+                    <span>🍞{req.cost.food}</span>
+                    <span>⭐{req.cost.reputation}</span>
                   </div>
                   <div className="ct-class-bonuses">
                     <span>⚔+{classDef.baseStatBonus.attack}</span>
@@ -314,6 +356,7 @@ export default function ClassTransferPanel() {
                   onClick={() => {
                     transferClass(student.id, selectedClassId);
                     setSelectedClassId(null);
+                    setSubTab('overview');
                   }}
                 >
                   ⚔️ 确认转职
@@ -322,7 +365,7 @@ export default function ClassTransferPanel() {
                 <div className="ct-cannot-transfer">
                   <p>不满足转职条件：</p>
                   {unmetRequirements.map((req, i) => (
-                    <span key={i} className="ct-unmet-tag">❌ {req}</span>
+                    <span key={i} className="ct-unmet-tag">❌ {req.description}</span>
                   ))}
                 </div>
               )}
@@ -406,11 +449,14 @@ export default function ClassTransferPanel() {
                       </div>
                     )}
                     <div className="ct-node-effects">
-                      {Object.entries(node.effects).map(([key, val]) => (
-                        <span key={key} className="ct-effect-tag">
-                          {key === 'attack' ? '⚔' : key === 'defense' ? '🛡' : key === 'hp' ? '❤' : key === 'speed' ? '💨' : key === 'skillDamageBonus' ? '🎯' : key === 'critRate' ? '💥' : key === 'dodgeRate' ? '🌀' : '✨'}+{val as number}
-                        </span>
-                      ))}
+                      {node.effects.map((effect, i) => {
+                        const display = getEffectDisplay(effect);
+                        return (
+                          <span key={i} className="ct-effect-tag">
+                            {display.icon} {display.label}+{display.value}
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
                 );
@@ -466,6 +512,10 @@ export default function ClassTransferPanel() {
             const { canUnlock } = canUnlockSpecialization(branch.id, classDef, selectedClassState);
             const currentPoints = isActive ? selectedClassState.specializationPoints : 0;
             const canAddPoint = isActive && selectedClassState.skillPoints >= 1 && currentPoints < branch.maxPoints;
+            const meetsLevel = selectedClassState.classLevel >= branch.requiredClassLevel;
+            const meetsNodes = branch.requiredNodes.every(n => selectedClassState.unlockedNodes.includes(n));
+
+            const bonusDisplay = getEffectDisplay(branch.bonusPerPoint);
 
             return (
               <div
@@ -474,32 +524,30 @@ export default function ClassTransferPanel() {
               >
                 <div className="ct-spec-card-header">
                   <span className="ct-spec-icon">{SPECIALIZATION_ICONS[branch.id]}</span>
-                  <span className="ct-spec-name">{branch.name}</span>
+                  <span className="ct-spec-name">{SPECIALIZATION_NAMES[branch.id]}</span>
                   {isActive && <span className="ct-spec-badge">当前专精</span>}
                 </div>
                 <p className="ct-spec-desc">{branch.description}</p>
                 <div className="ct-spec-reqs">
-                  <span className={`ct-spec-req ${selectedClassState.classLevel >= branch.requiredClassLevel ? 'met' : 'unmet'}`}>
+                  <span className={`ct-spec-req ${meetsLevel ? 'met' : 'unmet'}`}>
                     职业等级 ≥ {branch.requiredClassLevel}
                   </span>
                   <span className={`ct-spec-req ${selectedClassState.skillPoints >= branch.unlockCost ? 'met' : 'unmet'}`}>
                     技能点 ≥ {branch.unlockCost}
                   </span>
-                  {branch.requiredSkillNodes.length > 0 && (
-                    <span className={`ct-spec-req ${branch.requiredSkillNodes.every(n => selectedClassState.unlockedNodes.includes(n)) ? 'met' : 'unmet'}`}>
-                      需要技能: {branch.requiredSkillNodes.map(n => classDef.skillTree.find(s => s.id === n)?.name).join(', ')}
+                  {branch.requiredNodes.length > 0 && (
+                    <span className={`ct-spec-req ${meetsNodes ? 'met' : 'unmet'}`}>
+                      需要技能: {branch.requiredNodes.map(n => classDef.skillTree.find(s => s.id === n)?.name).join(', ')}
                     </span>
                   )}
                 </div>
 
                 <div className="ct-spec-bonuses">
                   <h4>分支加成 (每点)</h4>
-                  {Object.entries(branch.bonusesPerPoint).map(([key, val]) => (
-                    <div key={key} className="ct-spec-bonus">
-                      <span>{key === 'attack' ? '⚔攻击' : key === 'defense' ? '🛡防御' : key === 'hp' ? '❤生命' : key === 'speed' ? '💨速度' : key === 'critRate' ? '💥暴击' : key === 'dodgeRate' ? '🌀闪避' : '✨' + key}</span>
-                      <span>+{val as number}</span>
-                    </div>
-                  ))}
+                  <div className="ct-spec-bonus">
+                    <span>{bonusDisplay.icon} {bonusDisplay.label}</span>
+                    <span>+{bonusDisplay.value}</span>
+                  </div>
                 </div>
 
                 {isActive && (
@@ -511,6 +559,16 @@ export default function ClassTransferPanel() {
                       />
                     </div>
                     <span className="ct-spec-progress-text">{currentPoints} / {branch.maxPoints}</span>
+                  </div>
+                )}
+
+                {isActive && branch.maxPointsBonus && (
+                  <div className="ct-spec-bonuses">
+                    <h4>满级额外奖励</h4>
+                    <div className="ct-spec-bonus">
+                      <span>{getEffectDisplay(branch.maxPointsBonus).icon} {getEffectDisplay(branch.maxPointsBonus).label}</span>
+                      <span>+{getEffectDisplay(branch.maxPointsBonus).value}</span>
+                    </div>
                   </div>
                 )}
 
@@ -544,22 +602,26 @@ export default function ClassTransferPanel() {
           const branch = classDef.specializations.find(b => b.id === selectedClassState.specializationId);
           if (!branch) return null;
           const currentPoints = selectedClassState.specializationPoints;
-          const totalBonuses: Record<string, number> = {};
-          Object.entries(branch.bonusesPerPoint).forEach(([key, val]) => {
-            totalBonuses[key] = (val as number) * currentPoints;
-          });
-          if (currentPoints >= branch.maxPoints) {
-            Object.entries(branch.maxPointsBonus).forEach(([key, val]) => {
-              totalBonuses[key] = (totalBonuses[key] || 0) + (val as number);
-            });
+
+          const totalBonuses: { type: string; value: string; icon: string; label: string }[] = [];
+          if (currentPoints > 0) {
+            const baseEffect = { ...branch.bonusPerPoint, value: branch.bonusPerPoint.value * currentPoints };
+            const display = getEffectDisplay(baseEffect);
+            totalBonuses.push({ type: branch.bonusPerPoint.type, value: display.value, icon: display.icon, label: display.label });
           }
+          if (currentPoints >= branch.maxPoints && branch.maxPointsBonus) {
+            const display = getEffectDisplay(branch.maxPointsBonus);
+            totalBonuses.push({ type: branch.maxPointsBonus.type, value: display.value, icon: display.icon, label: display.label });
+          }
+
+          if (totalBonuses.length === 0) return null;
 
           return (
             <div className="ct-spec-summary">
               <h4>当前专精通点加成汇总</h4>
-              {Object.entries(totalBonuses).map(([key, val]) => (
-                <span key={key} className="ct-spec-total-bonus">
-                  {key === 'attack' ? '⚔' : key === 'defense' ? '🛡' : key === 'hp' ? '❤' : key === 'speed' ? '💨' : '✨'}+{val}
+              {totalBonuses.map((bonus, i) => (
+                <span key={i} className="ct-spec-total-bonus">
+                  {bonus.icon} {bonus.label}+{bonus.value}
                 </span>
               ))}
             </div>

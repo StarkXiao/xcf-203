@@ -230,12 +230,8 @@ import {
   canUnlockSkillNode,
   canUnlockSpecialization,
   calculateClassExpToLevel,
-  calculateClassStatBonuses,
-  getEmptyStudentClassState,
   CLASS_TRANSFER_NAMES,
-  CLASS_TRANSFER_ICONS,
   SPECIALIZATION_NAMES,
-  SPECIALIZATION_ICONS,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -5031,7 +5027,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         finalResources.reputation += dormRepBonus;
       }
 
-      let finalBlackMarket = { ...state.blackMarket };
+      const finalBlackMarket = { ...state.blackMarket };
       if (state.blackMarket.unlocked) {
         const auditDecay = Math.max(1, Math.floor(state.blackMarket.auditValue * 0.05));
         const newAuditValue = Math.max(0, state.blackMarket.auditValue - auditDecay);
@@ -6378,7 +6374,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       if (!canExploreArea(area, 100, dailyExploresUsed, state.mapExplore.maxDailyExplores, state.day)) return state;
 
       const exploreEvent = rollMapExploreEvent(action.areaId, state.mapExplore.events, area.exploreEventChance, state.day);
-      let updatedAreas = state.mapExplore.areas.map(a => {
+      const updatedAreas = state.mapExplore.areas.map(a => {
         if (a.id !== action.areaId) return a;
         const newExploreCount = a.exploreCount + 1;
         const newMastery = a.masteryProgress + 1;
@@ -6404,7 +6400,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ...masteryEvents,
       ];
 
-      let updatedEvents = state.mapExplore.events.map(e => {
+      const updatedEvents = state.mapExplore.events.map(e => {
         if (exploreEvent && e.id === exploreEvent.id) {
           return { ...e, lastTriggeredDay: state.day };
         }
@@ -6641,7 +6637,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const itemCount = 6 + buildingBonus.itemSlotBonus;
       const items = generateBlackMarketItems(state.day, itemCount);
       
-      let newResources = { ...state.resources };
+      const newResources = { ...state.resources };
       let newFreeRefreshes = state.blackMarket.freeRefreshesUsed;
       
       if (action.useFree) {
@@ -6687,13 +6683,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       if (totalRepCost > 0 && state.resources.reputation < totalRepCost) return state;
       if (state.blackMarket.auditValue + auditGain > state.blackMarket.maxAuditValue) return state;
 
-      let newResources = {
+      const newResources = {
         ...state.resources,
         gold: state.resources.gold - totalPrice,
         reputation: state.resources.reputation - (totalRepCost > 0 ? totalRepCost : 0),
       };
 
-      let newRecruitTickets = { ...state.recruitTickets };
+      const newRecruitTickets = { ...state.recruitTickets };
 
       for (const effect of item.effects) {
         const qty = effect.value * action.quantity;
@@ -6787,7 +6783,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case 'ADD_BLACK_MARKET_PENALTY': {
       const penalty = action.penalty;
       
-      let newResources = { ...state.resources };
+      const newResources = { ...state.resources };
       for (const effect of penalty.effects) {
         if (effect.type === 'gold_loss') {
           newResources.gold = Math.max(0, newResources.gold - effect.value);
@@ -6886,14 +6882,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
       if (state.blackMarket.auditValue + totalAuditGain > state.blackMarket.maxAuditValue) return state;
 
-      let newResources = {
+      const newResources = {
         gold: state.resources.gold - price + (rewards.gold || 0),
         mana: state.resources.mana + (rewards.mana || 0),
         food: state.resources.food + (rewards.food || 0),
         reputation: state.resources.reputation - repCost + (rewards.reputation || 0),
       };
 
-      let newRecruitTickets = { ...state.recruitTickets };
+      const newRecruitTickets = { ...state.recruitTickets };
       if (rewards.recruitTickets) {
         for (const [quality, count] of Object.entries(rewards.recruitTickets)) {
           if (count && count > 0) {
@@ -6944,7 +6940,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       if (!student) return state;
       const existingClassState = state.classTransfer.studentClasses[action.studentId];
       if (existingClassState?.classId) return state;
-      const { canTransfer, unmetRequirements } = canTransferToClass(
+      const { canTransfer } = canTransferToClass(
         classDef, student, state.mentorState.mentors, state.resources, !!existingClassState?.classId
       );
       if (!canTransfer) return state;

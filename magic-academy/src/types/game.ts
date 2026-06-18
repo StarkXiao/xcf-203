@@ -367,6 +367,7 @@ export interface SkillTreeNode {
   prerequisites: SkillTreeNodeId[];
   row: number;
   col: number;
+  isClassSpecific?: boolean;
   branchRequired?: SpecializationBranchId;
 }
 
@@ -378,7 +379,9 @@ export interface SpecializationBranch {
   unlockCost: number;
   bonusPerPoint: SkillTreeNodeEffect;
   maxPoints: number;
+  requiredClassLevel: number;
   requiredNodes: SkillTreeNodeId[];
+  maxPointsBonus?: SkillTreeNodeEffect;
 }
 
 export interface ClassDefinition {

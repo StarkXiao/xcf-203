@@ -1,4 +1,4 @@
-import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState, KingdomCommission, CommissionStage, CommissionType, CommissionDifficulty, CommissionStageType, CommissionRankInfo, KingdomCommissionState, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, RestActivity, DormitoryEventDef, DormitoryEventInstance, StudentCodexEntry, SkillCodexEntry, CodexState, CodexStats, CodexCategory, Achievement, AchievementState, AchievementType, AchievementRarity, Title, MapAreaId, MapAreaRarity, MapAreaStatus, MapArea, MapGatheringNode, MapExploreEventDef, MapExploreEventInstance, MapRoute, MapExploreState, MapEventCategory, GatheringNodeType, RouteType, BlackMarketItem, BlackMarketItemCategory, BlackMarketItemRarity, BlackMarketState, BlackMarketPenalty, PenaltySeverity, AuditLevel, ClassId, SpecializationBranchId, SkillTreeNodeId, ClassTransferState, StudentClassState, SkillTreeNodeEffect, ClassDefinition } from '../types/game';
+import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState, KingdomCommission, CommissionStage, CommissionType, CommissionDifficulty, CommissionStageType, CommissionRankInfo, KingdomCommissionState, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, RestActivity, DormitoryEventDef, DormitoryEventInstance, StudentCodexEntry, SkillCodexEntry, CodexState, CodexStats, CodexCategory, Achievement, AchievementState, AchievementType, AchievementRarity, Title, MapAreaId, MapAreaRarity, MapAreaStatus, MapArea, MapGatheringNode, MapExploreEventDef, MapExploreEventInstance, MapRoute, MapExploreState, MapEventCategory, GatheringNodeType, RouteType, BlackMarketItem, BlackMarketItemCategory, BlackMarketItemRarity, BlackMarketState, BlackMarketPenalty, PenaltySeverity, AuditLevel, ClassId, SpecializationBranchId, SkillTreeNodeId, ClassTransferState, StudentClassState, ClassDefinition } from '../types/game';
 import {
   HP_BATTLE_THRESHOLD,
   HP_COURSE_EFFICIENCY_THRESHOLD,
@@ -7528,7 +7528,8 @@ export const canUnlockMapArea = (
   return true;
 };
 
-export const canExploreArea = (area: MapArea, stamina: number, dailyExploresUsed: number, maxDailyExplores: number, _day: number): boolean => {
+export const canExploreArea = (area: MapArea, stamina: number, dailyExploresUsed: number, maxDailyExplores: number, __: number): boolean => {
+  void __;
   if (area.status === 'locked') return false;
   if (stamina < area.exploreStaminaCost) return false;
   if (dailyExploresUsed >= maxDailyExplores) return false;
@@ -8234,8 +8235,9 @@ export const reduceAuditValue = (
 
 export const getMysteryBoxRewards = (
   tier: number,
-  _day: number
+  __: number
 ): { rewards: Partial<Resource> & { recruitTickets?: Partial<Record<StudentQuality, number>> }; auditChange: number } => {
+  void __;
   const rewards: Partial<Resource> & { recruitTickets?: Partial<Record<StudentQuality, number>> } = {};
   let auditChange = 2;
   
@@ -8352,8 +8354,8 @@ export const CLASS_DEFINITIONS: ClassDefinition[] = [
       cost: { gold: 500, mana: 300, food: 50, reputation: 30 },
     },
     specializations: [
-      { id: 'flame_burst', name: '爆裂之焰', icon: '💥', description: '极致的火焰爆发，将攻击力推向巅峰', unlockCost: 3, bonusPerPoint: { type: 'attack_bonus', value: 0.03 }, maxPoints: 10, requiredNodes: ['node_atk_3', 'node_crit_2'] },
-      { id: 'flame_soul', name: '不灭炎魂', icon: '🜂', description: '永恒的火焰之魂，提升生存与持续作战能力', unlockCost: 3, bonusPerPoint: { type: 'hp_bonus', value: 0.03 }, maxPoints: 10, requiredNodes: ['node_hp_3', 'node_def_3'] },
+      { id: 'flame_burst', name: '爆裂之焰', icon: '💥', description: '极致的火焰爆发，将攻击力推向巅峰', unlockCost: 3, bonusPerPoint: { type: 'attack_bonus', value: 0.03 }, maxPoints: 10, requiredClassLevel: 10, requiredNodes: ['node_atk_3', 'node_crit_2'], maxPointsBonus: { type: 'crit_damage', value: 0.2 } },
+      { id: 'flame_soul', name: '不灭炎魂', icon: '🜂', description: '永恒的火焰之魂，提升生存与持续作战能力', unlockCost: 3, bonusPerPoint: { type: 'hp_bonus', value: 0.03 }, maxPoints: 10, requiredClassLevel: 10, requiredNodes: ['node_hp_3', 'node_def_3'], maxPointsBonus: { type: 'defense_bonus', value: 0.15 } },
     ],
     skillTree: SHARED_SKILL_TREE,
     baseStatBonus: { attack: 15, defense: 5, hp: 50, speed: 3 },
@@ -8374,8 +8376,8 @@ export const CLASS_DEFINITIONS: ClassDefinition[] = [
       cost: { gold: 500, mana: 300, food: 50, reputation: 30 },
     },
     specializations: [
-      { id: 'frost_domain', name: '极寒领域', icon: '🧊', description: '扩展冰霜控制范围，强化群体控制能力', unlockCost: 3, bonusPerPoint: { type: 'skill_damage_bonus', value: 0.03 }, maxPoints: 10, requiredNodes: ['node_atk_3', 'node_spec_1'] },
-      { id: 'tide_heal', name: '潮汐治愈', icon: '🌊', description: '用水之力量治愈伤痛，成为队伍的治疗支柱', unlockCost: 3, bonusPerPoint: { type: 'hp_bonus', value: 0.02 }, maxPoints: 10, requiredNodes: ['node_hp_3', 'node_def_3'] },
+      { id: 'frost_domain', name: '极寒领域', icon: '🧊', description: '扩展冰霜控制范围，强化群体控制能力', unlockCost: 3, bonusPerPoint: { type: 'skill_damage_bonus', value: 0.03 }, maxPoints: 10, requiredClassLevel: 10, requiredNodes: ['node_atk_3', 'node_spec_1'], maxPointsBonus: { type: 'crit_chance', value: 0.15 } },
+      { id: 'tide_heal', name: '潮汐治愈', icon: '🌊', description: '用水之力量治愈伤痛，成为队伍的治疗支柱', unlockCost: 3, bonusPerPoint: { type: 'hp_bonus', value: 0.02 }, maxPoints: 10, requiredClassLevel: 10, requiredNodes: ['node_hp_3', 'node_def_3'], maxPointsBonus: { type: 'defense_bonus', value: 0.15 } },
     ],
     skillTree: SHARED_SKILL_TREE,
     baseStatBonus: { attack: 12, defense: 8, hp: 40, speed: 5 },
@@ -8396,8 +8398,8 @@ export const CLASS_DEFINITIONS: ClassDefinition[] = [
       cost: { gold: 500, mana: 300, food: 50, reputation: 30 },
     },
     specializations: [
-      { id: 'iron_wall', name: '钢铁壁垒', icon: '🛡️', description: '极致的防御专精，成为团队最坚实的护盾', unlockCost: 3, bonusPerPoint: { type: 'defense_bonus', value: 0.03 }, maxPoints: 10, requiredNodes: ['node_def_3', 'node_hp_3'] },
-      { id: 'mountain_force', name: '山岳之力', icon: '⛰️', description: '大地的力量凝聚为攻击，防守反击两不误', unlockCost: 3, bonusPerPoint: { type: 'attack_bonus', value: 0.02 }, maxPoints: 10, requiredNodes: ['node_atk_3', 'node_def_3'] },
+      { id: 'iron_wall', name: '钢铁壁垒', icon: '🛡️', description: '极致的防御专精，成为团队最坚实的护盾', unlockCost: 3, bonusPerPoint: { type: 'defense_bonus', value: 0.03 }, maxPoints: 10, requiredClassLevel: 10, requiredNodes: ['node_def_3', 'node_hp_3'], maxPointsBonus: { type: 'hp_bonus', value: 0.2 } },
+      { id: 'mountain_force', name: '山岳之力', icon: '⛰️', description: '大地的力量凝聚为攻击，防守反击两不误', unlockCost: 3, bonusPerPoint: { type: 'attack_bonus', value: 0.02 }, maxPoints: 10, requiredClassLevel: 10, requiredNodes: ['node_atk_3', 'node_def_3'], maxPointsBonus: { type: 'defense_bonus', value: 0.15 } },
     ],
     skillTree: SHARED_SKILL_TREE,
     baseStatBonus: { attack: 8, defense: 15, hp: 80, speed: 0 },
@@ -8418,8 +8420,8 @@ export const CLASS_DEFINITIONS: ClassDefinition[] = [
       cost: { gold: 500, mana: 300, food: 50, reputation: 30 },
     },
     specializations: [
-      { id: 'gale_slash', name: '疾风斩击', icon: '🗡️', description: '将风凝聚于刃，一击必杀的极致斩击', unlockCost: 3, bonusPerPoint: { type: 'crit_chance', value: 0.02 }, maxPoints: 10, requiredNodes: ['node_atk_3', 'node_crit_2'] },
-      { id: 'storm_call', name: '风暴召唤', icon: '⛈️', description: '召唤毁灭性风暴，掌控范围伤害的天象', unlockCost: 3, bonusPerPoint: { type: 'skill_damage_bonus', value: 0.03 }, maxPoints: 10, requiredNodes: ['node_spec_1', 'node_atk_3'] },
+      { id: 'gale_slash', name: '疾风斩击', icon: '🗡️', description: '将风凝聚于刃，一击必杀的极致斩击', unlockCost: 3, bonusPerPoint: { type: 'crit_chance', value: 0.02 }, maxPoints: 10, requiredClassLevel: 10, requiredNodes: ['node_atk_3', 'node_crit_2'], maxPointsBonus: { type: 'crit_damage', value: 0.3 } },
+      { id: 'storm_call', name: '风暴召唤', icon: '⛈️', description: '召唤毁灭性风暴，掌控范围伤害的天象', unlockCost: 3, bonusPerPoint: { type: 'skill_damage_bonus', value: 0.03 }, maxPoints: 10, requiredClassLevel: 10, requiredNodes: ['node_spec_1', 'node_atk_3'], maxPointsBonus: { type: 'speed_bonus', value: 0.15 } },
     ],
     skillTree: SHARED_SKILL_TREE,
     baseStatBonus: { attack: 10, defense: 5, hp: 30, speed: 10 },
@@ -8440,8 +8442,8 @@ export const CLASS_DEFINITIONS: ClassDefinition[] = [
       cost: { gold: 800, mana: 500, food: 80, reputation: 60 },
     },
     specializations: [
-      { id: 'holy_cure', name: '神圣治愈', icon: '💖', description: '极致的治疗之力，让队友永远不会倒下', unlockCost: 4, bonusPerPoint: { type: 'hp_bonus', value: 0.03 }, maxPoints: 10, requiredNodes: ['node_hp_3', 'node_spec_1'] },
-      { id: 'judgment_light', name: '审判之光', icon: '⚡', description: '以圣光之力惩戒邪恶，光明亦能毁灭', unlockCost: 4, bonusPerPoint: { type: 'attack_bonus', value: 0.03 }, maxPoints: 10, requiredNodes: ['node_atk_3', 'node_spec_1'] },
+      { id: 'holy_cure', name: '神圣治愈', icon: '💖', description: '极致的治疗之力，让队友永远不会倒下', unlockCost: 4, bonusPerPoint: { type: 'hp_bonus', value: 0.03 }, maxPoints: 10, requiredClassLevel: 15, requiredNodes: ['node_hp_3', 'node_spec_1'], maxPointsBonus: { type: 'defense_bonus', value: 0.2 } },
+      { id: 'judgment_light', name: '审判之光', icon: '⚡', description: '以圣光之力惩戒邪恶，光明亦能毁灭', unlockCost: 4, bonusPerPoint: { type: 'attack_bonus', value: 0.03 }, maxPoints: 10, requiredClassLevel: 15, requiredNodes: ['node_atk_3', 'node_spec_1'], maxPointsBonus: { type: 'skill_damage_bonus', value: 0.2 } },
     ],
     skillTree: SHARED_SKILL_TREE,
     baseStatBonus: { attack: 8, defense: 10, hp: 60, speed: 5 },
@@ -8462,8 +8464,8 @@ export const CLASS_DEFINITIONS: ClassDefinition[] = [
       cost: { gold: 800, mana: 500, food: 80, reputation: 60 },
     },
     specializations: [
-      { id: 'shadow_kill', name: '暗影杀戮', icon: '🗡️', description: '极致的暗杀技艺，对单体造成毁灭性伤害', unlockCost: 4, bonusPerPoint: { type: 'crit_damage', value: 0.04 }, maxPoints: 10, requiredNodes: ['node_atk_3', 'node_crit_2'] },
-      { id: 'curse_art', name: '诅咒之术', icon: '🔮', description: '暗影中的诅咒大师，让敌人在痛苦中消亡', unlockCost: 4, bonusPerPoint: { type: 'skill_damage_bonus', value: 0.03 }, maxPoints: 10, requiredNodes: ['node_spec_1', 'node_crit_2'] },
+      { id: 'shadow_kill', name: '暗影杀戮', icon: '🗡️', description: '极致的暗杀技艺，对单体造成毁灭性伤害', unlockCost: 4, bonusPerPoint: { type: 'crit_damage', value: 0.04 }, maxPoints: 10, requiredClassLevel: 15, requiredNodes: ['node_atk_3', 'node_crit_2'], maxPointsBonus: { type: 'crit_chance', value: 0.2 } },
+      { id: 'curse_art', name: '诅咒之术', icon: '🔮', description: '暗影中的诅咒大师，让敌人在痛苦中消亡', unlockCost: 4, bonusPerPoint: { type: 'skill_damage_bonus', value: 0.03 }, maxPoints: 10, requiredClassLevel: 15, requiredNodes: ['node_spec_1', 'node_crit_2'], maxPointsBonus: { type: 'attack_bonus', value: 0.15 } },
     ],
     skillTree: SHARED_SKILL_TREE,
     baseStatBonus: { attack: 15, defense: 3, hp: 30, speed: 8 },
@@ -8580,6 +8582,10 @@ export const canUnlockSpecialization = (
 
   if (studentClassState.skillPoints < branch.unlockCost) {
     reasons.push(`技能点不足 (需要${branch.unlockCost}，当前${studentClassState.skillPoints})`);
+  }
+
+  if (studentClassState.classLevel < branch.requiredClassLevel) {
+    reasons.push(`职业等级不足 (需要Lv.${branch.requiredClassLevel}，当前Lv.${studentClassState.classLevel})`);
   }
 
   for (const reqNodeId of branch.requiredNodes) {

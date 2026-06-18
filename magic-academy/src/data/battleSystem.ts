@@ -928,8 +928,9 @@ export const aiSelectTarget = (unit: BattleUnit, playerUnits: BattleUnit[]): Bat
 
 export const executeAITurn = (
   state: BattleState,
-  _teamBonuses: TeamCompBonus[]
+  __: TeamCompBonus[]
 ): { newState: BattleState; result: BattleSkillResult } | null => {
+  void __;
   const currentUnit = getCurrentUnit(state);
   if (!currentUnit || currentUnit.isPlayer) return null;
   
