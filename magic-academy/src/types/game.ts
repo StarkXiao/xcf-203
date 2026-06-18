@@ -216,7 +216,155 @@ export interface Enemy {
   isBoss: boolean;
 }
 
-export const CURRENT_SAVE_VERSION = 10;
+export const CURRENT_SAVE_VERSION = 11;
+
+export type MentorQuality = 'common' | 'rare' | 'epic' | 'legendary';
+export type MentorRank = 'novice' | 'apprentice' | 'journeyman' | 'expert' | 'master' | 'grandmaster';
+export type MentorStatus = 'idle' | 'teaching' | 'dungeon_lead' | 'resting';
+export type SpecializationType = 
+  | 'fire_mastery' | 'water_mastery' | 'earth_mastery' | 'wind_mastery' 
+  | 'light_mastery' | 'dark_mastery' | 'arcane_mastery' 
+  | 'combat_training' | 'spell_research' | 'student_counseling' | 'dungeon_specialist';
+export type AcademyType = 'warrior' | 'mage' | 'mixed' | 'support';
+
+export interface MentorSpecialization {
+  id: SpecializationType;
+  name: string;
+  description: string;
+  icon: string;
+  level: number;
+  maxLevel: number;
+  expToNext: number;
+  currentExp: number;
+  effects: SpecializationEffect[];
+  effectDescription: string;
+}
+
+export interface SpecializationEffect {
+  type: 'course_exp_bonus' | 'course_speed_bonus' | 'skill_damage_bonus' 
+    | 'dungeon_damage_bonus' | 'dungeon_hp_bonus' | 'student_promotion_bonus'
+    | 'morale_bonus' | 'stamina_regen_bonus' | 'recruit_quality_bonus';
+  value: number;
+  valuePerLevel: number;
+  target?: MagicType;
+}
+
+export interface MentorAcademy {
+  id: string;
+  name: string;
+  type: AcademyType;
+  level: number;
+  maxLevel: number;
+  reputation: number;
+  description: string;
+  icon: string;
+  mentors: string[];
+  maxMentors: number;
+  bonuses: AcademyBonuses;
+  unlocked: boolean;
+  requiredReputation: number;
+}
+
+export interface AcademyBonuses {
+  expBonus: number;
+  skillBonus: number;
+  speedBonus: number;
+  dungeonRewardBonus: number;
+  promotionBonus: number;
+  courseEfficiencyBonus: number;
+}
+
+export interface Mentor extends Teacher {
+  quality: MentorQuality;
+  rank: MentorRank;
+  exp: number;
+  expToNextRank: number;
+  status: MentorStatus;
+  assignedCourses: string[];
+  assignedDungeon: string | null;
+  specializations: MentorSpecialization[];
+  academyId: string | null;
+  maxCourses: number;
+  studentPromotionBonus: number;
+  dungeonLeadBonus: number;
+  leadership: number;
+  charisma: number;
+  knowledge: number;
+  recruitedAt: number;
+  dailySalaryMultiplier: number;
+  totalStudentsTaught: number;
+  totalDungeonsLed: number;
+}
+
+export interface MentorRecruitmentOption {
+  id: string;
+  mentorTemplate: Omit<Mentor, 'id' | 'status' | 'assignedCourses' | 'assignedDungeon' | 'recruitedAt' | 'totalStudentsTaught' | 'totalDungeonsLed'>;
+  cost: Resource;
+  expiresAtDay: number;
+  locked: boolean;
+  requiredReputation: number;
+}
+
+export interface MentorRecruitmentPool {
+  currentOptions: MentorRecruitmentOption[];
+  lastRefreshDay: number;
+  refreshCost: Resource;
+  freeRefreshesPerWeek: number;
+  freeRefreshesUsed: number;
+  freeRefreshResetDay: number;
+}
+
+export interface MentorPromotionBonus {
+  expBonus: number;
+  levelUpChanceBonus: number;
+  qualityUpgradeChance: number;
+}
+
+export interface MentorDungeonBonus {
+  damageBonus: number;
+  hpBonus: number;
+  staminaCostReduction: number;
+  rewardBonus: number;
+  starChanceBonus: number;
+  rewardMultiplier: number;
+  expMultiplier: number;
+}
+
+export interface MentorState {
+  mentors: Mentor[];
+  academies: MentorAcademy[];
+  recruitmentPool: MentorRecruitmentPool;
+  maxMentors: number;
+  totalMentorSlots: number;
+}
+
+export interface MentorCourseBonus {
+  expMultiplier: number;
+  speedMultiplier: number;
+  skillBonusMultiplier: number;
+  contributingMentors: string[];
+  specializationsActive: SpecializationType[];
+  academyBonus: number;
+}
+
+export interface MentorPromotionCheck {
+  canPromote: boolean;
+  requiredLevel: number;
+  requiredExp: number;
+  mentorBonus: MentorPromotionBonus;
+  contributingMentors: string[];
+  probabilityBonus: number;
+}
+
+export interface MentorDungeonLeadResult {
+  canLead: boolean;
+  mentor?: Mentor;
+  bonuses: MentorDungeonBonus;
+  requiredMentorLevel: number;
+  reason?: string;
+}
+
+export type MentorTabType = 'overview' | 'recruitment' | 'teaching' | 'specialization' | 'academy';
 
 export type TradeMaterialType = 
   | 'mana_crystal' 
@@ -560,6 +708,7 @@ export interface GameState {
   seasonHistory: SeasonHistory[];
   clubs: ClubsState;
   tradeHarbor: TradeHarborState;
+  mentorState: MentorState;
 }
 
 export interface CourseBenefitBreakdown {
@@ -573,6 +722,32 @@ export interface CourseBenefitBreakdown {
   magicTypeMatch: boolean;
   matchedTeacher?: Teacher;
   contributingBuildings: string[];
+  mentorBonus: number;
+  mentorSpecializationBonus: number;
+  academyBonus: number;
+  contributingMentors: string[];
+}
+
+export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade';
+
+export interface DailyEvent {
+  type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning' | 'course_queued' | 'course_started' | 'queue_empty' | 'course_conflict' | 'hp_heal' | 'hp_natural_recovery' | 'battle_injury' | 'cannot_battle_injured' | 'club_task_complete' | 'club_joined' | 'club_shop_purchase' | 'club_level_up' | 'club_reputation_gain' | 'trade_order_placed' | 'trade_order_completed' | 'trade_shipment_arrived' | 'trade_price_changed' | 'trade_shipment_risk' | 'trade_harbor_upgrade' | 'mentor_recruited' | 'mentor_level_up' | 'mentor_rank_up' | 'mentor_assigned' | 'mentor_specialization_up' | 'academy_level_up' | 'mentor_salary_paid' | 'student_promoted';
+  message: string;
+  value?: number;
+  studentId?: string;
+  studentName?: string;
+  courseId?: string;
+  courseName?: string;
+  clubId?: string;
+  clubName?: string;
+  materialId?: string;
+  materialName?: string;
+  mentorId?: string;
+  mentorName?: string;
+  academyId?: string;
+  academyName?: string;
+  specializationId?: string;
+  specializationName?: string;
 }
 
 export interface BattleResult {
@@ -593,8 +768,6 @@ export interface DungeonProgress {
   playerTeamHp: Record<string, { current: number; max: number }>;
   turnCount: number;
 }
-
-export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade';
 
 export interface Club {
   id: string;
@@ -753,20 +926,6 @@ export interface CriticalActionConfirm {
 export interface DailyLog {
   day: number;
   events: DailyEvent[];
-}
-
-export interface DailyEvent {
-  type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning' | 'course_queued' | 'course_started' | 'queue_empty' | 'course_conflict' | 'hp_heal' | 'hp_natural_recovery' | 'battle_injury' | 'cannot_battle_injured' | 'club_task_complete' | 'club_joined' | 'club_shop_purchase' | 'club_level_up' | 'club_reputation_gain' | 'trade_order_placed' | 'trade_order_completed' | 'trade_shipment_arrived' | 'trade_price_changed' | 'trade_shipment_risk' | 'trade_harbor_upgrade';
-  message: string;
-  value?: number;
-  studentId?: string;
-  studentName?: string;
-  courseId?: string;
-  courseName?: string;
-  clubId?: string;
-  clubName?: string;
-  materialId?: string;
-  materialName?: string;
 }
 
 export const MORALE_MAX = 100;

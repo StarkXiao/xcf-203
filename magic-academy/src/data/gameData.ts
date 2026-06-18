@@ -1,4 +1,4 @@
-import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState } from '../types/game';
+import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult } from '../types/game';
 import {
   HP_BATTLE_THRESHOLD,
   HP_COURSE_EFFICIENCY_THRESHOLD,
@@ -1509,7 +1509,9 @@ export const calculateCourseBenefit = (
   student: { magicType: MagicType; potential: number; traits: Trait[] },
   course: Course,
   buildings: Building[],
-  teachers: Teacher[]
+  teachers: Teacher[],
+  mentors?: Mentor[],
+  academies?: MentorAcademy[]
 ): CourseBenefitBreakdown => {
   const magicTypeResult = calculateMagicTypeMatchBonus(student.magicType, course.magicType);
   const teacherResult = calculateTeacherBonus(course, teachers, course.magicType);
@@ -1531,11 +1533,27 @@ export const calculateCourseBenefit = (
   
   const totalTraitBonus = traitBonus + learningSpeedTraitBonus;
   
+  let mentorBonus = 0;
+  let mentorSpecializationBonus = 0;
+  let academyBonus = 0;
+  const contributingMentors: string[] = [];
+  
+  if (mentors && academies) {
+    const mentorResult = calculateMentorCourseBonus(course, mentors, academies);
+    mentorBonus = mentorResult.expMultiplier - 1;
+    mentorSpecializationBonus = mentorResult.specializationsActive.length * 0.02;
+    academyBonus = mentorResult.academyBonus;
+    contributingMentors.push(...mentorResult.contributingMentors);
+  }
+  
   const additiveMultiplier = 
     magicTypeResult.bonus + 
     teacherResult.expBonus + 
     buildingResult.bonus + 
-    totalTraitBonus;
+    totalTraitBonus +
+    mentorBonus +
+    mentorSpecializationBonus +
+    academyBonus;
   
   const totalMultiplier = student.potential * (1 + additiveMultiplier);
   const totalExp = Math.floor(baseExp * totalMultiplier);
@@ -1551,6 +1569,10 @@ export const calculateCourseBenefit = (
     magicTypeMatch: magicTypeResult.match,
     matchedTeacher: teacherResult.teacher,
     contributingBuildings: buildingResult.contributingBuildings,
+    mentorBonus,
+    mentorSpecializationBonus,
+    academyBonus,
+    contributingMentors,
   };
 };
 
@@ -3454,4 +3476,866 @@ export const updateTradeHarborBonuses = (state: TradeHarborState, buildings: Bui
       usedCapacity: getTotalWarehouseUsed(state.materials),
     },
   };
+};
+
+export const MENTOR_QUALITY_NAMES: Record<MentorQuality, string> = {
+  common: '普通',
+  rare: '稀有',
+  epic: '史诗',
+  legendary: '传说',
+};
+
+export const MENTOR_QUALITY_COLORS: Record<MentorQuality, string> = {
+  common: '#9e9e9e',
+  rare: '#2196f3',
+  epic: '#9c27b0',
+  legendary: '#ff9800',
+};
+
+export const MENTOR_RANK_NAMES: Record<MentorRank, string> = {
+  novice: '新手导师',
+  apprentice: '见习导师',
+  journeyman: '资深导师',
+  expert: '专家导师',
+  master: '大师导师',
+  grandmaster: '宗师导师',
+};
+
+export const MENTOR_RANK_ORDER: MentorRank[] = ['novice', 'apprentice', 'journeyman', 'expert', 'master', 'grandmaster'];
+
+export const getMentorRankExpRequirement = (rank: MentorRank): number => {
+  const index = MENTOR_RANK_ORDER.indexOf(rank);
+  return Math.floor(100 * Math.pow(2, index));
+};
+
+export const getNextMentorRank = (rank: MentorRank): MentorRank | null => {
+  const index = MENTOR_RANK_ORDER.indexOf(rank);
+  return index < MENTOR_RANK_ORDER.length - 1 ? MENTOR_RANK_ORDER[index + 1] : null;
+};
+
+export const getSpecializationExpRequirement = (level: number): number => {
+  return Math.floor(50 * Math.pow(1.5, level - 1));
+};
+
+export const createEmptySpecialization = (
+  id: SpecializationType,
+  name: string,
+  description: string,
+  icon: string,
+  effects: MentorSpecialization['effects'],
+  effectDescription: string
+): MentorSpecialization => ({
+  id,
+  name,
+  description,
+  icon,
+  level: 1,
+  maxLevel: 10,
+  expToNext: getSpecializationExpRequirement(1),
+  currentExp: 0,
+  effects,
+  effectDescription,
+});
+
+export const SPECIALIZATION_TEMPLATES: Record<SpecializationType, Omit<MentorSpecialization, 'level' | 'currentExp' | 'expToNext'>> = {
+  fire_mastery: {
+    id: 'fire_mastery',
+    name: '火焰精通',
+    description: '深入研究火系魔法，大幅提升火系课程和战斗效果',
+    icon: '🔥',
+    maxLevel: 10,
+    effects: [
+      { type: 'course_exp_bonus', value: 0.05, valuePerLevel: 0.02, target: 'fire' },
+      { type: 'course_speed_bonus', value: 0.03, valuePerLevel: 0.01, target: 'fire' },
+      { type: 'dungeon_damage_bonus', value: 0.05, valuePerLevel: 0.02, target: 'fire' },
+    ],
+    effectDescription: '',
+  },
+  water_mastery: {
+    id: 'water_mastery',
+    name: '水系精通',
+    description: '深入研究水系魔法，大幅提升水系课程和战斗效果',
+    icon: '💧',
+    maxLevel: 10,
+    effects: [
+      { type: 'course_exp_bonus', value: 0.05, valuePerLevel: 0.02, target: 'water' },
+      { type: 'course_speed_bonus', value: 0.03, valuePerLevel: 0.01, target: 'water' },
+      { type: 'dungeon_damage_bonus', value: 0.05, valuePerLevel: 0.02, target: 'water' },
+    ],
+    effectDescription: '',
+  },
+  earth_mastery: {
+    id: 'earth_mastery',
+    name: '大地精通',
+    description: '深入研究土系魔法，大幅提升土系课程和战斗效果',
+    icon: '🪨',
+    maxLevel: 10,
+    effects: [
+      { type: 'course_exp_bonus', value: 0.05, valuePerLevel: 0.02, target: 'earth' },
+      { type: 'course_speed_bonus', value: 0.03, valuePerLevel: 0.01, target: 'earth' },
+      { type: 'dungeon_hp_bonus', value: 0.05, valuePerLevel: 0.02, target: 'earth' },
+    ],
+    effectDescription: '',
+  },
+  wind_mastery: {
+    id: 'wind_mastery',
+    name: '风系精通',
+    description: '深入研究风系魔法，大幅提升风系课程和战斗效果',
+    icon: '💨',
+    maxLevel: 10,
+    effects: [
+      { type: 'course_exp_bonus', value: 0.05, valuePerLevel: 0.02, target: 'wind' },
+      { type: 'course_speed_bonus', value: 0.03, valuePerLevel: 0.01, target: 'wind' },
+      { type: 'dungeon_damage_bonus', value: 0.05, valuePerLevel: 0.02, target: 'wind' },
+    ],
+    effectDescription: '',
+  },
+  light_mastery: {
+    id: 'light_mastery',
+    name: '光明精通',
+    description: '深入研究光系魔法，大幅提升光系课程和战斗效果',
+    icon: '✨',
+    maxLevel: 10,
+    effects: [
+      { type: 'course_exp_bonus', value: 0.06, valuePerLevel: 0.025, target: 'light' },
+      { type: 'dungeon_hp_bonus', value: 0.05, valuePerLevel: 0.02, target: 'light' },
+      { type: 'morale_bonus', value: 0.02, valuePerLevel: 0.01 },
+    ],
+    effectDescription: '',
+  },
+  dark_mastery: {
+    id: 'dark_mastery',
+    name: '暗影精通',
+    description: '深入研究暗系魔法，大幅提升暗系课程和战斗效果',
+    icon: '🌑',
+    maxLevel: 10,
+    effects: [
+      { type: 'course_exp_bonus', value: 0.06, valuePerLevel: 0.025, target: 'dark' },
+      { type: 'dungeon_damage_bonus', value: 0.06, valuePerLevel: 0.025, target: 'dark' },
+      { type: 'skill_damage_bonus', value: 0.03, valuePerLevel: 0.01 },
+    ],
+    effectDescription: '',
+  },
+  arcane_mastery: {
+    id: 'arcane_mastery',
+    name: '奥术精通',
+    description: '精通奥术原理，对所有魔法类型提供均衡加成',
+    icon: '🔮',
+    maxLevel: 10,
+    effects: [
+      { type: 'course_exp_bonus', value: 0.03, valuePerLevel: 0.01 },
+      { type: 'skill_damage_bonus', value: 0.02, valuePerLevel: 0.01 },
+      { type: 'course_speed_bonus', value: 0.02, valuePerLevel: 0.01 },
+    ],
+    effectDescription: '',
+  },
+  combat_training: {
+    id: 'combat_training',
+    name: '战斗训练',
+    description: '专注实战训练，大幅提升副本战斗能力',
+    icon: '⚔️',
+    maxLevel: 10,
+    effects: [
+      { type: 'dungeon_damage_bonus', value: 0.04, valuePerLevel: 0.02 },
+      { type: 'dungeon_hp_bonus', value: 0.04, valuePerLevel: 0.02 },
+      { type: 'stamina_regen_bonus', value: 0.03, valuePerLevel: 0.015 },
+    ],
+    effectDescription: '',
+  },
+  spell_research: {
+    id: 'spell_research',
+    name: '法术研究',
+    description: '专注法术研究，提升技能威力和学习效率',
+    icon: '📖',
+    maxLevel: 10,
+    effects: [
+      { type: 'course_exp_bonus', value: 0.04, valuePerLevel: 0.02 },
+      { type: 'skill_damage_bonus', value: 0.04, valuePerLevel: 0.02 },
+      { type: 'course_speed_bonus', value: 0.02, valuePerLevel: 0.01 },
+    ],
+    effectDescription: '',
+  },
+  student_counseling: {
+    id: 'student_counseling',
+    name: '学员辅导',
+    description: '专注学员成长，提升晋升速度和整体士气',
+    icon: '💬',
+    maxLevel: 10,
+    effects: [
+      { type: 'student_promotion_bonus', value: 0.05, valuePerLevel: 0.03 },
+      { type: 'morale_bonus', value: 0.03, valuePerLevel: 0.015 },
+      { type: 'course_exp_bonus', value: 0.03, valuePerLevel: 0.015 },
+    ],
+    effectDescription: '',
+  },
+  dungeon_specialist: {
+    id: 'dungeon_specialist',
+    name: '副本专家',
+    description: '精通副本攻略，提供全方位的战斗加成',
+    icon: '🗺️',
+    maxLevel: 10,
+    effects: [
+      { type: 'dungeon_damage_bonus', value: 0.03, valuePerLevel: 0.015 },
+      { type: 'dungeon_hp_bonus', value: 0.03, valuePerLevel: 0.015 },
+      { type: 'recruit_quality_bonus', value: 0.02, valuePerLevel: 0.01 },
+    ],
+    effectDescription: '',
+  },
+};
+
+export const getRecommendedSpecializations = (magicType: MagicType): SpecializationType[] => {
+  const typeMap: Record<MagicType, SpecializationType[]> = {
+    fire: ['fire_mastery', 'combat_training', 'spell_research'],
+    water: ['water_mastery', 'spell_research', 'student_counseling'],
+    earth: ['earth_mastery', 'combat_training', 'dungeon_specialist'],
+    wind: ['wind_mastery', 'combat_training', 'spell_research'],
+    light: ['light_mastery', 'student_counseling', 'dungeon_specialist'],
+    dark: ['dark_mastery', 'combat_training', 'spell_research'],
+  };
+  return typeMap[magicType] || ['arcane_mastery'];
+};
+
+export const INITIAL_ACADEMIES: MentorAcademy[] = [
+  {
+    id: 'academy_warrior',
+    name: '战技学院',
+    type: 'warrior',
+    level: 0,
+    maxLevel: 10,
+    reputation: 0,
+    description: '专注战斗训练，培养强大的战士型魔法师',
+    icon: '⚔️',
+    mentors: [],
+    maxMentors: 4,
+    bonuses: {
+      expBonus: 0,
+      skillBonus: 0,
+      speedBonus: 0,
+      dungeonRewardBonus: 0.05,
+      promotionBonus: 0,
+      courseEfficiencyBonus: 0,
+    },
+    unlocked: false,
+    requiredReputation: 100,
+  },
+  {
+    id: 'academy_mage',
+    name: '奥术学院',
+    type: 'mage',
+    level: 0,
+    maxLevel: 10,
+    reputation: 0,
+    description: '专注魔法研究，培养博学的奥术师',
+    icon: '🔮',
+    mentors: [],
+    maxMentors: 4,
+    bonuses: {
+      expBonus: 0.05,
+      skillBonus: 0,
+      speedBonus: 0.03,
+      dungeonRewardBonus: 0,
+      promotionBonus: 0,
+      courseEfficiencyBonus: 0.05,
+    },
+    unlocked: false,
+    requiredReputation: 100,
+  },
+  {
+    id: 'academy_support',
+    name: '辅助学院',
+    type: 'support',
+    level: 0,
+    maxLevel: 10,
+    reputation: 0,
+    description: '专注学员培养，提升整体学员质量',
+    icon: '💚',
+    mentors: [],
+    maxMentors: 4,
+    bonuses: {
+      expBonus: 0.03,
+      skillBonus: 0,
+      speedBonus: 0,
+      dungeonRewardBonus: 0,
+      promotionBonus: 0.08,
+      courseEfficiencyBonus: 0,
+    },
+    unlocked: false,
+    requiredReputation: 200,
+  },
+  {
+    id: 'academy_mixed',
+    name: '综合学院',
+    type: 'mixed',
+    level: 0,
+    maxLevel: 10,
+    reputation: 0,
+    description: '全面发展，提供均衡的全方位加成',
+    icon: '🌟',
+    mentors: [],
+    maxMentors: 6,
+    bonuses: {
+      expBonus: 0.02,
+      skillBonus: 0.02,
+      speedBonus: 0.02,
+      dungeonRewardBonus: 0.02,
+      promotionBonus: 0.02,
+      courseEfficiencyBonus: 0.02,
+    },
+    unlocked: true,
+    requiredReputation: 0,
+  },
+];
+
+const MENTOR_FIRST_NAMES = ['阿尔弗雷德', '贝琳达', '塞德里克', '戴安娜', '埃德蒙', '菲奥娜', '格雷戈里', '海伦娜', '伊格内修斯', '朱莉娅', '科尼利厄斯', '洛雷娜', '马库斯', '娜塔莉', '奥利弗', '佩内洛普', '昆汀', '罗莎琳', '西奥多', '厄休拉'];
+const MENTOR_TITLES = ['贤者', '大师', '导师', '教授', '学者', '术士', '法师', '长老'];
+
+export const generateMentorName = (): string => {
+  const firstName = MENTOR_FIRST_NAMES[Math.floor(Math.random() * MENTOR_FIRST_NAMES.length)];
+  const title = MENTOR_TITLES[Math.floor(Math.random() * MENTOR_TITLES.length)];
+  return `${firstName}·${title}`;
+};
+
+export const getMentorQualityMultiplier = (quality: MentorQuality): number => {
+  switch (quality) {
+    case 'legendary': return 2.0;
+    case 'epic': return 1.5;
+    case 'rare': return 1.2;
+    default: return 1.0;
+  }
+};
+
+export const getMentorInitialLevel = (quality: MentorQuality): number => {
+  switch (quality) {
+    case 'legendary': return 8;
+    case 'epic': return 5;
+    case 'rare': return 3;
+    default: return 1;
+  }
+};
+
+export const getMentorInitialRank = (quality: MentorQuality): MentorRank => {
+  switch (quality) {
+    case 'legendary': return 'expert';
+    case 'epic': return 'journeyman';
+    case 'rare': return 'apprentice';
+    default: return 'novice';
+  }
+};
+
+export const getMentorMaxCourses = (quality: MentorQuality, level: number): number => {
+  const base = quality === 'legendary' ? 4 : quality === 'epic' ? 3 : quality === 'rare' ? 2 : 1;
+  return base + Math.floor(level / 5);
+};
+
+export const getMentorSalaryMultiplier = (quality: MentorQuality, rank: MentorRank): number => {
+  const qualityMult = getMentorQualityMultiplier(quality);
+  const rankIndex = MENTOR_RANK_ORDER.indexOf(rank);
+  const rankMult = 1 + rankIndex * 0.2;
+  return qualityMult * rankMult;
+};
+
+export const generateMentorSpecializations = (magicType: MagicType, quality: MentorQuality): MentorSpecialization[] => {
+  const recommended = getRecommendedSpecializations(magicType);
+  const count = quality === 'legendary' ? 3 : quality === 'epic' ? 2 : 1;
+  const selected = recommended.slice(0, count);
+  
+  return selected.map(specId => {
+    const template = SPECIALIZATION_TEMPLATES[specId];
+    const level = quality === 'legendary' ? 3 : quality === 'epic' ? 2 : 1;
+    return {
+      ...template,
+      level,
+      currentExp: 0,
+      expToNext: getSpecializationExpRequirement(level),
+    };
+  });
+};
+
+export const generateRandomMentor = (
+  quality: MentorQuality,
+  _day: number
+): Omit<Mentor, 'id' | 'status' | 'assignedCourses' | 'assignedDungeon' | 'recruitedAt' | 'totalStudentsTaught' | 'totalDungeonsLed'> => {
+  const magicTypes: MagicType[] = ['fire', 'water', 'earth', 'wind', 'light', 'dark'];
+  const magicType = magicTypes[Math.floor(Math.random() * magicTypes.length)];
+  const level = getMentorInitialLevel(quality);
+  const rank = getMentorInitialRank(quality);
+  const qualityMult = getMentorQualityMultiplier(quality);
+  
+  const baseExpBonus = 0.1 + qualityMult * 0.1;
+  const baseSkillBonus = 0.05 + qualityMult * 0.08;
+  
+  const specializations = generateMentorSpecializations(magicType, quality);
+  const maxCourses = getMentorMaxCourses(quality, level);
+  
+  const leadership = Math.floor(30 + qualityMult * 30 + Math.random() * 20);
+  const charisma = Math.floor(30 + qualityMult * 30 + Math.random() * 20);
+  const knowledge = Math.floor(30 + qualityMult * 30 + Math.random() * 20);
+  
+  const studentPromotionBonus = 0.02 + charisma / 500;
+  const dungeonLeadBonus = 0.03 + leadership / 400;
+  
+  return {
+    name: generateMentorName(),
+    magicType,
+    level,
+    expBonus: baseExpBonus,
+    skillBonus: baseSkillBonus,
+    description: `${MENTOR_QUALITY_NAMES[quality]}品质的${MENTOR_RANK_NAMES[rank]}，专精${magicType}系魔法`,
+    salary: {
+      gold: Math.floor(30 * qualityMult),
+      mana: Math.floor(20 * qualityMult),
+      food: Math.floor(10 * qualityMult),
+      reputation: Math.floor(5 * qualityMult),
+    },
+    quality,
+    rank,
+    exp: 0,
+    expToNextRank: getMentorRankExpRequirement(rank),
+    specializations,
+    academyId: null,
+    maxCourses,
+    studentPromotionBonus,
+    dungeonLeadBonus,
+    leadership,
+    charisma,
+    knowledge,
+    dailySalaryMultiplier: getMentorSalaryMultiplier(quality, rank),
+  };
+};
+
+export const convertTeacherToMentor = (
+  teacher: Teacher,
+  day: number
+): Mentor => {
+  const quality: MentorQuality = teacher.level >= 8 ? 'epic' : teacher.level >= 6 ? 'rare' : 'common';
+  const level = teacher.level;
+  const rank: MentorRank = teacher.level >= 8 ? 'journeyman' : teacher.level >= 5 ? 'apprentice' : 'novice';
+  const specializations = generateMentorSpecializations(teacher.magicType, quality);
+  const maxCourses = getMentorMaxCourses(quality, level);
+  
+  const leadership = 30 + level * 5;
+  const charisma = 30 + level * 5;
+  const knowledge = 40 + level * 6;
+  
+  return {
+    ...teacher,
+    quality,
+    rank,
+    exp: 0,
+    expToNextRank: getMentorRankExpRequirement(rank),
+    status: 'idle',
+    assignedCourses: teacher.id ? [] : [],
+    assignedDungeon: null,
+    specializations,
+    academyId: null,
+    maxCourses,
+    studentPromotionBonus: 0.02 + charisma / 500,
+    dungeonLeadBonus: 0.03 + leadership / 400,
+    leadership,
+    charisma,
+    knowledge,
+    recruitedAt: day,
+    dailySalaryMultiplier: getMentorSalaryMultiplier(quality, rank),
+    totalStudentsTaught: 0,
+    totalDungeonsLed: 0,
+  };
+};
+
+export const INITIAL_MENTORS: Mentor[] = INITIAL_TEACHERS.map((t, idx) => ({
+  ...convertTeacherToMentor(t, 1),
+  id: `mentor_${idx + 1}`,
+  assignedCourses: t.id && ['fire_magic', 'water_magic', 'earth_magic', 'wind_magic', 'light_magic', 'dark_magic', 'advanced_magic'][idx] 
+    ? [['fire_magic', 'water_magic', 'earth_magic', 'wind_magic', 'light_magic', 'dark_magic', 'advanced_magic'][idx]]
+    : [],
+}));
+
+export const generateRecruitmentOption = (
+  quality: MentorQuality,
+  currentDay: number
+): MentorRecruitmentOption => {
+  const mentorTemplate = generateRandomMentor(quality, currentDay);
+  const qualityMult = getMentorQualityMultiplier(quality);
+  
+  const cost: Resource = {
+    gold: Math.floor(300 * qualityMult),
+    mana: Math.floor(200 * qualityMult),
+    food: Math.floor(50 * qualityMult),
+    reputation: Math.floor(30 * qualityMult),
+  };
+  
+  const requiredReputation = quality === 'legendary' ? 500 : quality === 'epic' ? 200 : quality === 'rare' ? 80 : 0;
+  
+  return {
+    id: `recruit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    mentorTemplate,
+    cost,
+    expiresAtDay: currentDay + 3 + Math.floor(Math.random() * 4),
+    locked: false,
+    requiredReputation,
+  };
+};
+
+export const refreshMentorRecruitmentPool = (
+  currentDay: number,
+  reputation: number
+): MentorRecruitmentOption[] => {
+  const options: MentorRecruitmentOption[] = [];
+  
+  options.push(generateRecruitmentOption('common', currentDay));
+  options.push(generateRecruitmentOption('common', currentDay));
+  
+  if (reputation >= 50) {
+    options.push(generateRecruitmentOption('rare', currentDay));
+  }
+  if (reputation >= 150) {
+    options.push(generateRecruitmentOption('rare', currentDay));
+  }
+  if (reputation >= 300) {
+    options.push(generateRecruitmentOption('epic', currentDay));
+  }
+  if (reputation >= 600 && Math.random() < 0.3) {
+    options.push(generateRecruitmentOption('legendary', currentDay));
+  }
+  
+  return options;
+};
+
+export const INITIAL_MENTOR_RECRUITMENT_POOL: MentorRecruitmentPool = {
+  currentOptions: refreshMentorRecruitmentPool(1, 50),
+  lastRefreshDay: 1,
+  refreshCost: { gold: 200, mana: 100, food: 30, reputation: 10 },
+  freeRefreshesPerWeek: 2,
+  freeRefreshesUsed: 0,
+  freeRefreshResetDay: 1,
+};
+
+export const INITIAL_MENTOR_STATE: MentorState = {
+  mentors: INITIAL_MENTORS,
+  academies: INITIAL_ACADEMIES,
+  recruitmentPool: INITIAL_MENTOR_RECRUITMENT_POOL,
+  maxMentors: 10,
+  totalMentorSlots: 10,
+};
+
+export const calculateMentorCourseBonus = (
+  course: Course,
+  mentors: Mentor[],
+  academies: MentorAcademy[]
+): MentorCourseBonus => {
+  let expMultiplier = 1;
+  let speedMultiplier = 1;
+  let skillBonusMultiplier = 1;
+  let academyBonus = 0;
+  const contributingMentors: string[] = [];
+  const specializationsActive: SpecializationType[] = [];
+  
+  const assignedMentors = mentors.filter(m => m.assignedCourses.includes(course.id));
+  
+  for (const mentor of assignedMentors) {
+    expMultiplier += mentor.expBonus;
+    skillBonusMultiplier += mentor.skillBonus;
+    contributingMentors.push(mentor.id);
+    
+    if (course.magicType && mentor.magicType === course.magicType) {
+      expMultiplier *= 1.1;
+      skillBonusMultiplier *= 1.1;
+    }
+    
+    for (const spec of mentor.specializations) {
+      if (!specializationsActive.includes(spec.id)) {
+        specializationsActive.push(spec.id);
+      }
+      for (const effect of spec.effects) {
+        const effectValue = effect.value + effect.valuePerLevel * (spec.level - 1);
+        const matchesTarget = !effect.target || effect.target === course.magicType;
+        
+        if (!matchesTarget) continue;
+        
+        switch (effect.type) {
+          case 'course_exp_bonus':
+            expMultiplier += effectValue;
+            break;
+          case 'course_speed_bonus':
+            speedMultiplier += effectValue;
+            break;
+          case 'skill_damage_bonus':
+            skillBonusMultiplier += effectValue;
+            break;
+        }
+      }
+    }
+  }
+  
+  for (const academy of academies) {
+    if (academy.level === 0) continue;
+    const academyMentors = mentors.filter(m => academy.mentors.includes(m.id));
+    if (academyMentors.length === 0) continue;
+    
+    const hasMatchingMentor = academyMentors.some(m => contributingMentors.includes(m.id));
+    if (!hasMatchingMentor) continue;
+    
+    const qualityMult = academyMentors.reduce((sum, m) => sum + getMentorQualityMultiplier(m.quality), 0) / academyMentors.length;
+    const levelMult = 1 + academy.level * 0.05;
+    const baseBonus = academy.bonuses.expBonus + academy.bonuses.speedBonus * 0.5 + academy.bonuses.courseEfficiencyBonus;
+    let bonus = baseBonus * levelMult;
+    bonus += academyMentors.length * 0.01;
+    bonus *= qualityMult;
+    
+    expMultiplier += bonus;
+    speedMultiplier += academy.bonuses.speedBonus * levelMult;
+    academyBonus += bonus;
+  }
+  
+  return {
+    expMultiplier,
+    speedMultiplier,
+    skillBonusMultiplier,
+    contributingMentors,
+    specializationsActive,
+    academyBonus,
+  };
+};
+
+export const calculateMentorDungeonBonus = (
+  dungeon: Dungeon,
+  team: Student[],
+  mentors: Mentor[],
+  academies: MentorAcademy[]
+): MentorDungeonBonus => {
+  let damageBonus = 0;
+  let hpBonus = 0;
+  let staminaCostReduction = 0;
+  let rewardBonus = 0;
+  let starChanceBonus = 0;
+  
+  const assignedMentor = mentors.find(m => m.assignedDungeon === dungeon.id);
+  
+  if (assignedMentor) {
+    damageBonus += assignedMentor.dungeonLeadBonus;
+    hpBonus += assignedMentor.dungeonLeadBonus * 0.7;
+    starChanceBonus += assignedMentor.leadership / 1000;
+    
+    const magicTypesInTeam = new Set(team.map(s => s.magicType));
+    if (magicTypesInTeam.has(assignedMentor.magicType)) {
+      damageBonus += 0.05;
+      hpBonus += 0.03;
+    }
+    
+    for (const spec of assignedMentor.specializations) {
+      for (const effect of spec.effects) {
+        const effectValue = effect.value + effect.valuePerLevel * (spec.level - 1);
+        const matchesTarget = !effect.target || team.some(s => s.magicType === effect.target);
+        
+        if (!matchesTarget) continue;
+        
+        switch (effect.type) {
+          case 'dungeon_damage_bonus':
+            damageBonus += effectValue;
+            break;
+          case 'dungeon_hp_bonus':
+            hpBonus += effectValue;
+            break;
+          case 'student_promotion_bonus':
+            starChanceBonus += effectValue;
+            break;
+          case 'stamina_regen_bonus':
+            staminaCostReduction += effectValue;
+            break;
+        }
+      }
+    }
+  }
+  
+  for (const academy of academies) {
+    if (academy.level === 0) continue;
+    const academyMentors = mentors.filter(m => academy.mentors.includes(m.id));
+    if (academyMentors.length === 0) continue;
+    
+    const hasLeadMentor = assignedMentor && academyMentors.includes(assignedMentor);
+    if (!hasLeadMentor) continue;
+    
+    const qualityMult = academyMentors.reduce((sum, m) => sum + getMentorQualityMultiplier(m.quality), 0) / academyMentors.length;
+    const levelMult = 1 + academy.level * 0.05;
+    let bonus = academy.bonuses.dungeonRewardBonus * levelMult;
+    bonus += academyMentors.length * 0.01;
+    bonus *= qualityMult;
+    
+    damageBonus += bonus;
+    hpBonus += bonus * 0.7;
+    rewardBonus += bonus * 0.3;
+  }
+  
+  const rewardMultiplier = 1 + rewardBonus;
+  const expMultiplier = 1 + Math.min(0.5, damageBonus * 0.5 + hpBonus * 0.3);
+  
+  return {
+    damageBonus: Math.min(1, damageBonus),
+    hpBonus: Math.min(0.8, hpBonus),
+    staminaCostReduction: Math.min(0.5, staminaCostReduction),
+    rewardBonus: Math.min(0.5, rewardBonus),
+    starChanceBonus: Math.min(0.3, starChanceBonus),
+    rewardMultiplier,
+    expMultiplier,
+  };
+};
+
+export const calculateMentorPromotionBonus = (
+  student: Student,
+  mentors: Mentor[],
+  academies: MentorAcademy[]
+): MentorPromotionCheck => {
+  let expBonus = 0;
+  let levelUpChanceBonus = 0;
+  let qualityUpgradeChance = 0;
+  const contributingMentors: string[] = [];
+  
+  const relevantMentors = mentors.filter(m => {
+    if (m.assignedCourses.length > 0) return true;
+    if (m.academyId) {
+      const academy = academies.find(a => a.id === m.academyId);
+      return academy && academy.level > 0;
+    }
+    return false;
+  });
+  
+  for (const mentor of relevantMentors) {
+    if (mentor.magicType === student.magicType) {
+      expBonus += mentor.expBonus * 0.5;
+      levelUpChanceBonus += mentor.studentPromotionBonus * 0.5;
+      contributingMentors.push(mentor.id);
+    }
+    
+    if (student.assignedCourse && mentor.assignedCourses.includes(student.assignedCourse)) {
+      expBonus += mentor.expBonus;
+      levelUpChanceBonus += mentor.studentPromotionBonus;
+      if (!contributingMentors.includes(mentor.id)) {
+        contributingMentors.push(mentor.id);
+      }
+    }
+    
+    for (const spec of mentor.specializations) {
+      for (const effect of spec.effects) {
+        const effectValue = effect.value + effect.valuePerLevel * (spec.level - 1);
+        const matchesTarget = !effect.target || effect.target === student.magicType;
+        if (!matchesTarget) continue;
+        
+        if (effect.type === 'course_exp_bonus') {
+          expBonus += effectValue * 0.3;
+        } else if (effect.type === 'student_promotion_bonus') {
+          levelUpChanceBonus += effectValue;
+          expBonus += effectValue * 0.5;
+        }
+      }
+    }
+  }
+  
+  for (const academy of academies) {
+    if (academy.level === 0) continue;
+    const academyMentors = mentors.filter(m => academy.mentors.includes(m.id));
+    if (academyMentors.length === 0) continue;
+    
+    const qualityMult = academyMentors.reduce((sum, m) => sum + getMentorQualityMultiplier(m.quality), 0) / academyMentors.length;
+    const levelMult = 1 + academy.level * 0.05;
+    let bonus = academy.bonuses.promotionBonus * levelMult;
+    bonus += academyMentors.length * 0.01;
+    bonus *= qualityMult;
+    
+    levelUpChanceBonus += bonus;
+    expBonus += bonus;
+    qualityUpgradeChance += bonus * 0.1;
+  }
+  
+  const requiredLevel = student.quality === 'legendary' ? 15 : student.quality === 'epic' ? 10 : student.quality === 'rare' ? 6 : 3;
+  const requiredExp = requiredLevel * 100;
+  const canPromote = student.level >= requiredLevel && student.exp >= requiredExp * 0.5;
+  const probabilityBonus = levelUpChanceBonus;
+  
+  return {
+    canPromote,
+    requiredLevel,
+    requiredExp,
+    mentorBonus: {
+      expBonus: Math.min(1, expBonus),
+      levelUpChanceBonus: Math.min(0.5, levelUpChanceBonus),
+      qualityUpgradeChance: Math.min(0.1, qualityUpgradeChance),
+    },
+    contributingMentors,
+    probabilityBonus,
+  };
+};
+
+export const canAssignMentorToCourse = (
+  mentor: Mentor,
+  courseId: string
+): { ok: boolean; reason?: string } => {
+  if (mentor.assignedCourses.includes(courseId)) {
+    return { ok: false, reason: '导师已分配到此课程' };
+  }
+  if (mentor.assignedCourses.length >= mentor.maxCourses) {
+    return { ok: false, reason: `导师课程已满 (${mentor.assignedCourses.length}/${mentor.maxCourses})` };
+  }
+  return { ok: true };
+};
+
+export const canMentorLeadDungeon = (
+  mentor: Mentor,
+  dungeonLevel: number
+): MentorDungeonLeadResult => {
+  const requiredMentorLevel = Math.max(1, dungeonLevel - 2);
+  const canLead = mentor.level >= requiredMentorLevel;
+  
+  const bonuses: MentorDungeonBonus = canLead ? {
+    damageBonus: mentor.dungeonLeadBonus,
+    hpBonus: mentor.dungeonLeadBonus * 0.7,
+    staminaCostReduction: mentor.leadership / 2000,
+    rewardBonus: mentor.charisma / 2000,
+    starChanceBonus: mentor.knowledge / 2000,
+    rewardMultiplier: 1 + mentor.charisma / 2000,
+    expMultiplier: 1 + (mentor.dungeonLeadBonus * 0.5),
+  } : {
+    damageBonus: 0,
+    hpBonus: 0,
+    staminaCostReduction: 0,
+    rewardBonus: 0,
+    starChanceBonus: 0,
+    rewardMultiplier: 1,
+    expMultiplier: 1,
+  };
+  
+  return {
+    canLead,
+    mentor: canLead ? mentor : undefined,
+    bonuses,
+    requiredMentorLevel,
+    reason: canLead ? undefined : `导师等级不足 (需要Lv.${requiredMentorLevel})`,
+  };
+};
+
+export const getAcademyUpgradeCost = (academy: MentorAcademy): Resource => {
+  const baseMult = Math.pow(1.5, academy.level);
+  const typeMult = academy.type === 'mixed' ? 1.2 : 1;
+  return {
+    gold: Math.floor(500 * baseMult * typeMult),
+    mana: Math.floor(300 * baseMult * typeMult),
+    food: Math.floor(80 * baseMult * typeMult),
+    reputation: Math.floor(50 * baseMult * typeMult),
+  };
+};
+
+export const getAcademyBonusDescription = (academy: MentorAcademy): string => {
+  const parts: string[] = [];
+  const level = Math.max(1, academy.level);
+  const mult = 1 + level * 0.05;
+  if (academy.bonuses.expBonus > 0) parts.push(`经验+${Math.round(academy.bonuses.expBonus * mult * 100)}%`);
+  if (academy.bonuses.speedBonus > 0) parts.push(`速度+${Math.round(academy.bonuses.speedBonus * mult * 100)}%`);
+  if (academy.bonuses.dungeonRewardBonus > 0) parts.push(`副本奖励+${Math.round(academy.bonuses.dungeonRewardBonus * mult * 100)}%`);
+  if (academy.bonuses.promotionBonus > 0) parts.push(`晋升+${Math.round(academy.bonuses.promotionBonus * mult * 100)}%`);
+  if (academy.bonuses.courseEfficiencyBonus > 0) parts.push(`课程效率+${Math.round(academy.bonuses.courseEfficiencyBonus * mult * 100)}%`);
+  if (academy.bonuses.skillBonus > 0) parts.push(`技能+${Math.round(academy.bonuses.skillBonus * mult * 100)}%`);
+  return parts.length > 0 ? parts.join('，') : '暂无加成';
+};
+
+export const getMentorMentorExpGain = (action: 'teach_course' | 'lead_dungeon', quality: MentorQuality): number => {
+  const base = action === 'teach_course' ? 10 : 15;
+  return Math.floor(base * getMentorQualityMultiplier(quality));
 };

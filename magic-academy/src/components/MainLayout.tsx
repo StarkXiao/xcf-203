@@ -8,6 +8,8 @@ import ClubPanel from './ClubPanel';
 import './ClubPanel.css';
 import TradeHarborPanel from './TradeHarborPanel';
 import './TradeHarborPanel.css';
+import MentorPanel from './MentorPanel';
+import './MentorPanel.css';
 
 interface TabConfig {
   id: TabType;
@@ -20,6 +22,7 @@ const tabs: TabConfig[] = [
   { id: 'recruit', label: '学员招募', icon: '📜' },
   { id: 'course', label: '课程安排', icon: '📚' },
   { id: 'dungeon', label: '试炼副本', icon: '⚔️' },
+  { id: 'mentor', label: '导师养成', icon: '👨‍🏫' },
   { id: 'trade', label: '贸易港', icon: '🏛️' },
   { id: 'goals', label: '目标任务', icon: '🎯' },
   { id: 'club', label: '魔法社团', icon: '🎭' },
@@ -121,6 +124,7 @@ export default function MainLayout() {
         {activeTab === 'recruit' && <RecruitModule onStudentClick={setSelectedStudentId} setConfirmDialog={setConfirmDialog} />}
         {activeTab === 'course' && <CourseModule onStudentClick={setSelectedStudentId} />}
         {activeTab === 'dungeon' && <DungeonModule onStudentClick={setSelectedStudentId} setConfirmDialog={setConfirmDialog} />}
+        {activeTab === 'mentor' && <MentorPanel />}
         {activeTab === 'trade' && <TradeHarborPanel />}
         {activeTab === 'goals' && <GoalsModule />}
         {activeTab === 'club' && <ClubPanel />}

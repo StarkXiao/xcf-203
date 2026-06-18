@@ -15,6 +15,7 @@ import {
   INITIAL_SEASON_STATE,
   INITIAL_CLUBS_STATE,
   INITIAL_TRADE_HARBOR_STATE,
+  INITIAL_MENTOR_STATE,
 } from './gameData';
 
 type SaveData = Record<string, unknown>;
@@ -432,6 +433,33 @@ function migrateV7ToV8(ctx: MigrationContext): SaveData {
   return data;
 }
 
+function migrateV8ToV9(ctx: MigrationContext): SaveData {
+  const data = { ...ctx.data };
+
+  data.clubs = { ...INITIAL_CLUBS_STATE };
+
+  data.saveVersion = 9;
+  return data;
+}
+
+function migrateV9ToV10(ctx: MigrationContext): SaveData {
+  const data = { ...ctx.data };
+
+  data.tradeHarbor = { ...INITIAL_TRADE_HARBOR_STATE };
+
+  data.saveVersion = 10;
+  return data;
+}
+
+function migrateV10ToV11(ctx: MigrationContext): SaveData {
+  const data = { ...ctx.data };
+
+  data.mentorState = { ...INITIAL_MENTOR_STATE };
+
+  data.saveVersion = 11;
+  return data;
+}
+
 const MIGRATION_CHAIN: Record<number, MigrationStep> = {
   0: migrateV0ToV1,
   1: migrateV1ToV2,
@@ -441,6 +469,9 @@ const MIGRATION_CHAIN: Record<number, MigrationStep> = {
   5: migrateV5ToV6,
   6: migrateV6ToV7,
   7: migrateV7ToV8,
+  8: migrateV8ToV9,
+  9: migrateV9ToV10,
+  10: migrateV10ToV11,
 };
 
 export function migrateSave(rawData: SaveData): GameState {
@@ -512,6 +543,12 @@ function normalizeToGameState(data: SaveData): GameState {
           studentName: typeof evt.studentName === 'string' ? evt.studentName : undefined,
           courseId: typeof evt.courseId === 'string' ? evt.courseId : undefined,
           courseName: typeof evt.courseName === 'string' ? evt.courseName : undefined,
+          mentorId: typeof evt.mentorId === 'string' ? evt.mentorId : undefined,
+          mentorName: typeof evt.mentorName === 'string' ? evt.mentorName : undefined,
+          academyId: typeof evt.academyId === 'string' ? evt.academyId : undefined,
+          academyName: typeof evt.academyName === 'string' ? evt.academyName : undefined,
+          specializationId: typeof evt.specializationId === 'string' ? evt.specializationId : undefined,
+          specializationName: typeof evt.specializationName === 'string' ? evt.specializationName : undefined,
         })
       ),
     })
@@ -579,6 +616,12 @@ function normalizeToGameState(data: SaveData): GameState {
           studentName: typeof evt.studentName === 'string' ? evt.studentName : undefined,
           courseId: typeof evt.courseId === 'string' ? evt.courseId : undefined,
           courseName: typeof evt.courseName === 'string' ? evt.courseName : undefined,
+          mentorId: typeof evt.mentorId === 'string' ? evt.mentorId : undefined,
+          mentorName: typeof evt.mentorName === 'string' ? evt.mentorName : undefined,
+          academyId: typeof evt.academyId === 'string' ? evt.academyId : undefined,
+          academyName: typeof evt.academyName === 'string' ? evt.academyName : undefined,
+          specializationId: typeof evt.specializationId === 'string' ? evt.specializationId : undefined,
+          specializationName: typeof evt.specializationName === 'string' ? evt.specializationName : undefined,
         })
       ),
       income: ensureResource(snap.income as Partial<Resource> | undefined, { gold: 0, mana: 0, food: 0, reputation: 0 }),
@@ -714,6 +757,18 @@ function normalizeToGameState(data: SaveData): GameState {
     })
   );
 
+  const clubs = data.clubs && typeof data.clubs === 'object'
+    ? { ...INITIAL_CLUBS_STATE, ...(data.clubs as Record<string, unknown>) }
+    : INITIAL_CLUBS_STATE;
+
+  const tradeHarbor = data.tradeHarbor && typeof data.tradeHarbor === 'object'
+    ? { ...INITIAL_TRADE_HARBOR_STATE, ...(data.tradeHarbor as Record<string, unknown>) }
+    : INITIAL_TRADE_HARBOR_STATE;
+
+  const mentorState = data.mentorState && typeof data.mentorState === 'object'
+    ? { ...INITIAL_MENTOR_STATE, ...(data.mentorState as Record<string, unknown>) }
+    : INITIAL_MENTOR_STATE;
+
   return {
     saveVersion: CURRENT_SAVE_VERSION,
     resources,
@@ -738,8 +793,9 @@ function normalizeToGameState(data: SaveData): GameState {
     stageTasks,
     season,
     seasonHistory,
-    clubs: INITIAL_CLUBS_STATE,
-    tradeHarbor: INITIAL_TRADE_HARBOR_STATE,
+    clubs,
+    tradeHarbor,
+    mentorState,
   };
 }
 

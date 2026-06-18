@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, TradeMaterialType, TradeOrderType } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -107,6 +107,22 @@ import {
   generateShipmentId,
   getRouteInfo,
   updateTradeHarborBonuses,
+  INITIAL_MENTOR_STATE,
+  refreshMentorRecruitmentPool,
+  calculateMentorCourseBonus,
+  calculateMentorDungeonBonus,
+  calculateMentorPromotionBonus,
+  canAssignMentorToCourse,
+  canMentorLeadDungeon,
+  getAcademyUpgradeCost,
+  getMentorRankExpRequirement,
+  getNextMentorRank,
+  getSpecializationExpRequirement,
+  SPECIALIZATION_TEMPLATES,
+  MENTOR_QUALITY_NAMES,
+  MENTOR_QUALITY_COLORS,
+  MENTOR_RANK_NAMES,
+  getMentorQualityMultiplier,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -171,7 +187,20 @@ type GameAction =
   | { type: 'CANCEL_TRADE_ORDER'; orderId: string }
   | { type: 'COMPLETE_TRADE_SHIPMENT'; shipmentId: string }
   | { type: 'REFRESH_TRADE_PRICES' }
-  | { type: 'UPGRADE_WAREHOUSE' };
+  | { type: 'UPGRADE_WAREHOUSE' }
+  | { type: 'RECRUIT_MENTOR'; optionId: string }
+  | { type: 'REFRESH_MENTOR_POOL'; useFree?: boolean }
+  | { type: 'ASSIGN_MENTOR_TO_COURSE'; mentorId: string; courseId: string }
+  | { type: 'UNASSIGN_MENTOR_FROM_COURSE'; mentorId: string; courseId: string }
+  | { type: 'ASSIGN_MENTOR_TO_DUNGEON'; mentorId: string; dungeonId: string | null }
+  | { type: 'ADD_MENTOR_EXP'; mentorId: string; exp: number }
+  | { type: 'UPGRADE_MENTOR_RANK'; mentorId: string }
+  | { type: 'UPGRADE_MENTOR_SPECIALIZATION'; mentorId: string; specializationId: SpecializationType; exp: number }
+  | { type: 'UNLOCK_MENTOR_SPECIALIZATION'; mentorId: string; specializationId: SpecializationType }
+  | { type: 'ASSIGN_MENTOR_TO_ACADEMY'; mentorId: string; academyId: string | null }
+  | { type: 'UPGRADE_ACADEMY'; academyId: string }
+  | { type: 'UNLOCK_ACADEMY'; academyId: string }
+  | { type: 'UPDATE_MENTOR'; mentor: Mentor };
 
 const MAX_STUDENT_CAPACITY = 20;
 
@@ -229,6 +258,7 @@ const initialState: GameState = {
   seasonHistory: [],
   clubs: INITIAL_CLUBS_STATE,
   tradeHarbor: INITIAL_TRADE_HARBOR_STATE,
+  mentorState: INITIAL_MENTOR_STATE,
 };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -2437,6 +2467,479 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
+    case 'RECRUIT_MENTOR': {
+      const option = state.mentorState.recruitmentPool.currentOptions.find(o => o.id === action.optionId);
+      if (!option || option.locked) return state;
+      if (state.mentorState.mentors.length >= state.mentorState.maxMentors) return state;
+      if (state.resources.reputation < option.requiredReputation) return state;
+      if (state.resources.gold < option.cost.gold ||
+          state.resources.mana < option.cost.mana ||
+          state.resources.food < option.cost.food ||
+          state.resources.reputation < option.cost.reputation) return state;
+
+      const newMentor: Mentor = {
+        ...option.mentorTemplate,
+        id: `mentor_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        status: 'idle',
+        assignedCourses: [],
+        assignedDungeon: null,
+        recruitedAt: state.day,
+        totalStudentsTaught: 0,
+        totalDungeonsLed: 0,
+      };
+
+      const recruitEvent: DailyEvent = {
+        type: 'mentor_recruited',
+        message: `🎉 招募了新导师「${newMentor.name}」(${MENTOR_QUALITY_NAMES[newMentor.quality]})`,
+        mentorId: newMentor.id,
+        mentorName: newMentor.name,
+      };
+      const dailyLog: DailyLog = { day: state.day, events: [recruitEvent] };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        resources: {
+          gold: state.resources.gold - option.cost.gold,
+          mana: state.resources.mana - option.cost.mana,
+          food: state.resources.food - option.cost.food,
+          reputation: state.resources.reputation - option.cost.reputation,
+        },
+        mentorState: {
+          ...state.mentorState,
+          mentors: [...state.mentorState.mentors, newMentor],
+          recruitmentPool: {
+            ...state.mentorState.recruitmentPool,
+            currentOptions: state.mentorState.recruitmentPool.currentOptions.filter(o => o.id !== action.optionId),
+          },
+        },
+      };
+    }
+
+    case 'REFRESH_MENTOR_POOL': {
+      const pool = state.mentorState.recruitmentPool;
+      const cost = pool.refreshCost;
+      
+      if (action.useFree) {
+        if (pool.freeRefreshesUsed >= pool.freeRefreshesPerWeek) return state;
+      } else {
+        if (state.resources.gold < cost.gold ||
+            state.resources.mana < cost.mana ||
+            state.resources.food < cost.food ||
+            state.resources.reputation < cost.reputation) return state;
+      }
+
+      const newOptions = refreshMentorRecruitmentPool(state.day, state.resources.reputation);
+
+      return {
+        ...state,
+        resources: action.useFree ? state.resources : {
+          gold: state.resources.gold - cost.gold,
+          mana: state.resources.mana - cost.mana,
+          food: state.resources.food - cost.food,
+          reputation: state.resources.reputation - cost.reputation,
+        },
+        mentorState: {
+          ...state.mentorState,
+          recruitmentPool: {
+            ...pool,
+            currentOptions: newOptions,
+            lastRefreshDay: state.day,
+            freeRefreshesUsed: action.useFree ? pool.freeRefreshesUsed + 1 : pool.freeRefreshesUsed,
+          },
+        },
+      };
+    }
+
+    case 'ASSIGN_MENTOR_TO_COURSE': {
+      const mentor = state.mentorState.mentors.find(m => m.id === action.mentorId);
+      if (!mentor) return state;
+      const check = canAssignMentorToCourse(mentor, action.courseId);
+      if (!check.ok) return state;
+
+      const course = state.courses.find(c => c.id === action.courseId);
+      const assignEvent: DailyEvent = {
+        type: 'mentor_assigned',
+        message: `👨‍🏫 ${mentor.name} 开始负责课程「${course?.name || action.courseId}」`,
+        mentorId: mentor.id,
+        mentorName: mentor.name,
+        courseId: action.courseId,
+        courseName: course?.name,
+      };
+      const dailyLog: DailyLog = { day: state.day, events: [assignEvent] };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        mentorState: {
+          ...state.mentorState,
+          mentors: state.mentorState.mentors.map(m =>
+            m.id === action.mentorId
+              ? { ...m, assignedCourses: [...m.assignedCourses, action.courseId], status: 'teaching' as const }
+              : m
+          ),
+        },
+      };
+    }
+
+    case 'UNASSIGN_MENTOR_FROM_COURSE': {
+      const mentor = state.mentorState.mentors.find(m => m.id === action.mentorId);
+      if (!mentor || !mentor.assignedCourses.includes(action.courseId)) return state;
+
+      const newCourses = mentor.assignedCourses.filter(c => c !== action.courseId);
+      const newStatus = newCourses.length === 0 && !mentor.assignedDungeon ? 'idle' : mentor.status;
+
+      return {
+        ...state,
+        mentorState: {
+          ...state.mentorState,
+          mentors: state.mentorState.mentors.map(m =>
+            m.id === action.mentorId
+              ? { ...m, assignedCourses: newCourses, status: newStatus as Mentor['status'] }
+              : m
+          ),
+        },
+      };
+    }
+
+    case 'ASSIGN_MENTOR_TO_DUNGEON': {
+      const mentor = state.mentorState.mentors.find(m => m.id === action.mentorId);
+      if (!mentor && action.dungeonId) return state;
+
+      if (action.dungeonId && mentor) {
+        const dungeon = state.dungeons.find(d => d.id === action.dungeonId);
+        if (!dungeon) return state;
+        const leadResult = canMentorLeadDungeon(mentor, dungeon.level);
+        if (!leadResult.canLead) return state;
+      }
+
+      const newMentors = state.mentorState.mentors.map(m => {
+        if (action.dungeonId && m.id === action.mentorId) {
+          return { ...m, assignedDungeon: action.dungeonId, status: 'dungeon_lead' as const };
+        }
+        if (!action.dungeonId && m.id === action.mentorId) {
+          const newStatus = m.assignedCourses.length === 0 ? 'idle' : m.status;
+          return { ...m, assignedDungeon: null, status: newStatus as Mentor['status'] };
+        }
+        if (action.dungeonId && m.assignedDungeon === action.dungeonId) {
+          const newStatus = m.assignedCourses.length === 0 ? 'idle' : 'teaching';
+          return { ...m, assignedDungeon: null, status: newStatus as Mentor['status'] };
+        }
+        return m;
+      });
+
+      return {
+        ...state,
+        mentorState: {
+          ...state.mentorState,
+          mentors: newMentors,
+        },
+      };
+    }
+
+    case 'ADD_MENTOR_EXP': {
+      const mentor = state.mentorState.mentors.find(m => m.id === action.mentorId);
+      if (!mentor) return state;
+
+      let newExp = mentor.exp + action.exp;
+      let newLevel = mentor.level;
+      let leveledUp = false;
+
+      while (newExp >= newLevel * 100) {
+        newExp -= newLevel * 100;
+        newLevel++;
+        leveledUp = true;
+      }
+
+      const events: DailyEvent[] = [];
+      if (leveledUp) {
+        events.push({
+          type: 'mentor_level_up',
+          message: `⬆️ ${mentor.name} 升级到 Lv.${newLevel}！`,
+          mentorId: mentor.id,
+          mentorName: mentor.name,
+          value: newLevel,
+        });
+      }
+
+      const recentLogs = state.dailyLogs.slice(-29);
+      if (events.length > 0) {
+        recentLogs.push({ day: state.day, events });
+      }
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        mentorState: {
+          ...state.mentorState,
+          mentors: state.mentorState.mentors.map(m =>
+            m.id === action.mentorId
+              ? { ...m, exp: newExp, level: newLevel }
+              : m
+          ),
+        },
+      };
+    }
+
+    case 'UPGRADE_MENTOR_RANK': {
+      const mentor = state.mentorState.mentors.find(m => m.id === action.mentorId);
+      if (!mentor) return state;
+
+      const nextRank = getNextMentorRank(mentor.rank);
+      if (!nextRank) return state;
+      if (mentor.exp < mentor.expToNextRank) return state;
+
+      const rankUpEvent: DailyEvent = {
+        type: 'mentor_rank_up',
+        message: `🏆 ${mentor.name} 晋升为「${MENTOR_RANK_NAMES[nextRank]}」！`,
+        mentorId: mentor.id,
+        mentorName: mentor.name,
+      };
+      const dailyLog: DailyLog = { day: state.day, events: [rankUpEvent] };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+
+      const newExpToNext = getMentorRankExpRequirement(nextRank);
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        mentorState: {
+          ...state.mentorState,
+          mentors: state.mentorState.mentors.map(m =>
+            m.id === action.mentorId
+              ? {
+                  ...m,
+                  rank: nextRank,
+                  exp: m.exp - m.expToNextRank,
+                  expToNextRank: newExpToNext,
+                  expBonus: m.expBonus * 1.1,
+                  skillBonus: m.skillBonus * 1.1,
+                  maxCourses: Math.min(6, m.maxCourses + 1),
+                }
+              : m
+          ),
+        },
+      };
+    }
+
+    case 'UPGRADE_MENTOR_SPECIALIZATION': {
+      const mentor = state.mentorState.mentors.find(m => m.id === action.mentorId);
+      if (!mentor) return state;
+
+      const spec = mentor.specializations.find(s => s.id === action.specializationId);
+      if (!spec || spec.level >= spec.maxLevel) return state;
+
+      let newCurrentExp = spec.currentExp + action.exp;
+      let newLevel = spec.level;
+      let leveledUp = false;
+
+      while (newCurrentExp >= spec.expToNext && newLevel < spec.maxLevel) {
+        newCurrentExp -= spec.expToNext;
+        newLevel++;
+        leveledUp = true;
+      }
+
+      const events: DailyEvent[] = [];
+      if (leveledUp) {
+        events.push({
+          type: 'mentor_specialization_up',
+          message: `📚 ${mentor.name} 的「${spec.name}」专精升级到 Lv.${newLevel}！`,
+          mentorId: mentor.id,
+          mentorName: mentor.name,
+          value: newLevel,
+        });
+      }
+
+      const recentLogs = state.dailyLogs.slice(-29);
+      if (events.length > 0) {
+        recentLogs.push({ day: state.day, events });
+      }
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        mentorState: {
+          ...state.mentorState,
+          mentors: state.mentorState.mentors.map(m =>
+            m.id === action.mentorId
+              ? {
+                  ...m,
+                  specializations: m.specializations.map(s =>
+                    s.id === action.specializationId
+                      ? {
+                          ...s,
+                          level: newLevel,
+                          currentExp: newCurrentExp,
+                          expToNext: getSpecializationExpRequirement(newLevel),
+                        }
+                      : s
+                  ),
+                }
+              : m
+          ),
+        },
+      };
+    }
+
+    case 'UNLOCK_MENTOR_SPECIALIZATION': {
+      const mentor = state.mentorState.mentors.find(m => m.id === action.mentorId);
+      if (!mentor) return state;
+      if (mentor.specializations.some(s => s.id === action.specializationId)) return state;
+
+      const template = SPECIALIZATION_TEMPLATES[action.specializationId];
+      if (!template) return state;
+
+      const newSpec: MentorSpecialization = {
+        ...template,
+        level: 1,
+        currentExp: 0,
+        expToNext: getSpecializationExpRequirement(1),
+      };
+
+      return {
+        ...state,
+        mentorState: {
+          ...state.mentorState,
+          mentors: state.mentorState.mentors.map(m =>
+            m.id === action.mentorId
+              ? { ...m, specializations: [...m.specializations, newSpec] }
+              : m
+          ),
+        },
+      };
+    }
+
+    case 'ASSIGN_MENTOR_TO_ACADEMY': {
+      const mentor = state.mentorState.mentors.find(m => m.id === action.mentorId);
+      if (!mentor) return state;
+
+      let newAcademies = state.mentorState.academies;
+
+      if (action.academyId) {
+        const academy = state.mentorState.academies.find(a => a.id === action.academyId);
+        if (!academy || !academy.unlocked) return state;
+        const currentAcademyMentors = academy.mentors.filter(id => id !== action.mentorId);
+        if (currentAcademyMentors.length >= academy.maxMentors) return state;
+      }
+
+      newAcademies = state.mentorState.academies.map(a => {
+        if (mentor.academyId && a.id === mentor.academyId) {
+          return { ...a, mentors: a.mentors.filter(id => id !== action.mentorId) };
+        }
+        if (action.academyId && a.id === action.academyId && !a.mentors.includes(action.mentorId)) {
+          return { ...a, mentors: [...a.mentors, action.mentorId] };
+        }
+        return a;
+      });
+
+      return {
+        ...state,
+        mentorState: {
+          ...state.mentorState,
+          academies: newAcademies,
+          mentors: state.mentorState.mentors.map(m =>
+            m.id === action.mentorId
+              ? { ...m, academyId: action.academyId }
+              : m
+          ),
+        },
+      };
+    }
+
+    case 'UPGRADE_ACADEMY': {
+      const academy = state.mentorState.academies.find(a => a.id === action.academyId);
+      if (!academy || academy.level >= academy.maxLevel) return state;
+      if (!academy.unlocked) return state;
+
+      const cost = getAcademyUpgradeCost(academy);
+      if (state.resources.gold < cost.gold ||
+          state.resources.mana < cost.mana ||
+          state.resources.food < cost.food ||
+          state.resources.reputation < cost.reputation) return state;
+
+      const upgradeEvent: DailyEvent = {
+        type: 'academy_level_up',
+        message: `🏛️ 「${academy.name}」升级到 Lv.${academy.level + 1}！`,
+        academyId: academy.id,
+        academyName: academy.name,
+        value: academy.level + 1,
+      };
+      const dailyLog: DailyLog = { day: state.day, events: [upgradeEvent] };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        resources: {
+          gold: state.resources.gold - cost.gold,
+          mana: state.resources.mana - cost.mana,
+          food: state.resources.food - cost.food,
+          reputation: state.resources.reputation - cost.reputation,
+        },
+        mentorState: {
+          ...state.mentorState,
+          academies: state.mentorState.academies.map(a =>
+            a.id === action.academyId
+              ? { ...a, level: a.level + 1, maxMentors: a.maxMentors + (a.level % 2 === 0 ? 1 : 0) }
+              : a
+          ),
+        },
+      };
+    }
+
+    case 'UNLOCK_ACADEMY': {
+      const academy = state.mentorState.academies.find(a => a.id === action.academyId);
+      if (!academy || academy.unlocked) return state;
+      if (state.resources.reputation < academy.requiredReputation) return state;
+
+      const unlockCost: Resource = {
+        gold: 500 * (academy.type === 'mixed' ? 1.5 : 1),
+        mana: 300 * (academy.type === 'mixed' ? 1.5 : 1),
+        food: 100,
+        reputation: academy.requiredReputation,
+      };
+
+      if (state.resources.gold < unlockCost.gold ||
+          state.resources.mana < unlockCost.mana ||
+          state.resources.food < unlockCost.food) return state;
+
+      return {
+        ...state,
+        resources: {
+          gold: state.resources.gold - unlockCost.gold,
+          mana: state.resources.mana - unlockCost.mana,
+          food: state.resources.food - unlockCost.food,
+          reputation: state.resources.reputation - unlockCost.reputation,
+        },
+        mentorState: {
+          ...state.mentorState,
+          academies: state.mentorState.academies.map(a =>
+            a.id === action.academyId
+              ? { ...a, unlocked: true, level: 1 }
+              : a
+          ),
+        },
+      };
+    }
+
+    case 'UPDATE_MENTOR': {
+      return {
+        ...state,
+        mentorState: {
+          ...state.mentorState,
+          mentors: state.mentorState.mentors.map(m =>
+            m.id === action.mentor.id ? action.mentor : m
+          ),
+        },
+      };
+    }
+
     case 'NEXT_DAY': {
       const todayEvents: DailyEvent[] = [];
       const libraryLevel = state.buildings.find(b => b.id === 'library')?.level || 0;
@@ -3332,6 +3835,32 @@ interface GameContextType {
   canPlaceSellOrder: typeof canPlaceSellOrder;
   calculateShipmentDuration: typeof calculateShipmentDuration;
   calculateShipmentRisk: typeof calculateShipmentRisk;
+  recruitMentor: (optionId: string) => boolean;
+  refreshMentorPool: (useFree?: boolean) => boolean;
+  assignMentorToCourse: (mentorId: string, courseId: string) => boolean;
+  unassignMentorFromCourse: (mentorId: string, courseId: string) => void;
+  assignMentorToDungeon: (mentorId: string, dungeonId: string | null) => void;
+  addMentorExp: (mentorId: string, exp: number) => void;
+  upgradeMentorRank: (mentorId: string) => boolean;
+  upgradeMentorSpecialization: (mentorId: string, specializationId: SpecializationType, exp: number) => void;
+  unlockMentorSpecialization: (mentorId: string, specializationId: SpecializationType) => boolean;
+  assignMentorToAcademy: (mentorId: string, academyId: string | null) => boolean;
+  upgradeAcademy: (academyId: string) => boolean;
+  unlockAcademy: (academyId: string) => boolean;
+  updateMentor: (mentor: Mentor) => void;
+  calculateMentorCourseBonus: typeof calculateMentorCourseBonus;
+  calculateMentorDungeonBonus: typeof calculateMentorDungeonBonus;
+  calculateMentorPromotionBonus: typeof calculateMentorPromotionBonus;
+  canAssignMentorToCourse: typeof canAssignMentorToCourse;
+  canMentorLeadDungeon: typeof canMentorLeadDungeon;
+  getAcademyUpgradeCost: typeof getAcademyUpgradeCost;
+  getMentorRankExpRequirement: typeof getMentorRankExpRequirement;
+  getNextMentorRank: typeof getNextMentorRank;
+  getSpecializationExpRequirement: typeof getSpecializationExpRequirement;
+  MENTOR_QUALITY_NAMES: typeof MENTOR_QUALITY_NAMES;
+  MENTOR_QUALITY_COLORS: typeof MENTOR_QUALITY_COLORS;
+  MENTOR_RANK_NAMES: typeof MENTOR_RANK_NAMES;
+  getMentorQualityMultiplier: typeof getMentorQualityMultiplier;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -3847,6 +4376,151 @@ export function GameProvider({ children }: { children: ReactNode }) {
     return true;
   };
 
+  const recruitMentor = (optionId: string): boolean => {
+    const option = state.mentorState.recruitmentPool.currentOptions.find(o => o.id === optionId);
+    if (!option) return false;
+    if (state.mentorState.mentors.length >= state.mentorState.maxMentors) return false;
+    if (state.resources.reputation < option.requiredReputation) return false;
+    if (
+      state.resources.gold < option.cost.gold ||
+      state.resources.mana < option.cost.mana ||
+      state.resources.food < option.cost.food ||
+      state.resources.reputation < option.cost.reputation
+    ) {
+      return false;
+    }
+    dispatch({ type: 'RECRUIT_MENTOR', optionId });
+    autoSaveIfEnabled();
+    return true;
+  };
+
+  const refreshMentorPool = (useFree = false): boolean => {
+    const pool = state.mentorState.recruitmentPool;
+    if (useFree) {
+      if (pool.freeRefreshesUsed >= pool.freeRefreshesPerWeek) return false;
+    } else {
+      if (
+        state.resources.gold < pool.refreshCost.gold ||
+        state.resources.mana < pool.refreshCost.mana ||
+        state.resources.food < pool.refreshCost.food ||
+        state.resources.reputation < pool.refreshCost.reputation
+      ) {
+        return false;
+      }
+    }
+    dispatch({ type: 'REFRESH_MENTOR_POOL', useFree });
+    autoSaveIfEnabled();
+    return true;
+  };
+
+  const assignMentorToCourse = (mentorId: string, courseId: string): boolean => {
+    const mentor = state.mentorState.mentors.find(m => m.id === mentorId);
+    if (!mentor) return false;
+    const check = canAssignMentorToCourse(mentor, courseId);
+    if (!check.ok) return false;
+    dispatch({ type: 'ASSIGN_MENTOR_TO_COURSE', mentorId, courseId });
+    autoSaveIfEnabled();
+    return true;
+  };
+
+  const unassignMentorFromCourse = (mentorId: string, courseId: string) => {
+    dispatch({ type: 'UNASSIGN_MENTOR_FROM_COURSE', mentorId, courseId });
+    autoSaveIfEnabled();
+  };
+
+  const assignMentorToDungeon = (mentorId: string, dungeonId: string | null) => {
+    dispatch({ type: 'ASSIGN_MENTOR_TO_DUNGEON', mentorId, dungeonId });
+    autoSaveIfEnabled();
+  };
+
+  const addMentorExp = (mentorId: string, exp: number) => {
+    dispatch({ type: 'ADD_MENTOR_EXP', mentorId, exp });
+    autoSaveIfEnabled();
+  };
+
+  const upgradeMentorRank = (mentorId: string): boolean => {
+    const mentor = state.mentorState.mentors.find(m => m.id === mentorId);
+    if (!mentor) return false;
+    const nextRank = getNextMentorRank(mentor.rank);
+    if (!nextRank) return false;
+    if (mentor.exp < mentor.expToNextRank) return false;
+    dispatch({ type: 'UPGRADE_MENTOR_RANK', mentorId });
+    autoSaveIfEnabled();
+    return true;
+  };
+
+  const upgradeMentorSpecialization = (mentorId: string, specializationId: SpecializationType, exp: number) => {
+    dispatch({ type: 'UPGRADE_MENTOR_SPECIALIZATION', mentorId, specializationId, exp });
+    autoSaveIfEnabled();
+  };
+
+  const unlockMentorSpecialization = (mentorId: string, specializationId: SpecializationType): boolean => {
+    const mentor = state.mentorState.mentors.find(m => m.id === mentorId);
+    if (!mentor) return false;
+    if (mentor.specializations.some(s => s.id === specializationId)) return false;
+    dispatch({ type: 'UNLOCK_MENTOR_SPECIALIZATION', mentorId, specializationId });
+    autoSaveIfEnabled();
+    return true;
+  };
+
+  const assignMentorToAcademy = (mentorId: string, academyId: string | null): boolean => {
+    const mentor = state.mentorState.mentors.find(m => m.id === mentorId);
+    if (!mentor) return false;
+    if (academyId) {
+      const academy = state.mentorState.academies.find(a => a.id === academyId);
+      if (!academy || !academy.unlocked) return false;
+      const currentMentors = academy.mentors.filter(id => id !== mentorId);
+      if (currentMentors.length >= academy.maxMentors) return false;
+    }
+    dispatch({ type: 'ASSIGN_MENTOR_TO_ACADEMY', mentorId, academyId });
+    autoSaveIfEnabled();
+    return true;
+  };
+
+  const upgradeAcademy = (academyId: string): boolean => {
+    const academy = state.mentorState.academies.find(a => a.id === academyId);
+    if (!academy || academy.level >= academy.maxLevel || !academy.unlocked) return false;
+    const cost = getAcademyUpgradeCost(academy);
+    if (
+      state.resources.gold < cost.gold ||
+      state.resources.mana < cost.mana ||
+      state.resources.food < cost.food ||
+      state.resources.reputation < cost.reputation
+    ) {
+      return false;
+    }
+    dispatch({ type: 'UPGRADE_ACADEMY', academyId });
+    autoSaveIfEnabled();
+    return true;
+  };
+
+  const unlockAcademy = (academyId: string): boolean => {
+    const academy = state.mentorState.academies.find(a => a.id === academyId);
+    if (!academy || academy.unlocked) return false;
+    if (state.resources.reputation < academy.requiredReputation) return false;
+    const unlockCost: Resource = {
+      gold: 500 * (academy.type === 'mixed' ? 1.5 : 1),
+      mana: 300 * (academy.type === 'mixed' ? 1.5 : 1),
+      food: 100,
+      reputation: academy.requiredReputation,
+    };
+    if (
+      state.resources.gold < unlockCost.gold ||
+      state.resources.mana < unlockCost.mana ||
+      state.resources.food < unlockCost.food
+    ) {
+      return false;
+    }
+    dispatch({ type: 'UNLOCK_ACADEMY', academyId });
+    autoSaveIfEnabled();
+    return true;
+  };
+
+  const updateMentor = (mentor: Mentor) => {
+    dispatch({ type: 'UPDATE_MENTOR', mentor });
+    autoSaveIfEnabled();
+  };
+
   return (
     <GameContext.Provider value={{ 
       state, 
@@ -3951,6 +4625,32 @@ export function GameProvider({ children }: { children: ReactNode }) {
       canPlaceSellOrder,
       calculateShipmentDuration,
       calculateShipmentRisk,
+      recruitMentor,
+      refreshMentorPool,
+      assignMentorToCourse,
+      unassignMentorFromCourse,
+      assignMentorToDungeon,
+      addMentorExp,
+      upgradeMentorRank,
+      upgradeMentorSpecialization,
+      unlockMentorSpecialization,
+      assignMentorToAcademy,
+      upgradeAcademy,
+      unlockAcademy,
+      updateMentor,
+      calculateMentorCourseBonus,
+      calculateMentorDungeonBonus,
+      calculateMentorPromotionBonus,
+      canAssignMentorToCourse,
+      canMentorLeadDungeon,
+      getAcademyUpgradeCost,
+      getMentorRankExpRequirement,
+      getNextMentorRank,
+      getSpecializationExpRequirement,
+      MENTOR_QUALITY_NAMES,
+      MENTOR_QUALITY_COLORS,
+      MENTOR_RANK_NAMES,
+      getMentorQualityMultiplier,
     }}>
       {children}
     </GameContext.Provider>
