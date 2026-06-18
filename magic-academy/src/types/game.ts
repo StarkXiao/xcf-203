@@ -216,7 +216,7 @@ export interface Enemy {
   isBoss: boolean;
 }
 
-export const CURRENT_SAVE_VERSION = 13;
+export const CURRENT_SAVE_VERSION = 14;
 
 export type MentorQuality = 'common' | 'rare' | 'epic' | 'legendary';
 export type MentorRank = 'novice' | 'apprentice' | 'journeyman' | 'expert' | 'master' | 'grandmaster';
@@ -818,6 +818,7 @@ export interface GameState {
   mentorState: MentorState;
   alchemy: AlchemyState;
   eventCenter: EventCenterState;
+  kingdomCommission: KingdomCommissionState;
 }
 
 export interface CourseBenefitBreakdown {
@@ -839,7 +840,91 @@ export interface CourseBenefitBreakdown {
   potionSpeedBoost: number;
 }
 
-export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade' | 'alchemy' | 'eventCenter';
+export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade' | 'alchemy' | 'eventCenter' | 'kingdomCommission';
+
+export type CommissionType = 'course_training' | 'dungeon_dispatch' | 'resource_delivery' | 'comprehensive';
+export type CommissionDifficulty = 'easy' | 'normal' | 'hard' | 'epic' | 'legendary';
+export type CommissionStatus = 'available' | 'accepted' | 'in_progress' | 'stage_complete' | 'completed' | 'failed' | 'expired';
+export type CommissionStageType = 'course' | 'dungeon' | 'resource' | 'reputation';
+
+export interface CommissionStage {
+  id: string;
+  stageNumber: number;
+  name: string;
+  description: string;
+  type: CommissionStageType;
+  target: number;
+  current: number;
+  reward: Partial<Resource>;
+  completed: boolean;
+  claimed: boolean;
+  unlocked: boolean;
+  requiredReputation?: number;
+  courseId?: string;
+  courseCount?: number;
+  dungeonId?: string;
+  dungeonCount?: number;
+  resourceType?: keyof Resource;
+  resourceAmount?: number;
+  reputationTarget?: number;
+  daysLimit?: number;
+  daysRemaining?: number;
+}
+
+export interface KingdomCommission {
+  id: string;
+  name: string;
+  description: string;
+  type: CommissionType;
+  difficulty: CommissionDifficulty;
+  requiredAcademyLevel: number;
+  requiredReputation: number;
+  stages: CommissionStage[];
+  currentStage: number;
+  totalStages: number;
+  status: CommissionStatus;
+  overallReward: Partial<Resource>;
+  reputationReward: number;
+  acceptedAt: number | null;
+  completedAt: number | null;
+  expiresInDays?: number;
+  daysRemaining?: number;
+  assignedStudents: string[];
+  maxStudents: number;
+  commissionRank: number;
+}
+
+export interface KingdomCommissionState {
+  unlocked: boolean;
+  availableCommissions: KingdomCommission[];
+  activeCommissions: KingdomCommission[];
+  completedCommissions: KingdomCommission[];
+  failedCommissions: KingdomCommission[];
+  totalCommissionsCompleted: number;
+  totalReputationEarned: number;
+  currentRank: number;
+  bestRank: number;
+  rankPoints: number;
+  weeklyCommissionCount: number;
+  maxWeeklyCommissions: number;
+  lastRefreshDay: number;
+  refreshCost: Partial<Resource>;
+  commissionHistory: KingdomCommission[];
+  maxHistorySize: number;
+}
+
+export interface CommissionRankInfo {
+  rank: number;
+  name: string;
+  minPoints: number;
+  maxPoints: number;
+  description: string;
+  bonuses: {
+    commissionRewardBonus: number;
+    extraCommissionSlots: number;
+    reputationBonus: number;
+  };
+}
 
 export type AcademyEventRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 export type AcademyEventCategory = 'crisis' | 'opportunity' | 'discovery' | 'intrigue' | 'natural' | 'festival';

@@ -1,4 +1,4 @@
-import type { GameState, Resource, Dungeon, Student, Building, Course, DailyEvent, Teacher, SeasonSnapshot, EventCenterState } from '../types/game';
+import type { GameState, Resource, Dungeon, Student, Building, Course, DailyEvent, Teacher, SeasonSnapshot } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import {
   INITIAL_RESOURCES,
@@ -18,6 +18,7 @@ import {
   INITIAL_MENTOR_STATE,
   INITIAL_ALCHEMY_STATE,
   INITIAL_EVENT_CENTER_STATE,
+  INITIAL_KINGDOM_COMMISSION_STATE,
 } from './gameData';
 
 type SaveData = Record<string, unknown>;
@@ -490,6 +491,15 @@ function migrateV12ToV13(ctx: MigrationContext): SaveData {
   return data;
 }
 
+function migrateV13ToV14(ctx: MigrationContext): SaveData {
+  const data = { ...ctx.data };
+
+  data.kingdomCommission = { ...INITIAL_KINGDOM_COMMISSION_STATE };
+
+  data.saveVersion = 14;
+  return data;
+}
+
 const MIGRATION_CHAIN: Record<number, MigrationStep> = {
   0: migrateV0ToV1,
   1: migrateV1ToV2,
@@ -504,6 +514,7 @@ const MIGRATION_CHAIN: Record<number, MigrationStep> = {
   10: migrateV10ToV11,
   11: migrateV11ToV12,
   12: migrateV12ToV13,
+  13: migrateV13ToV14,
 };
 
 export function migrateSave(rawData: SaveData): GameState {
@@ -809,6 +820,10 @@ function normalizeToGameState(data: SaveData): GameState {
     ? { ...INITIAL_EVENT_CENTER_STATE, ...(data.eventCenter as Record<string, unknown>) }
     : INITIAL_EVENT_CENTER_STATE;
 
+  const kingdomCommission = data.kingdomCommission && typeof data.kingdomCommission === 'object'
+    ? { ...INITIAL_KINGDOM_COMMISSION_STATE, ...(data.kingdomCommission as Record<string, unknown>) }
+    : INITIAL_KINGDOM_COMMISSION_STATE;
+
   return {
     saveVersion: CURRENT_SAVE_VERSION,
     resources,
@@ -838,6 +853,7 @@ function normalizeToGameState(data: SaveData): GameState {
     mentorState,
     alchemy,
     eventCenter,
+    kingdomCommission,
   };
 }
 

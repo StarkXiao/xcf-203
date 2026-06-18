@@ -14,6 +14,8 @@ import AlchemyPanel from './AlchemyPanel';
 import './AlchemyPanel.css';
 import EventCenterPanel from './EventCenterPanel';
 import './EventCenterPanel.css';
+import KingdomCommissionPanel from './KingdomCommissionPanel';
+import './KingdomCommissionPanel.css';
 
 interface TabConfig {
   id: TabType;
@@ -29,6 +31,7 @@ const tabs: TabConfig[] = [
   { id: 'mentor', label: '导师养成', icon: '👨‍🏫' },
   { id: 'trade', label: '贸易港', icon: '🏛️' },
   { id: 'alchemy', label: '炼金工坊', icon: '⚗️' },
+  { id: 'kingdomCommission', label: '王国委托', icon: '🏰' },
   { id: 'goals', label: '目标任务', icon: '🎯' },
   { id: 'club', label: '魔法社团', icon: '🎭' },
   { id: 'season', label: '赛季系统', icon: '🏆' },
@@ -146,6 +149,7 @@ export default function MainLayout() {
         {activeTab === 'club' && <ClubPanel />}
         {activeTab === 'season' && <SeasonPanel />}
         {activeTab === 'eventCenter' && <EventCenterPanel />}
+        {activeTab === 'kingdomCommission' && <KingdomCommissionPanel />}
         {activeTab === 'settlement' && <SettlementModule setConfirmDialog={setConfirmDialog} />}
         {activeTab === 'records' && <RecordsModule />}
         {activeTab === 'settings' && <SettingsModule />}

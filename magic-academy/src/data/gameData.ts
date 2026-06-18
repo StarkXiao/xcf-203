@@ -1,4 +1,4 @@
-import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState } from '../types/game';
+import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState, KingdomCommission, CommissionStage, CommissionType, CommissionDifficulty, CommissionStageType, CommissionRankInfo, KingdomCommissionState } from '../types/game';
 import {
   HP_BATTLE_THRESHOLD,
   HP_COURSE_EFFICIENCY_THRESHOLD,
@@ -5438,7 +5438,7 @@ export function resolveEventChoice(
         food: (choice.resourceChange.food || 0) + (riskResource.food || 0),
         reputation: (choice.resourceChange.reputation || 0) + (riskResource.reputation || 0),
       },
-      moraleChange: choice.moraleChange + riskMorale,
+      moraleChange: (choice.moraleChange || 0) + riskMorale,
       staminaChange: (choice.staminaChange || 0) + riskStamina,
       hpChange: choice.hpChange || 0,
       wasRiskTriggered: true,
@@ -5502,4 +5502,624 @@ export const INITIAL_EVENT_CENTER_STATE: EventCenterState = {
   lastEventDay: 0,
   eventChance: 0.35,
   minDaysBetweenEvents: 3,
+};
+
+export const COMMISSION_RANK_INFO: CommissionRankInfo[] = [
+  {
+    rank: 1,
+    name: '新手学徒',
+    minPoints: 0,
+    maxPoints: 99,
+    description: '刚接触王国委托的新人',
+    bonuses: { commissionRewardBonus: 0, extraCommissionSlots: 0, reputationBonus: 0 },
+  },
+  {
+    rank: 2,
+    name: '正式冒险者',
+    minPoints: 100,
+    maxPoints: 299,
+    description: '积累了一定经验的冒险者',
+    bonuses: { commissionRewardBonus: 0.05, extraCommissionSlots: 1, reputationBonus: 5 },
+  },
+  {
+    rank: 3,
+    name: '精英调查员',
+    minPoints: 300,
+    maxPoints: 599,
+    description: '王国认可的精英人才',
+    bonuses: { commissionRewardBonus: 0.1, extraCommissionSlots: 2, reputationBonus: 10 },
+  },
+  {
+    rank: 4,
+    name: '皇家顾问',
+    minPoints: 600,
+    maxPoints: 999,
+    description: '皇室信赖的高级顾问',
+    bonuses: { commissionRewardBonus: 0.15, extraCommissionSlots: 3, reputationBonus: 20 },
+  },
+  {
+    rank: 5,
+    name: '传奇大师',
+    minPoints: 1000,
+    maxPoints: 9999,
+    description: '载入史册的传奇人物',
+    bonuses: { commissionRewardBonus: 0.25, extraCommissionSlots: 5, reputationBonus: 35 },
+  },
+];
+
+export const getCommissionRank = (points: number): CommissionRankInfo => {
+  for (let i = COMMISSION_RANK_INFO.length - 1; i >= 0; i--) {
+    if (points >= COMMISSION_RANK_INFO[i].minPoints) {
+      return COMMISSION_RANK_INFO[i];
+    }
+  }
+  return COMMISSION_RANK_INFO[0];
+};
+
+export const getNextCommissionRank = (points: number): CommissionRankInfo | null => {
+  const currentRank = getCommissionRank(points);
+  const nextIndex = COMMISSION_RANK_INFO.findIndex(r => r.rank === currentRank.rank) + 1;
+  return nextIndex < COMMISSION_RANK_INFO.length ? COMMISSION_RANK_INFO[nextIndex] : null;
+};
+
+export const COMMISSION_DIFFICULTY_MULTIPLIERS: Record<CommissionDifficulty, { reward: number; points: number; reputation: number }> = {
+  easy: { reward: 1, points: 10, reputation: 1 },
+  normal: { reward: 1.5, points: 25, reputation: 1.5 },
+  hard: { reward: 2.5, points: 50, reputation: 2 },
+  epic: { reward: 4, points: 100, reputation: 3 },
+  legendary: { reward: 7, points: 200, reputation: 5 },
+};
+
+export const COMMISSION_DIFFICULTY_NAMES: Record<CommissionDifficulty, string> = {
+  easy: '简单',
+  normal: '普通',
+  hard: '困难',
+  epic: '史诗',
+  legendary: '传说',
+};
+
+export const COMMISSION_DIFFICULTY_COLORS: Record<CommissionDifficulty, string> = {
+  easy: '#4CAF50',
+  normal: '#2196F3',
+  hard: '#FF9800',
+  epic: '#9C27B0',
+  legendary: '#FFD700',
+};
+
+export const COMMISSION_TYPE_NAMES: Record<CommissionType, string> = {
+  course_training: '课程培养',
+  dungeon_dispatch: '队伍派遣',
+  resource_delivery: '资源交付',
+  comprehensive: '综合委托',
+};
+
+export const COMMISSION_TYPE_ICONS: Record<CommissionType, string> = {
+  course_training: '📚',
+  dungeon_dispatch: '⚔️',
+  resource_delivery: '📦',
+  comprehensive: '🎯',
+};
+
+const generateCommissionId = (): string => {
+  return `commission_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+};
+
+const generateCommissionStageId = (commissionId: string, stageNum: number): string => {
+  return `${commissionId}_stage_${stageNum}`;
+};
+
+const COMMISSION_NAME_POOLS = {
+  course_training: [
+    '魔法学徒培养计划',
+    '精英法师特训',
+    '王国魔法人才输送',
+    '高级法术研修班',
+    '皇家法师储备计划',
+  ],
+  dungeon_dispatch: [
+    '边境清剿任务',
+    '遗迹探索委托',
+    '魔物讨伐令',
+    '深渊调查',
+    '远古秘境探险',
+  ],
+  resource_delivery: [
+    '魔力水晶采购',
+    '魔法药材征集',
+    '稀有材料收购',
+    '战略物资储备',
+    '皇家宝库补充',
+  ],
+  comprehensive: [
+    '学院综合评估',
+    '王国年度考核',
+    '魔法大赛筹备',
+    '边境支援任务',
+    '贤者试炼',
+  ],
+};
+
+const getRandomCommissionName = (type: CommissionType): string => {
+  const pool = COMMISSION_NAME_POOLS[type];
+  return pool[Math.floor(Math.random() * pool.length)];
+};
+
+const generateCourseStage = (
+  stageNum: number,
+  difficulty: CommissionDifficulty,
+  academyLevel: number
+): CommissionStage => {
+  const diffMult = COMMISSION_DIFFICULTY_MULTIPLIERS[difficulty];
+  const baseCount = Math.ceil((1 + stageNum) * diffMult.reward * 0.8);
+  const courseCount = Math.max(1, Math.min(baseCount + academyLevel, 10));
+  
+  return {
+    id: '',
+    stageNumber: stageNum,
+    name: `第${stageNum}阶段：课程学习`,
+    description: `完成${courseCount}门课程学习`,
+    type: 'course',
+    target: courseCount,
+    current: 0,
+    reward: {
+      gold: Math.floor(100 * diffMult.reward * (1 + stageNum * 0.3)),
+      mana: Math.floor(50 * diffMult.reward * (1 + stageNum * 0.3)),
+      reputation: Math.floor(5 * diffMult.reputation * (1 + stageNum * 0.2)),
+    },
+    completed: false,
+    claimed: false,
+    unlocked: stageNum === 1,
+    courseCount,
+  };
+};
+
+const generateDungeonStage = (
+  stageNum: number,
+  difficulty: CommissionDifficulty,
+  academyLevel: number
+): CommissionStage => {
+  const diffMult = COMMISSION_DIFFICULTY_MULTIPLIERS[difficulty];
+  const baseCount = Math.ceil((1 + stageNum * 0.5) * diffMult.reward * 0.6);
+  const dungeonCount = Math.max(1, Math.min(baseCount + Math.floor(academyLevel / 2), 5));
+  
+  return {
+    id: '',
+    stageNumber: stageNum,
+    name: `第${stageNum}阶段：副本挑战`,
+    description: `完成${dungeonCount}次副本挑战`,
+    type: 'dungeon',
+    target: dungeonCount,
+    current: 0,
+    reward: {
+      gold: Math.floor(150 * diffMult.reward * (1 + stageNum * 0.4)),
+      mana: Math.floor(80 * diffMult.reward * (1 + stageNum * 0.4)),
+      reputation: Math.floor(8 * diffMult.reputation * (1 + stageNum * 0.3)),
+    },
+    completed: false,
+    claimed: false,
+    unlocked: stageNum === 1,
+    dungeonCount,
+  };
+};
+
+const generateResourceStage = (
+  stageNum: number,
+  difficulty: CommissionDifficulty,
+  academyLevel: number
+): CommissionStage => {
+  const diffMult = COMMISSION_DIFFICULTY_MULTIPLIERS[difficulty];
+  const resourceTypes: (keyof Resource)[] = ['gold', 'mana', 'food'];
+  const resourceType = resourceTypes[Math.floor(Math.random() * resourceTypes.length)];
+  const baseAmount = Math.ceil(100 * diffMult.reward * (1 + stageNum * 0.5) * (1 + academyLevel * 0.1));
+  const resourceAmount = Math.floor(baseAmount);
+  
+  const resourceNames: Record<keyof Resource, string> = {
+    gold: '金币',
+    mana: '魔力',
+    food: '食物',
+    reputation: '声望',
+  };
+  
+  return {
+    id: '',
+    stageNumber: stageNum,
+    name: `第${stageNum}阶段：资源缴纳`,
+    description: `缴纳${resourceAmount}${resourceNames[resourceType]}`,
+    type: 'resource',
+    target: resourceAmount,
+    current: 0,
+    reward: {
+      gold: resourceType === 'gold' ? Math.floor(resourceAmount * 0.5) : Math.floor(80 * diffMult.reward),
+      mana: resourceType === 'mana' ? Math.floor(resourceAmount * 0.5) : Math.floor(40 * diffMult.reward),
+      food: resourceType === 'food' ? Math.floor(resourceAmount * 0.5) : Math.floor(20 * diffMult.reward),
+      reputation: Math.floor(10 * diffMult.reputation * (1 + stageNum * 0.2)),
+    },
+    completed: false,
+    claimed: false,
+    unlocked: stageNum === 1,
+    resourceType,
+    resourceAmount,
+  };
+};
+
+const generateReputationStage = (
+  stageNum: number,
+  difficulty: CommissionDifficulty,
+  academyLevel: number
+): CommissionStage => {
+  const diffMult = COMMISSION_DIFFICULTY_MULTIPLIERS[difficulty];
+  const target = Math.ceil(50 * diffMult.reputation * (1 + stageNum * 0.4) * (1 + academyLevel * 0.05));
+  
+  return {
+    id: '',
+    stageNumber: stageNum,
+    name: `第${stageNum}阶段：声望积累`,
+    description: `累计获得${target}点声望`,
+    type: 'reputation',
+    target,
+    current: 0,
+    reward: {
+      gold: Math.floor(200 * diffMult.reward * (1 + stageNum * 0.3)),
+      mana: Math.floor(100 * diffMult.reward * (1 + stageNum * 0.3)),
+      food: Math.floor(30 * diffMult.reward * (1 + stageNum * 0.3)),
+      reputation: Math.floor(15 * diffMult.reputation),
+    },
+    completed: false,
+    claimed: false,
+    unlocked: stageNum === 1,
+    reputationTarget: target,
+  };
+};
+
+const generateStages = (
+  type: CommissionType,
+  difficulty: CommissionDifficulty,
+  academyLevel: number,
+  stageCount: number
+): CommissionStage[] => {
+  const stages: CommissionStage[] = [];
+  const stageGenerators: ((stageNum: number, difficulty: CommissionDifficulty, academyLevel: number) => CommissionStage)[] = [];
+  
+  switch (type) {
+    case 'course_training':
+      for (let i = 0; i < stageCount; i++) {
+        stageGenerators.push(generateCourseStage);
+      }
+      break;
+    case 'dungeon_dispatch':
+      for (let i = 0; i < stageCount; i++) {
+        stageGenerators.push(generateDungeonStage);
+      }
+      break;
+    case 'resource_delivery':
+      for (let i = 0; i < stageCount; i++) {
+        stageGenerators.push(generateResourceStage);
+      }
+      break;
+    case 'comprehensive':
+      const allGenerators = [generateCourseStage, generateDungeonStage, generateResourceStage, generateReputationStage];
+      for (let i = 0; i < stageCount; i++) {
+        stageGenerators.push(allGenerators[i % allGenerators.length]);
+      }
+      break;
+  }
+  
+  for (let i = 0; i < stageCount; i++) {
+    const generator = stageGenerators[i % stageGenerators.length];
+    stages.push(generator(i + 1, difficulty, academyLevel));
+  }
+  
+  return stages;
+};
+
+export const generateCommission = (
+  type: CommissionType,
+  difficulty: CommissionDifficulty,
+  academyLevel: number,
+  reputation: number
+): KingdomCommission | null => {
+  const diffMult = COMMISSION_DIFFICULTY_MULTIPLIERS[difficulty];
+  const minReputation = Math.floor(20 * diffMult.reputation);
+  
+  if (reputation < minReputation) {
+    return null;
+  }
+  
+  const stageCount = difficulty === 'easy' ? 2 : difficulty === 'normal' ? 3 : difficulty === 'hard' ? 4 : difficulty === 'epic' ? 5 : 6;
+  const id = generateCommissionId();
+  const stages = generateStages(type, difficulty, academyLevel, stageCount).map((stage, index) => ({
+    ...stage,
+    id: generateCommissionStageId(id, index + 1),
+  }));
+  
+  const overallReward: Partial<Resource> = {
+    gold: Math.floor(300 * diffMult.reward * (1 + academyLevel * 0.1)),
+    mana: Math.floor(150 * diffMult.reward * (1 + academyLevel * 0.1)),
+    food: Math.floor(50 * diffMult.reward * (1 + academyLevel * 0.1)),
+  };
+  
+  const reputationReward = Math.floor(30 * diffMult.reputation * (1 + academyLevel * 0.05));
+  const maxStudents = difficulty === 'easy' ? 2 : difficulty === 'normal' ? 3 : difficulty === 'hard' ? 4 : difficulty === 'epic' ? 5 : 6;
+  
+  return {
+    id,
+    name: getRandomCommissionName(type),
+    description: `王国发布的${COMMISSION_DIFFICULTY_NAMES[difficulty]}难度${COMMISSION_TYPE_NAMES[type]}委托，完成所有阶段可获得丰厚奖励。`,
+    type,
+    difficulty,
+    requiredAcademyLevel: academyLevel,
+    requiredReputation: minReputation,
+    stages,
+    currentStage: 1,
+    totalStages: stageCount,
+    status: 'available',
+    overallReward,
+    reputationReward,
+    acceptedAt: null,
+    completedAt: null,
+    expiresInDays: Math.floor(7 + stageCount * 3),
+    daysRemaining: Math.floor(7 + stageCount * 3),
+    assignedStudents: [],
+    maxStudents,
+    commissionRank: getCommissionRank(reputation).rank,
+  };
+};
+
+export const generateAvailableCommissions = (
+  academyLevel: number,
+  reputation: number,
+  count: number = 5
+): KingdomCommission[] => {
+  const commissions: KingdomCommission[] = [];
+  const types: CommissionType[] = ['course_training', 'dungeon_dispatch', 'resource_delivery', 'comprehensive'];
+  const difficulties: CommissionDifficulty[] = ['easy', 'normal', 'hard', 'epic', 'legendary'];
+  
+  const maxDifficultyIndex = Math.min(
+    Math.floor(academyLevel / 3),
+    difficulties.length - 1
+  );
+  
+  for (let i = 0; i < count; i++) {
+    const type = types[Math.floor(Math.random() * types.length)];
+    const diffIndex = Math.min(
+      Math.floor(Math.random() * (maxDifficultyIndex + 2)),
+      maxDifficultyIndex
+    );
+    const difficulty = difficulties[Math.max(0, diffIndex)];
+    
+    const commission = generateCommission(type, difficulty, academyLevel, reputation);
+    if (commission) {
+      commissions.push(commission);
+    }
+  }
+  
+  return commissions;
+};
+
+export const calculateCommissionPoints = (
+  difficulty: CommissionDifficulty,
+  stagesCompleted: number,
+  totalStages: number
+): number => {
+  const basePoints = COMMISSION_DIFFICULTY_MULTIPLIERS[difficulty].points;
+  const completionRatio = stagesCompleted / totalStages;
+  return Math.floor(basePoints * completionRatio * (0.5 + completionRatio * 0.5));
+};
+
+export const canAcceptCommission = (
+  commission: KingdomCommission,
+  reputation: number,
+  activeCount: number,
+  maxActive: number
+): boolean => {
+  return (
+    reputation >= commission.requiredReputation &&
+    activeCount < maxActive &&
+    commission.status === 'available'
+  );
+};
+
+export const updateCommissionStageProgress = (
+  commissions: KingdomCommission[],
+  stageType: CommissionStageType,
+  amount: number = 1,
+  resourceType?: keyof Resource
+): { updated: KingdomCommission[]; completedStages: string[]; completedCommissions: string[] } => {
+  const completedStages: string[] = [];
+  const completedCommissions: string[] = [];
+  
+  const updated = commissions.map(commission => {
+    if (commission.status !== 'in_progress' && commission.status !== 'accepted') {
+      return commission;
+    }
+    
+    const updatedStages = commission.stages.map(stage => {
+      if (!stage.unlocked || stage.completed) {
+        return stage;
+      }
+      
+      if (stage.type !== stageType) {
+        return stage;
+      }
+      
+      if (stageType === 'resource' && resourceType && stage.resourceType !== resourceType) {
+        return stage;
+      }
+      
+      const newCurrent = Math.min(stage.current + amount, stage.target);
+      const wasCompleted = stage.completed;
+      const isCompleted = newCurrent >= stage.target;
+      
+      if (isCompleted && !wasCompleted) {
+        completedStages.push(stage.id);
+      }
+      
+      return {
+        ...stage,
+        current: newCurrent,
+        completed: isCompleted,
+      };
+    });
+    
+    const allCompleted = updatedStages.every(s => s.completed);
+    const newStatus = allCompleted ? 'stage_complete' as const : 'in_progress' as const;
+    
+    if (allCompleted) {
+      completedCommissions.push(commission.id);
+    }
+    
+    const currentStageIndex = updatedStages.findIndex(s => !s.completed);
+    const newCurrentStage = currentStageIndex === -1 ? commission.totalStages : currentStageIndex + 1;
+    
+    const finalStages = updatedStages.map((stage, index) => {
+      if (stage.unlocked) return stage;
+      
+      const prevStage = updatedStages[index - 1];
+      if (prevStage && prevStage.completed) {
+        return { ...stage, unlocked: true };
+      }
+      return stage;
+    });
+    
+    return {
+      ...commission,
+      stages: finalStages,
+      currentStage: newCurrentStage,
+      status: newStatus,
+    };
+  });
+  
+  return { updated, completedStages, completedCommissions };
+};
+
+export const deliverCommissionResource = (
+  commission: KingdomCommission,
+  stageId: string,
+  resources: Resource
+): { updatedCommission: KingdomCommission; delivered: boolean; cost: Partial<Resource> } => {
+  const stage = commission.stages.find(s => s.id === stageId);
+  
+  if (!stage || stage.type !== 'resource' || !stage.resourceType || stage.completed) {
+    return { updatedCommission: commission, delivered: false, cost: {} };
+  }
+  
+  const remaining = stage.target - stage.current;
+  const available = resources[stage.resourceType];
+  const deliverAmount = Math.min(remaining, available);
+  
+  if (deliverAmount <= 0) {
+    return { updatedCommission: commission, delivered: false, cost: {} };
+  }
+  
+  const updatedStages = commission.stages.map(s => {
+    if (s.id !== stageId) return s;
+    const newCurrent = Math.min(s.current + deliverAmount, s.target);
+    return {
+      ...s,
+      current: newCurrent,
+      completed: newCurrent >= s.target,
+    };
+  });
+  
+  const allCompleted = updatedStages.every(s => s.completed);
+  
+  const cost: Partial<Resource> = {
+    [stage.resourceType]: deliverAmount,
+  };
+  
+  return {
+    updatedCommission: {
+      ...commission,
+      stages: updatedStages,
+      status: allCompleted ? 'stage_complete' : commission.status,
+      currentStage: allCompleted ? commission.totalStages : commission.currentStage,
+    },
+    delivered: true,
+    cost,
+  };
+};
+
+export const claimStageReward = (
+  commission: KingdomCommission,
+  stageId: string
+): { updatedCommission: KingdomCommission; reward: Partial<Resource> } => {
+  const stage = commission.stages.find(s => s.id === stageId);
+  
+  if (!stage || !stage.completed || stage.claimed) {
+    return { updatedCommission: commission, reward: {} };
+  }
+  
+  const updatedStages = commission.stages.map(s => {
+    if (s.id !== stageId) return s;
+    return { ...s, claimed: true };
+  });
+  
+  return {
+    updatedCommission: {
+      ...commission,
+      stages: updatedStages,
+    },
+    reward: stage.reward,
+  };
+};
+
+export const claimCommissionReward = (
+  commission: KingdomCommission
+): { updatedCommission: KingdomCommission; reward: Partial<Resource>; reputation: number; points: number } => {
+  if (commission.status !== 'stage_complete') {
+    return { updatedCommission: commission, reward: {}, reputation: 0, points: 0 };
+  }
+  
+  const points = calculateCommissionPoints(commission.difficulty, commission.totalStages, commission.totalStages);
+  
+  return {
+    updatedCommission: {
+      ...commission,
+      status: 'completed',
+      completedAt: Date.now(),
+    },
+    reward: commission.overallReward,
+    reputation: commission.reputationReward,
+    points,
+  };
+};
+
+export const getMaxActiveCommissions = (rank: CommissionRankInfo, baseMax: number = 3): number => {
+  return baseMax + rank.bonuses.extraCommissionSlots;
+};
+
+export const applyCommissionRewardBonus = (
+  reward: Partial<Resource>,
+  rank: CommissionRankInfo
+): Partial<Resource> => {
+  const bonus = rank.bonuses.commissionRewardBonus;
+  const result: Partial<Resource> = {};
+  
+  (Object.keys(reward) as (keyof Resource)[]).forEach(key => {
+    const value = reward[key];
+    if (value !== undefined) {
+      result[key] = Math.floor(value * (1 + bonus));
+    }
+  });
+  
+  return result;
+};
+
+export const INITIAL_KINGDOM_COMMISSION_STATE: KingdomCommissionState = {
+  unlocked: false,
+  availableCommissions: [],
+  activeCommissions: [],
+  completedCommissions: [],
+  failedCommissions: [],
+  totalCommissionsCompleted: 0,
+  totalReputationEarned: 0,
+  currentRank: 1,
+  bestRank: 1,
+  rankPoints: 0,
+  weeklyCommissionCount: 0,
+  maxWeeklyCommissions: 10,
+  lastRefreshDay: 0,
+  refreshCost: { gold: 100, reputation: 10 },
+  commissionHistory: [],
+  maxHistorySize: 50,
 };

@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff, AcademyEventDefinition, EventCenterState } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff, AcademyEventDefinition, KingdomCommission, CommissionStageType } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -146,6 +146,21 @@ import {
   EVENT_RARITY_NAMES,
   EVENT_CATEGORY_ICONS,
   EVENT_CATEGORY_NAMES,
+  INITIAL_KINGDOM_COMMISSION_STATE,
+  COMMISSION_RANK_INFO,
+  COMMISSION_DIFFICULTY_NAMES,
+  COMMISSION_DIFFICULTY_COLORS,
+  COMMISSION_TYPE_NAMES,
+  COMMISSION_TYPE_ICONS,
+  getCommissionRank,
+  getNextCommissionRank,
+  generateAvailableCommissions,
+  updateCommissionStageProgress,
+  deliverCommissionResource,
+  claimStageReward,
+  claimCommissionReward,
+  getMaxActiveCommissions,
+  applyCommissionRewardBonus,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -239,7 +254,17 @@ type GameAction =
   | { type: 'TRIGGER_EVENT_CENTER'; event: AcademyEventDefinition }
   | { type: 'RESOLVE_EVENT_CENTER'; choiceId: string }
   | { type: 'DISMISS_EVENT_CENTER' }
-  | { type: 'CLAIM_EVENT_REWARD' };
+  | { type: 'CLAIM_EVENT_REWARD' }
+  | { type: 'UNLOCK_KINGDOM_COMMISSION' }
+  | { type: 'REFRESH_AVAILABLE_COMMISSIONS' }
+  | { type: 'ACCEPT_COMMISSION'; commissionId: string }
+  | { type: 'ABANDON_COMMISSION'; commissionId: string }
+  | { type: 'UPDATE_COMMISSION_PROGRESS'; stageType: CommissionStageType; amount?: number; resourceType?: keyof Resource }
+  | { type: 'DELIVER_COMMISSION_RESOURCE'; commissionId: string; stageId: string }
+  | { type: 'CLAIM_COMMISSION_STAGE_REWARD'; commissionId: string; stageId: string }
+  | { type: 'CLAIM_COMMISSION_REWARD'; commissionId: string }
+  | { type: 'ASSIGN_STUDENT_TO_COMMISSION'; commissionId: string; studentId: string }
+  | { type: 'UNASSIGN_STUDENT_FROM_COMMISSION'; commissionId: string; studentId: string };
 
 const MAX_STUDENT_CAPACITY = 20;
 
@@ -300,6 +325,7 @@ const initialState: GameState = {
   mentorState: INITIAL_MENTOR_STATE,
   alchemy: INITIAL_ALCHEMY_STATE,
   eventCenter: INITIAL_EVENT_CENTER_STATE,
+  kingdomCommission: INITIAL_KINGDOM_COMMISSION_STATE,
 };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -4901,6 +4927,331 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
+    case 'UNLOCK_KINGDOM_COMMISSION': {
+      if (state.kingdomCommission.unlocked) return state;
+      
+      const academyLevel = 1;
+      const initialCommissions = generateAvailableCommissions(academyLevel, state.resources.reputation, 5);
+      
+      return {
+        ...state,
+        kingdomCommission: {
+          ...state.kingdomCommission,
+          unlocked: true,
+          availableCommissions: initialCommissions,
+          lastRefreshDay: state.day,
+        },
+      };
+    }
+
+    case 'REFRESH_AVAILABLE_COMMISSIONS': {
+      const kc = state.kingdomCommission;
+      if (!kc.unlocked) return state;
+      
+      const refreshCost = kc.refreshCost;
+      if (state.resources.gold < (refreshCost.gold || 0) || 
+          state.resources.reputation < (refreshCost.reputation || 0)) {
+        return state;
+      }
+      
+      const academyLevel = Math.floor(state.resources.reputation / 100) + 1;
+      const newCommissions = generateAvailableCommissions(academyLevel, state.resources.reputation, 5);
+      
+      return {
+        ...state,
+        resources: {
+          ...state.resources,
+          gold: state.resources.gold - (refreshCost.gold || 0),
+          reputation: state.resources.reputation - (refreshCost.reputation || 0),
+        },
+        kingdomCommission: {
+          ...kc,
+          availableCommissions: newCommissions,
+          lastRefreshDay: state.day,
+        },
+      };
+    }
+
+    case 'ACCEPT_COMMISSION': {
+      const kc = state.kingdomCommission;
+      const commission = kc.availableCommissions.find(c => c.id === action.commissionId);
+      
+      if (!commission || !kc.unlocked) return state;
+      
+      const currentRank = getCommissionRank(kc.rankPoints);
+      const maxActive = getMaxActiveCommissions(currentRank);
+      
+      if (kc.activeCommissions.length >= maxActive) return state;
+      if (state.resources.reputation < commission.requiredReputation) return state;
+      
+      const acceptedCommission: KingdomCommission = {
+        ...commission,
+        status: 'in_progress',
+        acceptedAt: state.day,
+      };
+      
+      return {
+        ...state,
+        kingdomCommission: {
+          ...kc,
+          availableCommissions: kc.availableCommissions.filter(c => c.id !== action.commissionId),
+          activeCommissions: [...kc.activeCommissions, acceptedCommission],
+        },
+      };
+    }
+
+    case 'ABANDON_COMMISSION': {
+      const kc = state.kingdomCommission;
+      const commission = kc.activeCommissions.find(c => c.id === action.commissionId);
+      
+      if (!commission || !kc.unlocked) return state;
+      
+      return {
+        ...state,
+        kingdomCommission: {
+          ...kc,
+          activeCommissions: kc.activeCommissions.filter(c => c.id !== action.commissionId),
+          failedCommissions: [...kc.failedCommissions, { ...commission, status: 'failed' }],
+        },
+      };
+    }
+
+    case 'UPDATE_COMMISSION_PROGRESS': {
+      const kc = state.kingdomCommission;
+      if (!kc.unlocked || kc.activeCommissions.length === 0) return state;
+      
+      const { updated, completedStages, completedCommissions } = updateCommissionStageProgress(
+        kc.activeCommissions,
+        action.stageType,
+        action.amount,
+        action.resourceType
+      );
+      
+      if (completedStages.length === 0 && completedCommissions.length === 0) {
+        return {
+          ...state,
+          kingdomCommission: { ...kc, activeCommissions: updated },
+        };
+      }
+      
+      const completedCommList = updated.filter(c => c.status === 'stage_complete');
+      const stillActive = updated.filter(c => c.status !== 'stage_complete');
+      
+      return {
+        ...state,
+        kingdomCommission: {
+          ...kc,
+          activeCommissions: stillActive,
+          completedCommissions: [...kc.completedCommissions, ...completedCommList],
+        },
+      };
+    }
+
+    case 'DELIVER_COMMISSION_RESOURCE': {
+      const kc = state.kingdomCommission;
+      if (!kc.unlocked) return state;
+      
+      const commissionIndex = kc.activeCommissions.findIndex(c => c.id === action.commissionId);
+      if (commissionIndex === -1) return state;
+      
+      const commission = kc.activeCommissions[commissionIndex];
+      const { updatedCommission, delivered, cost } = deliverCommissionResource(
+        commission,
+        action.stageId,
+        state.resources
+      );
+      
+      if (!delivered) return state;
+      
+      const newActiveCommissions = [...kc.activeCommissions];
+      newActiveCommissions[commissionIndex] = updatedCommission;
+      
+      let finalActiveCommissions = newActiveCommissions;
+      let newCompletedCommissions = kc.completedCommissions;
+      
+      if (updatedCommission.status === 'stage_complete') {
+        finalActiveCommissions = newActiveCommissions.filter(c => c.id !== action.commissionId);
+        newCompletedCommissions = [...kc.completedCommissions, updatedCommission];
+      }
+      
+      const newResources = { ...state.resources };
+      (Object.keys(cost) as (keyof Resource)[]).forEach(key => {
+        const value = cost[key];
+        if (value !== undefined) {
+          newResources[key] = newResources[key] - value;
+        }
+      });
+      
+      return {
+        ...state,
+        resources: newResources,
+        kingdomCommission: {
+          ...kc,
+          activeCommissions: finalActiveCommissions,
+          completedCommissions: newCompletedCommissions,
+        },
+      };
+    }
+
+    case 'CLAIM_COMMISSION_STAGE_REWARD': {
+      const kc = state.kingdomCommission;
+      if (!kc.unlocked) return state;
+      
+      const commissionIndex = kc.activeCommissions.findIndex(c => c.id === action.commissionId);
+      if (commissionIndex === -1) return state;
+      
+      const commission = kc.activeCommissions[commissionIndex];
+      const { updatedCommission, reward } = claimStageReward(commission, action.stageId);
+      
+      if (Object.keys(reward).length === 0) return state;
+      
+      const currentRank = getCommissionRank(kc.rankPoints);
+      const bonusReward = applyCommissionRewardBonus(reward, currentRank);
+      
+      const newActiveCommissions = [...kc.activeCommissions];
+      newActiveCommissions[commissionIndex] = updatedCommission;
+      
+      const newResources = { ...state.resources };
+      (Object.keys(bonusReward) as (keyof Resource)[]).forEach(key => {
+        const value = bonusReward[key];
+        if (value !== undefined) {
+          newResources[key] = newResources[key] + value;
+        }
+      });
+      
+      return {
+        ...state,
+        resources: newResources,
+        kingdomCommission: {
+          ...kc,
+          activeCommissions: newActiveCommissions,
+        },
+      };
+    }
+
+    case 'CLAIM_COMMISSION_REWARD': {
+      const kc = state.kingdomCommission;
+      if (!kc.unlocked) return state;
+      
+      const commissionIndex = kc.completedCommissions.findIndex(c => c.id === action.commissionId);
+      if (commissionIndex === -1) return state;
+      
+      const commission = kc.completedCommissions[commissionIndex];
+      const { updatedCommission, reward, reputation, points } = claimCommissionReward(commission);
+      
+      if (points === 0) return state;
+      
+      const currentRank = getCommissionRank(kc.rankPoints);
+      const bonusReward = applyCommissionRewardBonus(reward, currentRank);
+      const bonusReputation = Math.floor(reputation * (1 + currentRank.bonuses.reputationBonus / 100));
+      
+      const newRankPoints = kc.rankPoints + points;
+      const newRank = getCommissionRank(newRankPoints);
+      const newBestRank = Math.max(kc.bestRank, newRank.rank);
+      
+      const newResources = { ...state.resources };
+      (Object.keys(bonusReward) as (keyof Resource)[]).forEach(key => {
+        const value = bonusReward[key];
+        if (value !== undefined) {
+          newResources[key] = newResources[key] + value;
+        }
+      });
+      newResources.reputation += bonusReputation;
+      
+      const claimLog: DailyEvent = {
+        type: 'warning',
+        message: `🏆 完成委托「${commission.name}」：获得${Object.entries(bonusReward)
+          .filter(([_, v]) => v && v > 0)
+          .map(([k, v]) => {
+            const icons: Record<string, string> = { gold: '💰', mana: '🔮', food: '🍖', reputation: '⭐' };
+            return `${icons[k] || ''}${v}`;
+          })
+          .join(' ')} ⭐+${bonusReputation}声望 📈+${points}积分`,
+      };
+      
+      const recentLogs = [...state.dailyLogs];
+      if (recentLogs.length > 0 && recentLogs[recentLogs.length - 1].day === state.day) {
+        recentLogs[recentLogs.length - 1].events.push(claimLog);
+      } else {
+        recentLogs.push({ day: state.day, events: [claimLog] });
+      }
+      const finalLogs = recentLogs.slice(-30);
+      
+      const newHistory = [...kc.commissionHistory, updatedCommission];
+      const finalHistory = newHistory.slice(-kc.maxHistorySize);
+      
+      return {
+        ...state,
+        resources: newResources,
+        dailyLogs: finalLogs,
+        kingdomCommission: {
+          ...kc,
+          completedCommissions: kc.completedCommissions.filter((_, i) => i !== commissionIndex),
+          totalCommissionsCompleted: kc.totalCommissionsCompleted + 1,
+          totalReputationEarned: kc.totalReputationEarned + bonusReputation,
+          currentRank: newRank.rank,
+          bestRank: newBestRank,
+          rankPoints: newRankPoints,
+          weeklyCommissionCount: kc.weeklyCommissionCount + 1,
+          commissionHistory: finalHistory,
+        },
+      };
+    }
+
+    case 'ASSIGN_STUDENT_TO_COMMISSION': {
+      const kc = state.kingdomCommission;
+      if (!kc.unlocked) return state;
+      
+      const commissionIndex = kc.activeCommissions.findIndex(c => c.id === action.commissionId);
+      if (commissionIndex === -1) return state;
+      
+      const commission = kc.activeCommissions[commissionIndex];
+      if (commission.assignedStudents.length >= commission.maxStudents) return state;
+      if (commission.assignedStudents.includes(action.studentId)) return state;
+      
+      const student = state.students.find(s => s.id === action.studentId);
+      if (!student || student.status !== 'idle') return state;
+      
+      const newActiveCommissions = [...kc.activeCommissions];
+      newActiveCommissions[commissionIndex] = {
+        ...commission,
+        assignedStudents: [...commission.assignedStudents, action.studentId],
+      };
+      
+      return {
+        ...state,
+        kingdomCommission: {
+          ...kc,
+          activeCommissions: newActiveCommissions,
+        },
+      };
+    }
+
+    case 'UNASSIGN_STUDENT_FROM_COMMISSION': {
+      const kc = state.kingdomCommission;
+      if (!kc.unlocked) return state;
+      
+      const commissionIndex = kc.activeCommissions.findIndex(c => c.id === action.commissionId);
+      if (commissionIndex === -1) return state;
+      
+      const commission = kc.activeCommissions[commissionIndex];
+      if (!commission.assignedStudents.includes(action.studentId)) return state;
+      
+      const newActiveCommissions = [...kc.activeCommissions];
+      newActiveCommissions[commissionIndex] = {
+        ...commission,
+        assignedStudents: commission.assignedStudents.filter(id => id !== action.studentId),
+      };
+      
+      return {
+        ...state,
+        kingdomCommission: {
+          ...kc,
+          activeCommissions: newActiveCommissions,
+        },
+      };
+    }
+
     default:
       return state;
   }
@@ -5061,6 +5412,24 @@ interface GameContextType {
   EVENT_RARITY_NAMES: typeof EVENT_RARITY_NAMES;
   EVENT_CATEGORY_ICONS: typeof EVENT_CATEGORY_ICONS;
   EVENT_CATEGORY_NAMES: typeof EVENT_CATEGORY_NAMES;
+  unlockKingdomCommission: () => void;
+  refreshAvailableCommissions: () => void;
+  acceptCommission: (commissionId: string) => boolean;
+  abandonCommission: (commissionId: string) => void;
+  deliverCommissionResource: (commissionId: string, stageId: string) => boolean;
+  claimCommissionStageReward: (commissionId: string, stageId: string) => void;
+  claimCommissionReward: (commissionId: string) => void;
+  assignStudentToCommission: (commissionId: string, studentId: string) => boolean;
+  unassignStudentFromCommission: (commissionId: string, studentId: string) => void;
+  getCommissionRank: typeof getCommissionRank;
+  getNextCommissionRank: typeof getNextCommissionRank;
+  getMaxActiveCommissions: typeof getMaxActiveCommissions;
+  applyCommissionRewardBonus: typeof applyCommissionRewardBonus;
+  COMMISSION_RANK_INFO: typeof COMMISSION_RANK_INFO;
+  COMMISSION_DIFFICULTY_NAMES: typeof COMMISSION_DIFFICULTY_NAMES;
+  COMMISSION_DIFFICULTY_COLORS: typeof COMMISSION_DIFFICULTY_COLORS;
+  COMMISSION_TYPE_NAMES: typeof COMMISSION_TYPE_NAMES;
+  COMMISSION_TYPE_ICONS: typeof COMMISSION_TYPE_ICONS;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -5915,6 +6284,55 @@ export function GameProvider({ children }: { children: ReactNode }) {
       EVENT_RARITY_NAMES,
       EVENT_CATEGORY_ICONS,
       EVENT_CATEGORY_NAMES,
+      unlockKingdomCommission: () => dispatch({ type: 'UNLOCK_KINGDOM_COMMISSION' }),
+      refreshAvailableCommissions: () => dispatch({ type: 'REFRESH_AVAILABLE_COMMISSIONS' }),
+      acceptCommission: (commissionId: string) => {
+        const kc = state.kingdomCommission;
+        const commission = kc.availableCommissions.find(c => c.id === commissionId);
+        if (!commission) return false;
+        const currentRank = getCommissionRank(kc.rankPoints);
+        const maxActive = getMaxActiveCommissions(currentRank);
+        if (kc.activeCommissions.length >= maxActive) return false;
+        if (state.resources.reputation < commission.requiredReputation) return false;
+        dispatch({ type: 'ACCEPT_COMMISSION', commissionId });
+        return true;
+      },
+      abandonCommission: (commissionId: string) => dispatch({ type: 'ABANDON_COMMISSION', commissionId }),
+      deliverCommissionResource: (commissionId: string, stageId: string) => {
+        const kc = state.kingdomCommission;
+        const commission = kc.activeCommissions.find(c => c.id === commissionId);
+        if (!commission) return false;
+        const stage = commission.stages.find(s => s.id === stageId);
+        if (!stage || stage.type !== 'resource' || !stage.resourceType || stage.completed) return false;
+        const available = state.resources[stage.resourceType];
+        const remaining = stage.target - stage.current;
+        if (available <= 0 || remaining <= 0) return false;
+        dispatch({ type: 'DELIVER_COMMISSION_RESOURCE', commissionId, stageId });
+        return true;
+      },
+      claimCommissionStageReward: (commissionId: string, stageId: string) => dispatch({ type: 'CLAIM_COMMISSION_STAGE_REWARD', commissionId, stageId }),
+      claimCommissionReward: (commissionId: string) => dispatch({ type: 'CLAIM_COMMISSION_REWARD', commissionId }),
+      assignStudentToCommission: (commissionId: string, studentId: string) => {
+        const kc = state.kingdomCommission;
+        const commission = kc.activeCommissions.find(c => c.id === commissionId);
+        if (!commission) return false;
+        if (commission.assignedStudents.length >= commission.maxStudents) return false;
+        if (commission.assignedStudents.includes(studentId)) return false;
+        const student = state.students.find(s => s.id === studentId);
+        if (!student || student.status !== 'idle') return false;
+        dispatch({ type: 'ASSIGN_STUDENT_TO_COMMISSION', commissionId, studentId });
+        return true;
+      },
+      unassignStudentFromCommission: (commissionId: string, studentId: string) => dispatch({ type: 'UNASSIGN_STUDENT_FROM_COMMISSION', commissionId, studentId }),
+      getCommissionRank,
+      getNextCommissionRank,
+      getMaxActiveCommissions,
+      applyCommissionRewardBonus,
+      COMMISSION_RANK_INFO,
+      COMMISSION_DIFFICULTY_NAMES,
+      COMMISSION_DIFFICULTY_COLORS,
+      COMMISSION_TYPE_NAMES,
+      COMMISSION_TYPE_ICONS,
     }}>
       {children}
     </GameContext.Provider>

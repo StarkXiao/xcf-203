@@ -212,7 +212,6 @@ export default function EventCenterPanel() {
             <div className="ec-history-layout">
               <div className="ec-history-list">
                 {[...eventHistory].reverse().map((inst, idx) => {
-                  const eventDef = inst.eventId;
                   const isRisk = inst.wasRiskTriggered;
                   return (
                     <div
