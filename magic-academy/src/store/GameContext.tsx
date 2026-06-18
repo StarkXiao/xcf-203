@@ -5099,7 +5099,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const reputationBonus = choice?.reputationBonus || 0;
 
       const instance = {
-        id: `event_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        id: `event_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
         eventId: event.id,
         day: state.day,
         choiceId: action.choiceId,
@@ -6376,7 +6376,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
       const { instance, wasRiskTriggered } = resolveMapExploreEvent(event, action.choiceId, state.day);
       const resChange = instance.resourceChange;
-      const isGain = !wasRiskTriggered;
       const resolveEvent: DailyEvent = {
         type: 'map_explore_event',
         message: `${wasRiskTriggered ? '⚠️' : '✅'} ${instance.outcomeText}`,
@@ -6384,23 +6383,20 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const recentLogs = state.dailyLogs.slice(-29);
       recentLogs.push({ day: state.day, events: [resolveEvent] });
 
-      const goldChange = (resChange.gold || 0) * (isGain ? 1 : -1);
-      const manaChange = (resChange.mana || 0) * (isGain ? 1 : -1);
-      const foodChange = (resChange.food || 0) * (isGain ? 1 : -1);
-      const repChange = (resChange.reputation || 0) * (isGain ? 1 : -1);
+      const goldDelta = resChange.gold || 0;
+      const manaDelta = resChange.mana || 0;
+      const foodDelta = resChange.food || 0;
+      const repDelta = resChange.reputation || 0;
 
-      let newResources = { ...state.resources };
-      if (isGain) {
-        newResources.gold += Math.abs(goldChange);
-        newResources.mana += Math.abs(manaChange);
-        newResources.food += Math.abs(foodChange);
-        newResources.reputation += Math.abs(repChange);
-      } else {
-        newResources.gold = Math.max(0, newResources.gold - Math.abs(goldChange));
-        newResources.mana = Math.max(0, newResources.mana - Math.abs(manaChange));
-        newResources.food = Math.max(0, newResources.food - Math.abs(foodChange));
-        newResources.reputation = Math.max(0, newResources.reputation - Math.abs(repChange));
-      }
+      const newResources = {
+        gold: Math.max(0, state.resources.gold + goldDelta),
+        mana: Math.max(0, state.resources.mana + manaDelta),
+        food: Math.max(0, state.resources.food + foodDelta),
+        reputation: Math.max(0, state.resources.reputation + repDelta),
+      };
+
+      const gained = { gold: Math.max(0, goldDelta), mana: Math.max(0, manaDelta), food: Math.max(0, foodDelta), reputation: Math.max(0, repDelta) };
+      const lost = { gold: Math.max(0, -goldDelta), mana: Math.max(0, -manaDelta), food: Math.max(0, -foodDelta), reputation: Math.max(0, -repDelta) };
 
       const categoryKey = event.category;
       return {
@@ -6420,18 +6416,18 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             },
             risksTriggered: wasRiskTriggered ? state.mapExplore.stats.risksTriggered + 1 : state.mapExplore.stats.risksTriggered,
             risksAvoided: !wasRiskTriggered ? state.mapExplore.stats.risksAvoided + 1 : state.mapExplore.stats.risksAvoided,
-            totalResourceGained: isGain ? {
-              gold: state.mapExplore.stats.totalResourceGained.gold + Math.abs(goldChange),
-              mana: state.mapExplore.stats.totalResourceGained.mana + Math.abs(manaChange),
-              food: state.mapExplore.stats.totalResourceGained.food + Math.abs(foodChange),
-              reputation: state.mapExplore.stats.totalResourceGained.reputation + Math.abs(repChange),
-            } : state.mapExplore.stats.totalResourceGained,
-            totalResourceLost: !isGain ? {
-              gold: state.mapExplore.stats.totalResourceLost.gold + Math.abs(goldChange),
-              mana: state.mapExplore.stats.totalResourceLost.mana + Math.abs(manaChange),
-              food: state.mapExplore.stats.totalResourceLost.food + Math.abs(foodChange),
-              reputation: state.mapExplore.stats.totalResourceLost.reputation + Math.abs(repChange),
-            } : state.mapExplore.stats.totalResourceLost,
+            totalResourceGained: {
+              gold: state.mapExplore.stats.totalResourceGained.gold + gained.gold,
+              mana: state.mapExplore.stats.totalResourceGained.mana + gained.mana,
+              food: state.mapExplore.stats.totalResourceGained.food + gained.food,
+              reputation: state.mapExplore.stats.totalResourceGained.reputation + gained.reputation,
+            },
+            totalResourceLost: {
+              gold: state.mapExplore.stats.totalResourceLost.gold + lost.gold,
+              mana: state.mapExplore.stats.totalResourceLost.mana + lost.mana,
+              food: state.mapExplore.stats.totalResourceLost.food + lost.food,
+              reputation: state.mapExplore.stats.totalResourceLost.reputation + lost.reputation,
+            },
           },
         },
       };
@@ -6858,7 +6854,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     };
 
     const gachaResult: GachaResult = {
-      id: `gacha_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: `gacha_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
       ticketQuality: ticketQuality,
       resultQuality: resultQuality,
       studentId: studentId,

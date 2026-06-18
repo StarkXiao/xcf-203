@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useGame } from '../store/GameContext';
-import type { MapAreaId, MapArea, MapGatheringNode, MapRoute, MapAreaRarity, MapAreaStatus, MapEventCategory, GatheringNodeType, RouteType } from '../types/game';
+import type { MapAreaId, MapArea, MapAreaRarity, MapAreaStatus, MapEventCategory, GatheringNodeType, RouteType } from '../types/game';
 import './MapExplorePanel.css';
 
 const RARITY_COLORS: Record<MapAreaRarity, string> = {
@@ -77,7 +77,7 @@ export default function MapExplorePanel() {
   const [selectedAreaId, setSelectedAreaId] = useState<MapAreaId | null>(null);
 
   const { mapExplore, day } = state;
-  const { unlocked, areas, gatheringNodes, events, routes, currentEvent, stats } = mapExplore;
+  const { unlocked, areas, gatheringNodes, routes, currentEvent, stats } = mapExplore;
 
   const dailyExploresUsed = mapExplore.lastDailyResetDay !== day ? 0 : mapExplore.dailyExploresUsed;
   const remainingExplores = mapExplore.maxDailyExplores - dailyExploresUsed;
@@ -115,7 +115,6 @@ export default function MapExplorePanel() {
 
   const renderAreaCard = (area: MapArea) => {
     const canUnlock = area.status === 'locked' && canUnlockMapAreaCtx(area, state.resources.reputation, day, state.students.length, areas, state.buildings);
-    const canExplore = area.status !== 'locked' && canExploreAreaCtx(area, 100, dailyExploresUsed, mapExplore.maxDailyExplores, day);
     const isSelected = selectedAreaId === area.id;
 
     return (

@@ -1,4 +1,4 @@
-import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState, KingdomCommission, CommissionStage, CommissionType, CommissionDifficulty, CommissionStageType, CommissionRankInfo, KingdomCommissionState, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, RestActivity, DormitoryEventDef, DormitoryEventInstance, StudentCodexEntry, SkillCodexEntry, CodexState, CodexStats, CodexCategory, Achievement, AchievementState, AchievementType, AchievementRarity, Title, MapAreaId, MapAreaRarity, MapAreaStatus, MapArea, MapGatheringNode, MapExploreEventDef, MapExploreEventChoice, MapRoute, MapAreaFeature, MapExploreState, MapEventCategory, GatheringNodeType, RouteType } from '../types/game';
+import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState, KingdomCommission, CommissionStage, CommissionType, CommissionDifficulty, CommissionStageType, CommissionRankInfo, KingdomCommissionState, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, RestActivity, DormitoryEventDef, DormitoryEventInstance, StudentCodexEntry, SkillCodexEntry, CodexState, CodexStats, CodexCategory, Achievement, AchievementState, AchievementType, AchievementRarity, Title, MapAreaId, MapAreaRarity, MapAreaStatus, MapArea, MapGatheringNode, MapExploreEventDef, MapExploreEventInstance, MapRoute, MapExploreState, MapEventCategory, GatheringNodeType, RouteType } from '../types/game';
 import {
   HP_BATTLE_THRESHOLD,
   HP_COURSE_EFFICIENCY_THRESHOLD,
@@ -7346,7 +7346,7 @@ const INITIAL_MAP_EVENTS: MapExploreEventDef[] = [
     rarity: 'uncommon',
     areaId: 'magic_forest',
     choices: [
-      { id: 'follow', text: '跟随精灵', description: '跟着精灵深入森林', resourceChange: { mana: 30 }, moraleChange: 5, expReward: 20, courseMaterialUnlock: 'fire_magic', riskProbability: 0.2, riskResourceLoss: { stamina: 15 }, riskStaminaLoss: 10, outcomeText: '精灵带你发现了一处隐藏的魔力泉眼！', riskOutcomeText: '精灵的恶作剧让你在森林中迷路了！' },
+      { id: 'follow', text: '跟随精灵', description: '跟着精灵深入森林', resourceChange: { mana: 30 }, moraleChange: 5, expReward: 20, courseMaterialUnlock: 'fire_magic', riskProbability: 0.2, riskResourceLoss: { mana: -15 }, riskStaminaLoss: 10, outcomeText: '精灵带你发现了一处隐藏的魔力泉眼！', riskOutcomeText: '精灵的恶作剧让你在森林中迷路了！' },
       { id: 'watch', text: '远远观察', description: '保持距离观察精灵', resourceChange: { mana: 10 }, outcomeText: '你观察到精灵在施展一种古老的自然魔法。' },
     ],
     minDay: 3,
@@ -7528,7 +7528,7 @@ export const canUnlockMapArea = (
   return true;
 };
 
-export const canExploreArea = (area: MapArea, stamina: number, dailyExploresUsed: number, maxDailyExplores: number, day: number): boolean => {
+export const canExploreArea = (area: MapArea, stamina: number, dailyExploresUsed: number, maxDailyExplores: number, _day: number): boolean => {
   if (area.status === 'locked') return false;
   if (stamina < area.exploreStaminaCost) return false;
   if (dailyExploresUsed >= maxDailyExplores) return false;
