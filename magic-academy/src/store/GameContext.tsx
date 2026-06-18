@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff, AcademyEventDefinition, KingdomCommission, CommissionStageType, RestActivity, DormitoryState, StudentRelationship, CodexCategory, AchievementType, AchievementRarity, MagicType, MapAreaId, BlackMarketPenalty, PenaltySeverity, AuditLevel, BlackMarketItemCategory, BlackMarketItemRarity, ClassId, SpecializationBranchId, SkillTreeNodeId } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff, AcademyEventDefinition, KingdomCommission, CommissionStageType, RestActivity, DormitoryState, StudentRelationship, CodexCategory, AchievementType, AchievementRarity, MagicType, MapAreaId, BlackMarketPenalty, PenaltySeverity, AuditLevel, BlackMarketItemCategory, BlackMarketItemRarity, ClassId, SpecializationBranchId, SkillTreeNodeId, RivalAcademy, RivalCompetitionState, ResourcePoint, ResourceContestation, RecruitmentCandidate, WeeklyRankTier, WeeklyRankingEntry } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -232,6 +232,25 @@ import {
   calculateClassExpToLevel,
   CLASS_TRANSFER_NAMES,
   SPECIALIZATION_NAMES,
+  INITIAL_RIVAL_COMPETITION_STATE,
+  generateRivalAcademies,
+  generateResourcePoints,
+  calculateWeeklyScore,
+  getWeeklyTierRewards,
+  getWeeklyRankRewards,
+  getWeeklyTier,
+  simulateRivalGrowth,
+  generateRecruitmentCandidate,
+  refreshRecruitmentCandidates,
+  calculateRivalBid,
+  canStartContestation,
+  calculateContestationProgress,
+  getResourcePointIcon,
+  getResourcePointTypeName,
+  getPersonalityName,
+  getDifficultyName,
+  getDifficultyColor,
+  RIVAL_ACADEMY_TEMPLATES,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -369,7 +388,18 @@ type GameAction =
   | { type: 'UNLOCK_SKILL_NODE'; studentId: string; nodeId: SkillTreeNodeId }
   | { type: 'UNLOCK_SPECIALIZATION_BRANCH'; studentId: string; branchId: SpecializationBranchId }
   | { type: 'ADD_SPECIALIZATION_POINT'; studentId: string }
-  | { type: 'ADD_CLASS_EXP'; studentId: string; exp: number };
+  | { type: 'ADD_CLASS_EXP'; studentId: string; exp: number }
+  | { type: 'UNLOCK_RIVAL_COMPETITION' }
+  | { type: 'SIMULATE_RIVAL_GROWTH' }
+  | { type: 'START_CONTESTATION'; pointId: string; rivalId: string }
+  | { type: 'INVEST_IN_CONTESTATION'; contestationId: string; role: 'challenger' | 'defender'; investment: Partial<Resource> }
+  | { type: 'SETTLE_CONTESTATION'; contestationId: string }
+  | { type: 'PLACE_BID'; candidateId: string; bid: Partial<Resource> }
+  | { type: 'SETTLE_AUCTION'; candidateId: string }
+  | { type: 'REFRESH_RECRUITMENT_CANDIDATES' }
+  | { type: 'SETTLE_WEEKLY_RANKING' }
+  | { type: 'CLAIM_WEEKLY_RANKING_REWARD' }
+  | { type: 'UPDATE_PLAYER_WEEKLY_SCORE'; amount: number };
 
 const MAX_STUDENT_CAPACITY = 20;
 
@@ -437,6 +467,7 @@ const initialState: GameState = {
   mapExplore: INITIAL_MAP_EXPLORE_STATE,
   blackMarket: INITIAL_BLACK_MARKET_STATE,
   classTransfer: INITIAL_CLASS_TRANSFER_STATE,
+  rivalCompetition: INITIAL_RIVAL_COMPETITION_STATE,
 };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -5105,6 +5136,62 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         });
       }
 
+      let newRivalCompetition = state.rivalCompetition;
+
+      if (state.rivalCompetition.unlocked) {
+        const playerScoreFromStudents = state.students.length * 10;
+        const playerScoreFromReputation = finalResources.reputation * 0.1;
+        const playerScoreFromBuildings = state.buildings.reduce((acc, b) => acc + b.level * 20, 0);
+        const playerWeeklyScoreBefore = state.rivalCompetition.weeklyRankings.length > 0
+          ? state.rivalCompetition.weeklyRankings[state.rivalCompetition.weeklyRankings.length - 1].playerScore
+          : 0;
+
+        let tempState = {
+          ...state,
+          day: newDay,
+          resources: finalResources,
+        };
+        const growthResult = gameReducer(tempState, { type: 'SIMULATE_RIVAL_GROWTH' });
+        newRivalCompetition = growthResult.rivalCompetition;
+
+        const newPlayerScore = playerWeeklyScoreBefore + Math.floor(playerScoreFromStudents + playerScoreFromReputation + playerScoreFromBuildings);
+        const scoreUpdateResult = gameReducer({ ...growthResult, rivalCompetition: newRivalCompetition }, { type: 'UPDATE_PLAYER_WEEKLY_SCORE', score: newPlayerScore });
+        newRivalCompetition = {
+          ...scoreUpdateResult.rivalCompetition,
+          currentWeek: Math.ceil(newDay / 7),
+        };
+
+        if (newDay > 7 && newDay % 7 === 1) {
+          const settledState = gameReducer({ ...growthResult, rivalCompetition: newRivalCompetition }, { type: 'SETTLE_WEEKLY_RANKING' });
+          newRivalCompetition = settledState.rivalCompetition;
+          const rewardResources = settledState.rivalCompetition.weeklyRankings.length > 0
+            ? settledState.rivalCompetition.weeklyRankings[settledState.rivalCompetition.weeklyRankings.length - 1].rewards
+            : null;
+          if (rewardResources) {
+            Object.entries(rewardResources).forEach(([key, value]) => {
+              if (key in finalResources) {
+                (finalResources as any)[key] += value;
+              }
+            });
+          }
+        }
+
+        const pointProduction: Partial<Resource> = { gold: 0, mana: 0, food: 0, reputation: 0 };
+        for (const point of newRivalCompetition.resourcePoints) {
+          if (point.controllerId === 'player') {
+            Object.entries(point.dailyProduction).forEach(([key, value]) => {
+              if (key in pointProduction) {
+                (pointProduction as any)[key] += value;
+              }
+            });
+          }
+        }
+        if (pointProduction.gold) finalResources.gold += pointProduction.gold;
+        if (pointProduction.mana) finalResources.mana += pointProduction.mana;
+        if (pointProduction.food) finalResources.food += pointProduction.food;
+        if (pointProduction.reputation) finalResources.reputation += Math.floor(pointProduction.reputation * newRivalCompetition.reputationBonusMultiplier);
+      }
+
       return {
         ...state,
         day: newDay,
@@ -5133,6 +5220,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         eventCenter: newEventCenter,
         dormitory: updatedDormitoryState,
         blackMarket: finalBlackMarket,
+        rivalCompetition: newRivalCompetition,
       };
     }
 
@@ -7136,6 +7224,512 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
+    case 'UNLOCK_RIVAL_COMPETITION': {
+      if (state.rivalCompetition.unlocked) return state;
+      return {
+        ...state,
+        rivalCompetition: {
+          ...state.rivalCompetition,
+          unlocked: true,
+          unlockedDay: state.day,
+          rivalAcademies: generateRivalAcademies(),
+          resourcePoints: generateResourcePoints(),
+          recruitmentCandidates: refreshRecruitmentCandidates([], state.day, 4),
+          lastCandidateRefreshDay: state.day,
+        },
+      };
+    }
+
+    case 'SIMULATE_RIVAL_GROWTH': {
+      let newLogs = [...state.rivalCompetition.growthLogs];
+      const updatedAcademies = state.rivalCompetition.rivalAcademies.map(rival => {
+        const { rival: updated, logs } = simulateRivalGrowth(rival, state.day);
+        newLogs = [...newLogs, ...logs];
+        return updated;
+      });
+      if (newLogs.length > 100) newLogs = newLogs.slice(-100);
+      
+      let newCandidates = [...state.rivalCompetition.recruitmentCandidates];
+      let newBidResults = [...state.rivalCompetition.bidResults];
+      const dayEvents: DailyEvent[] = [];
+      
+      for (let i = 0; i < newCandidates.length; i++) {
+        const candidate = newCandidates[i];
+        if (candidate.auctionStatus !== 'bidding') continue;
+        
+        if (state.day >= candidate.expiresAtDay) {
+          const winnerId = candidate.currentBidder || 'player';
+          const won = winnerId === 'player';
+          const result: RivalBidResult = {
+            candidateId: candidate.id,
+            candidateName: candidate.name,
+            won,
+            finalBid: candidate.currentBid,
+            winnerId,
+            winnerName: won ? '你的学院' : candidate.currentBidder || '对手学院',
+            day: state.day,
+          };
+          newBidResults.push(result);
+          if (newBidResults.length > 50) newBidResults = newBidResults.slice(-50);
+          
+          newCandidates[i] = {
+            ...candidate,
+            auctionStatus: won ? 'won' : 'lost',
+            winnerId,
+          };
+          
+          if (won) {
+            const rivalWinner = updatedAcademies.find(a => a.id === candidate.currentBidder);
+            if (rivalWinner) {
+              rivalWinner.resources.gold -= candidate.currentBid.gold || 0;
+              rivalWinner.reputation -= candidate.currentBid.reputation || 0;
+            }
+            dayEvents.push({
+              type: 'warning' as const,
+              message: `🎉 竞拍成功！获得了学员「${candidate.name}(${candidate.quality})`,
+            });
+          } else {
+            dayEvents.push({
+              type: 'warning' as const,
+              message: `😢 竞拍失败！「${candidate.name}」被对手抢走了`,
+            });
+          }
+          continue;
+        }
+        
+        for (const rival of updatedAcademies) {
+          if (rival.id === 'player') continue;
+          const bidChance = rival.personality === 'aggressive' ? 0.35 : 0.2;
+          if (Math.random() < bidChance) {
+            const bid = calculateRivalBid(candidate, rival);
+            if (bid && (bid.gold > (candidate.currentBid.gold || 0) || bid.reputation > (candidate.currentBid.reputation || 0))) {
+              newCandidates[i] = {
+                ...candidate,
+                currentBid: { gold: bid.gold, reputation: bid.reputation },
+                currentBidder: rival.id,
+                bidCount: candidate.bidCount + 1,
+                bidHistory: [
+                  ...candidate.bidHistory,
+                  { academyId: rival.id, bid: { gold: bid.gold, reputation: bid.reputation }, day: state.day },
+                ],
+              };
+              break;
+            }
+          }
+        }
+      }
+      
+      let activeContestations = [...state.rivalCompetition.activeContestations];
+      let contestationHistory = [...state.rivalCompetition.contestationHistory];
+      let updatedResourcePoints = [...state.rivalCompetition.resourcePoints];
+      let totalWon = state.rivalCompetition.totalContestationsWon;
+      
+      for (let i = 0; i < activeContestations.length; i++) {
+        const contestation = activeContestations[i];
+        if (contestation.status !== 'in_progress') continue;
+        if (state.day >= contestation.startDay + contestation.durationDays) {
+          const challengerProgress = contestation.challengerProgress;
+          const defenderProgress = contestation.defenderProgress;
+          
+          const playerIsChallenger = contestation.challengerId === 'player';
+          const playerIsDefender = contestation.defenderId === 'player';
+          
+          let winnerId = challengerProgress >= 50 ? contestation.challengerId : contestation.defenderId;
+          const playerWon = (playerIsChallenger && winnerId === 'player') || (playerIsDefender && winnerId === 'player');
+          
+          if (playerWon) totalWon++;
+          
+          updatedResourcePoints = updatedResourcePoints.map(p => {
+            if (p.id === contestation.pointId) {
+              const winnerName = playerWon ? '你的学院' : (
+                winnerId === contestation.challengerId ? contestation.challengerName : contestation.defenderName
+              );
+              return {
+                ...p,
+                ownerAcademyId: winnerId,
+                ownerAcademyName: winnerName,
+                contested: false,
+                lastContestationDay: state.day,
+                captureProgress: 0,
+              };
+            }
+            return p;
+          });
+          
+          activeContestations[i] = {
+            ...contestation,
+            status: 'completed',
+            winnerId,
+          };
+          
+          contestationHistory.push(activeContestations[i]);
+          contestationHistory = contestationHistory.slice(-50);
+          
+          if (playerWon) {
+            dayEvents.push({
+              type: 'warning' as const,
+              message: `🏆 争夺胜利！占领了「${contestation.pointName}」`,
+            });
+          } else if (playerIsChallenger || playerIsDefender) {
+            dayEvents.push({
+              type: 'warning' as const,
+              message: `😔 争夺失败！「${contestation.pointName}」被夺走了`,
+            });
+          }
+        } else {
+          const challengerInvest = contestation.playerChallengerInvestment?.gold || 0;
+          const defenderInvest = contestation.playerDefenderInvestment?.gold || 0;
+          const pointData = state.rivalCompetition.resourcePoints.find(p => p.id === contestation.pointId);
+          const playerCP = state.students.length * 50 + 
+            state.buildings.reduce((acc, b) => acc + b.level * 30, 0);
+          const defCP = contestation.defenderId !== 'player' && contestation.defenderId !== 'neutral'
+            ? (state.rivalCompetition.rivalAcademies.find(r => r.id === contestation.defenderId)?.combatPower || pointData?.captureRequired || 300)
+            : (pointData?.captureRequired || 200);
+          const progress = calculateContestationProgress(
+            contestation.challengerId === 'player' ? playerCP : defCP,
+            contestation.defenderId === 'player' ? playerCP : defCP,
+            pointData?.defenderBonus || 0.2,
+            challengerInvest, defenderInvest
+          );
+          activeContestations[i] = {
+            ...contestation,
+            challengerProgress: progress.challengerProgress,
+            defenderProgress: progress.defenderProgress,
+          };
+        }
+      }
+      
+      activeContestations = activeContestations.filter(c => c.status === 'in_progress');
+      
+      if (dayEvents.length > 0) {
+        const dailyLog: DailyLog = { day: state.day, events: dayEvents };
+        state.dailyLogs = [...state.dailyLogs.slice(-29), dailyLog];
+      }
+      
+      const ownedPoints = updatedResourcePoints.filter(p => p.ownerAcademyId === 'player');
+      let dailyOutput: Partial<Resource> = { gold: 0, mana: 0, food: 0, reputation: 0 };
+      for (const point of ownedPoints) {
+        dailyOutput.gold = (dailyOutput.gold || 0) + (point.dailyOutput.gold || 0);
+        dailyOutput.mana = (dailyOutput.mana || 0) + (point.dailyOutput.mana || 0);
+        dailyOutput.food = (dailyOutput.food || 0) + (point.dailyOutput.food || 0);
+        dailyOutput.reputation = (dailyOutput.reputation || 0) + (point.dailyOutput.reputation || 0);
+      }
+      
+      return {
+        ...state,
+        dailyLogs: dayEvents.length > 0 ? [...state.dailyLogs.slice(-29), { day: state.day, events: dayEvents }] : state.dailyLogs,
+        resources: {
+          gold: state.resources.gold + (dailyOutput.gold || 0),
+          mana: state.resources.mana + (dailyOutput.mana || 0),
+          food: state.resources.food + (dailyOutput.food || 0),
+          reputation: state.resources.reputation + (dailyOutput.reputation || 0),
+        },
+        rivalCompetition: {
+          ...state.rivalCompetition,
+          rivalAcademies: updatedAcademies,
+          growthLogs: newLogs,
+          recruitmentCandidates: newCandidates,
+          bidResults: newBidResults,
+          activeContestations,
+          contestationHistory,
+          resourcePoints: updatedResourcePoints,
+          totalContestationsWon: totalWon,
+          bidsUsedToday: state.day !== state.rivalCompetition.lastBidResetDay ? 0 : state.rivalCompetition.bidsUsedToday,
+          lastBidResetDay: state.day !== state.rivalCompetition.lastBidResetDay ? state.day : state.rivalCompetition.lastBidResetDay,
+        },
+      };
+    }
+
+    case 'START_CONTESTATION': {
+      const point = state.rivalCompetition.resourcePoints.find(p => p.id === action.pointId);
+      if (!point) return state;
+      
+      const playerCombatPower = state.students.length * 50 + 
+        state.buildings.reduce((acc, b) => acc + b.level * 30, 0);
+      const check = canStartContestation(
+        point, playerCombatPower, state.day,
+        state.rivalCompetition.activeContestations.length,
+        state.rivalCompetition.maxActiveContestations
+      );
+      if (!check.canStart) return state;
+      
+      const rival = state.rivalCompetition.rivalAcademies.find(r => r.id === action.rivalId);
+      const defenderId = point.ownerAcademyId || (rival ? rival.id : 'neutral');
+      const defenderName = point.ownerAcademyName || (rival ? rival.name : '中立');
+      const defenderCombat = rival ? rival.combatPower : point.level * 200;
+      
+      const { challengerProgress, defenderProgress } = calculateContestationProgress(
+        playerCombatPower, defenderCombat, point.defenderBonus
+      );
+      
+      const newContestation: ResourceContestation = {
+        id: `contest_${Date.now()}`,
+        pointId: point.id,
+        pointName: point.name,
+        challengerId: 'player',
+        challengerName: '你的学院',
+        defenderId,
+        defenderName,
+        startDay: state.day,
+        durationDays: 3,
+        status: 'in_progress',
+        challengerProgress,
+        defenderProgress,
+        winnerId: null,
+        reward: { ...point.dailyOutput },
+        combatPowerRequired: point.captureRequired,
+        playerChallengerInvestment: {},
+        playerDefenderInvestment: {},
+      };
+      
+      return {
+        ...state,
+        rivalCompetition: {
+          ...state.rivalCompetition,
+          activeContestations: [
+            ...state.rivalCompetition.activeContestations,
+            newContestation,
+          ],
+          resourcePoints: state.rivalCompetition.resourcePoints.map(p =>
+            p.id === action.pointId ? { ...p, contested: true } : p
+          ),
+        },
+      };
+    }
+
+    case 'INVEST_IN_CONTESTATION': {
+      const contestation = state.rivalCompetition.activeContestations.find(
+        c => c.id === action.contestationId
+      );
+      if (!contestation || contestation.status !== 'in_progress') return state;
+      
+      const investGold = action.investment.gold || 0;
+      if (state.resources.gold < investGold) return state;
+      
+      let updatedContestation = { ...contestation };
+      if (action.role === 'challenger' && contestation.challengerId === 'player') {
+        updatedContestation.playerChallengerInvestment = {
+          gold: (contestation.playerChallengerInvestment.gold || 0) + investGold,
+        };
+      } else if (action.role === 'defender' && contestation.defenderId === 'player') {
+        updatedContestation.playerDefenderInvestment = {
+          gold: (contestation.playerDefenderInvestment.gold || 0) + investGold,
+        };
+      } else {
+        return state;
+      }
+      
+      const point = state.rivalCompetition.resourcePoints.find(p => p.id === contestation.pointId);
+      const playerCombatPower = state.students.length * 50 + 
+        state.buildings.reduce((acc, b) => acc + b.level * 30, 0);
+      const defenderCombat = contestation.defenderId !== 'player' && contestation.defenderId !== 'neutral'
+        ? (state.rivalCompetition.rivalAcademies.find(r => r.id === contestation.defenderId)?.combatPower || 300)
+        : (point?.captureRequired || 200);
+      
+      const { challengerProgress, defenderProgress } = calculateContestationProgress(
+        contestation.challengerId === 'player' ? playerCombatPower : defenderCombat,
+        contestation.defenderId === 'player' ? playerCombatPower : defenderCombat,
+        point?.defenderBonus || 0.2,
+        updatedContestation.playerChallengerInvestment.gold || 0,
+        updatedContestation.playerDefenderInvestment.gold || 0
+      );
+      
+      updatedContestation.challengerProgress = challengerProgress;
+      updatedContestation.defenderProgress = defenderProgress;
+      
+      return {
+        ...state,
+        resources: { ...state.resources, gold: state.resources.gold - investGold },
+        rivalCompetition: {
+          ...state.rivalCompetition,
+          activeContestations: state.rivalCompetition.activeContestations.map(
+            c => c.id === action.contestationId ? updatedContestation : c
+          ),
+        },
+      };
+    }
+
+    case 'PLACE_BID': {
+      const candidate = state.rivalCompetition.recruitmentCandidates.find(
+        c => c.id === action.candidateId
+      );
+      if (!candidate || candidate.auctionStatus !== 'bidding') return state;
+      if (state.rivalCompetition.bidsUsedToday >= state.rivalCompetition.maxBidsPerDay) return state;
+      
+      const bidGold = action.bid.gold || 0;
+      const bidRep = action.bid.reputation || 0;
+      if (state.resources.gold < bidGold || state.resources.reputation < bidRep) return state;
+      
+      const currentBidGold = candidate.currentBid.gold || 0;
+      const currentBidRep = candidate.currentBid.reputation || 0;
+      if (bidGold < Math.ceil(currentBidGold * 1.1) || bidRep < Math.ceil(currentBidRep * 1.1)) return state;
+      
+      return {
+        ...state,
+        resources: {
+          gold: state.resources.gold - bidGold,
+          mana: state.resources.mana,
+          food: state.resources.food,
+          reputation: state.resources.reputation - bidRep,
+        },
+        rivalCompetition: {
+          ...state.rivalCompetition,
+          bidsUsedToday: state.rivalCompetition.bidsUsedToday + 1,
+          recruitmentCandidates: state.rivalCompetition.recruitmentCandidates.map(c => {
+            if (c.id === candidate.id) {
+              return {
+                ...c,
+                currentBid: { gold: bidGold, reputation: bidRep },
+                currentBidder: 'player',
+                bidCount: c.bidCount + 1,
+                bidHistory: [
+                  ...c.bidHistory,
+                  { academyId: 'player', bid: { gold: bidGold, reputation: bidRep }, day: state.day },
+                ],
+              };
+            }
+            return c;
+          }),
+        },
+      };
+    }
+
+    case 'REFRESH_RECRUITMENT_CANDIDATES': {
+      const refreshCost = 500;
+      if (state.resources.gold < refreshCost) return state;
+      
+      return {
+        ...state,
+        resources: { ...state.resources, gold: state.resources.gold - refreshCost },
+        rivalCompetition: {
+          ...state.rivalCompetition,
+          recruitmentCandidates: refreshRecruitmentCandidates(
+            state.rivalCompetition.recruitmentCandidates,
+            state.day, 4
+          ),
+          lastCandidateRefreshDay: state.day,
+        },
+      };
+    }
+
+    case 'SETTLE_WEEKLY_RANKING': {
+      const playerCombatPower = state.students.length * 50 + 
+        state.buildings.reduce((acc, b) => acc + b.level * 30, 0);
+      const territoryCount = state.rivalCompetition.resourcePoints.filter(p => p.ownerAcademyId === 'player').length;
+      
+      const playerWeeklyScore = calculateWeeklyScore(
+        { reputation: state.resources.reputation, studentCount: state.students.length, level: state.buildings.reduce((a, b) => a + b.level, 0) },
+        territoryCount,
+        state.rivalCompetition.totalContestationsWon,
+        state.rivalCompetition.totalAuctionsWon
+      );
+      
+      const entries: WeeklyRankingEntry[] = [
+        {
+          rank: 0,
+          academyId: 'player',
+          academyName: '你的学院',
+          academyIcon: '🏰',
+          score: playerWeeklyScore,
+          reputation: state.resources.reputation,
+          studentCount: state.students.length,
+          isPlayer: true,
+          previousRank: 0,
+          rankChange: 0,
+        },
+        ...state.rivalCompetition.rivalAcademies.map((rival, idx) => {
+          const rivalTerritory = state.rivalCompetition.resourcePoints.filter(p => p.ownerAcademyId === rival.id).length;
+          return {
+            rank: 0,
+            academyId: rival.id,
+            academyName: rival.name,
+            academyIcon: rival.icon,
+            score: calculateWeeklyScore(
+              { reputation: rival.reputation, studentCount: rival.studentCount, level: rival.level },
+              rivalTerritory, 0, 0
+            ),
+            reputation: rival.reputation,
+            studentCount: rival.studentCount,
+            isPlayer: false,
+            color: rival.color,
+            previousRank: idx + 1,
+            rankChange: 0,
+          };
+        }),
+      ];
+      
+      entries.sort((a, b) => b.score - a.score);
+      entries.forEach((e, i) => {
+        e.rank = i + 1;
+        e.rankChange = e.previousRank - e.rank;
+      });
+      
+      const playerEntry = entries.find(e => e.isPlayer)!;
+      const totalAcademies = entries.length;
+      const tier = getWeeklyTier(playerEntry.rank, totalAcademies);
+      
+      const newRanking = {
+        weekNumber: state.rivalCompetition.currentWeek,
+        startDay: state.day - 7,
+        endDay: state.day,
+        settled: true,
+        entries,
+        playerRank: playerEntry.rank,
+        playerTier: tier,
+        tierRewards: getWeeklyTierRewards(tier),
+        rankRewards: getWeeklyRankRewards(playerEntry.rank),
+        claimed: false,
+      };
+      
+      return {
+        ...state,
+        rivalCompetition: {
+          ...state.rivalCompetition,
+          weeklyRankings: [
+            ...state.rivalCompetition.weeklyRankings.slice(-9),
+            newRanking,
+          ],
+          currentWeek: state.rivalCompetition.currentWeek + 1,
+        },
+      };
+    }
+
+    case 'CLAIM_WEEKLY_RANKING_REWARD': {
+      const lastRanking = state.rivalCompetition.weeklyRankings[state.rivalCompetition.weeklyRankings.length - 1];
+      if (!lastRanking || !lastRanking.settled || lastRanking.claimed) return state;
+      
+      const combinedRewards = {
+        gold: (lastRanking.tierRewards.gold || 0) + (lastRanking.rankRewards.gold || 0),
+        mana: (lastRanking.tierRewards.mana || 0) + (lastRanking.rankRewards.mana || 0),
+        food: (lastRanking.tierRewards.food || 0) + (lastRanking.rankRewards.food || 0),
+        reputation: (lastRanking.tierRewards.reputation || 0) + (lastRanking.rankRewards.reputation || 0),
+      };
+      
+      return {
+        ...state,
+        resources: {
+          gold: state.resources.gold + combinedRewards.gold,
+          mana: state.resources.mana + combinedRewards.mana,
+          food: state.resources.food + combinedRewards.food,
+          reputation: state.resources.reputation + combinedRewards.reputation,
+        },
+        rivalCompetition: {
+          ...state.rivalCompetition,
+          weeklyRankings: state.rivalCompetition.weeklyRankings.map(
+            (r, i) => i === state.rivalCompetition.weeklyRankings.length - 1
+              ? { ...r, claimed: true }
+              : r
+          ),
+          reputationBonusMultiplier: 1 + (lastRanking.playerRank <= 3 ? 0.1 : lastRanking.playerRank <= 10 ? 0.05 : 0),
+          seasonCompetitionBonus: state.rivalCompetition.seasonCompetitionBonus + (lastRanking.playerRank <= 3 ? 100 : lastRanking.playerRank <= 10 ? 50 : 10),
+        },
+      };
+    }
+
+    case 'UPDATE_PLAYER_WEEKLY_SCORE': {
+      return state;
+    }
+
     default:
       return state;
   }
@@ -7382,6 +7976,12 @@ interface GameContextType {
   unlockSpecializationBranch: (studentId: string, branchId: SpecializationBranchId) => boolean;
   addSpecializationPoint: (studentId: string) => void;
   addClassExp: (studentId: string, exp: number) => void;
+  unlockRivalCompetition: () => void;
+  startContestation: (pointId: string) => boolean;
+  investInContestation: (contestationId: string, resourceType: keyof Resource, amount: number) => boolean;
+  placeBid: (candidateId: string, amount: number) => boolean;
+  refreshRecruitmentCandidates: (count?: number) => boolean;
+  claimWeeklyRankingReward: () => void;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -8450,6 +9050,36 @@ export function GameProvider({ children }: { children: ReactNode }) {
       PENALTY_SEVERITY_NAMES,
       canBuyBlackMarketItemCtx: canBuyBlackMarketItem,
       getBlackMarketBuildingBonusCtx: getBlackMarketBuildingBonus,
+
+      unlockRivalCompetition: () => dispatch({ type: 'UNLOCK_RIVAL_COMPETITION' }),
+      startContestation: (pointId: string) => {
+        if (!state.rivalCompetition.unlocked) return false;
+        if (state.rivalCompetition.activeContestations.length >= state.rivalCompetition.maxActiveContestations) return false;
+        const point = state.rivalCompetition.resourcePoints.find(p => p.id === pointId);
+        if (!point || point.controllerId === 'player') return false;
+        dispatch({ type: 'START_CONTESTATION', pointId });
+        return true;
+      },
+      investInContestation: (contestationId: string, resourceType: keyof Resource, amount: number) => {
+        if (!state.rivalCompetition.unlocked || amount <= 0) return false;
+        if (state.resources[resourceType] < amount) return false;
+        dispatch({ type: 'INVEST_IN_CONTESTATION', contestationId, resourceType, amount });
+        return true;
+      },
+      placeBid: (candidateId: string, amount: number) => {
+        if (!state.rivalCompetition.unlocked || amount <= 0) return false;
+        if (state.resources.gold < amount) return false;
+        if (state.rivalCompetition.bidsUsedToday >= state.rivalCompetition.maxBidsPerDay) return false;
+        dispatch({ type: 'PLACE_BID', candidateId, amount });
+        return true;
+      },
+      refreshRecruitmentCandidates: (count: number = 4) => {
+        if (!state.rivalCompetition.unlocked) return false;
+        if (state.resources.gold < 50) return false;
+        dispatch({ type: 'REFRESH_RECRUITMENT_CANDIDATES', count });
+        return true;
+      },
+      claimWeeklyRankingReward: () => dispatch({ type: 'CLAIM_WEEKLY_RANKING_REWARD' }),
     }}>
       {children}
     </GameContext.Provider>

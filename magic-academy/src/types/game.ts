@@ -314,8 +314,6 @@ export interface DormitoryState {
   avgStamina: number;
 }
 
-export const CURRENT_SAVE_VERSION = 18;
-
 export type ClassId =
   | 'flame_warrior' | 'frost_mage' | 'earth_guardian'
   | 'wind_runner' | 'light_priest' | 'dark_assassin';
@@ -1300,6 +1298,7 @@ export interface GameState {
   mapExplore: MapExploreState;
   blackMarket: BlackMarketState;
   classTransfer: ClassTransferState;
+  rivalCompetition: RivalCompetitionState;
 }
 
 export interface CourseBenefitBreakdown {
@@ -1321,7 +1320,7 @@ export interface CourseBenefitBreakdown {
   potionSpeedBoost: number;
 }
 
-export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade' | 'alchemy' | 'eventCenter' | 'kingdomCommission' | 'dormitory' | 'codex' | 'mapExplore' | 'blackMarket' | 'classTransfer';
+export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade' | 'alchemy' | 'eventCenter' | 'kingdomCommission' | 'dormitory' | 'codex' | 'mapExplore' | 'blackMarket' | 'classTransfer' | 'rivalCompetition';
 
 export type CommissionType = 'course_training' | 'dungeon_dispatch' | 'resource_delivery' | 'comprehensive';
 export type CommissionDifficulty = 'easy' | 'normal' | 'hard' | 'epic' | 'legendary';
@@ -2043,3 +2042,163 @@ export const CRITICAL_BASE_CHANCE = 0.1;
 export const CRITICAL_BASE_MULTIPLIER = 1.5;
 export const MAX_TEAM_SIZE = 4;
 export const MAX_BATTLE_TURNS = 30;
+
+export type RivalAcademyDifficulty = 'easy' | 'normal' | 'hard' | 'elite';
+export type RivalAcademyPersonality = 'aggressive' | 'balanced' | 'defensive' | 'scholarly';
+export type ResourcePointType = 'gold_mine' | 'mana_spring' | 'food_farm' | 'reputation_monument';
+export type ContestationStatus = 'idle' | 'in_progress' | 'completed';
+export type AuctionStatus = 'bidding' | 'ended' | 'won' | 'lost';
+export type WeeklyRankTier = 'top1' | 'top3' | 'top10' | 'top50' | 'participant';
+
+export interface RivalAcademy {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  level: number;
+  maxLevel: number;
+  reputation: number;
+  studentCount: number;
+  quality: RivalAcademyDifficulty;
+  personality: RivalAcademyPersonality;
+  resources: Resource;
+  buildingLevels: Record<string, number>;
+  averageStudentLevel: number;
+  combatPower: number;
+  weeklyScore: number;
+  seasonScore: number;
+  color: string;
+  territoryBonus: number;
+  lastGrowDay: number;
+  unlocked: boolean;
+  defeatedCount: number;
+  victoryCount: number;
+}
+
+export interface RivalAcademyGrowthLog {
+  id: string;
+  rivalId: string;
+  day: number;
+  type: 'level_up' | 'building_upgrade' | 'recruit' | 'territory_gain' | 'reputation_gain';
+  description: string;
+  value: number;
+}
+
+export interface WeeklyRankingEntry {
+  rank: number;
+  academyId: string;
+  academyName: string;
+  academyIcon: string;
+  score: number;
+  reputation: number;
+  studentCount: number;
+  isPlayer: boolean;
+  color?: string;
+  previousRank: number;
+  rankChange: number;
+}
+
+export interface WeeklyRanking {
+  weekNumber: number;
+  startDay: number;
+  endDay: number;
+  settled: boolean;
+  entries: WeeklyRankingEntry[];
+  playerRank: number;
+  playerTier: WeeklyRankTier;
+  tierRewards: Partial<Resource>;
+  rankRewards: Partial<Resource>;
+  claimed: boolean;
+}
+
+export interface ResourcePoint {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  type: ResourcePointType;
+  level: number;
+  maxLevel: number;
+  ownerAcademyId: string | null;
+  ownerAcademyName: string | null;
+  dailyOutput: Partial<Resource>;
+  contestationCooldown: number;
+  lastContestationDay: number;
+  captureProgress: number;
+  captureRequired: number;
+  contested: boolean;
+  defenderBonus: number;
+}
+
+export interface ResourceContestation {
+  id: string;
+  pointId: string;
+  pointName: string;
+  challengerId: string;
+  challengerName: string;
+  defenderId: string;
+  defenderName: string;
+  startDay: number;
+  durationDays: number;
+  status: ContestationStatus;
+  challengerProgress: number;
+  defenderProgress: number;
+  winnerId: string | null;
+  reward: Partial<Resource>;
+  combatPowerRequired: number;
+  playerChallengerInvestment: Partial<Resource>;
+  playerDefenderInvestment: Partial<Resource>;
+}
+
+export interface RecruitmentCandidate {
+  id: string;
+  name: string;
+  quality: StudentQuality;
+  magicType: MagicType;
+  potential: number;
+  level: number;
+  traits: Trait[];
+  basePrice: Partial<Resource>;
+  currentBidder: string | null;
+  currentBid: Partial<Resource>;
+  bidCount: number;
+  expiresAtDay: number;
+  auctionStatus: AuctionStatus;
+  winnerId: string | null;
+  bidHistory: { academyId: string; bid: Partial<Resource>; day: number }[];
+}
+
+export interface RivalBidResult {
+  candidateId: string;
+  candidateName: string;
+  won: boolean;
+  finalBid: Partial<Resource>;
+  winnerId: string;
+  winnerName: string;
+  day: number;
+}
+
+export interface RivalCompetitionState {
+  unlocked: boolean;
+  unlockedDay: number;
+  rivalAcademies: RivalAcademy[];
+  growthLogs: RivalAcademyGrowthLog[];
+  weeklyRankings: WeeklyRanking[];
+  currentWeek: number;
+  resourcePoints: ResourcePoint[];
+  activeContestations: ResourceContestation[];
+  contestationHistory: ResourceContestation[];
+  recruitmentCandidates: RecruitmentCandidate[];
+  bidResults: RivalBidResult[];
+  lastCandidateRefreshDay: number;
+  maxActiveContestations: number;
+  maxBidsPerDay: number;
+  bidsUsedToday: number;
+  lastBidResetDay: number;
+  reputationBonusMultiplier: number;
+  seasonCompetitionBonus: number;
+  totalContestationsWon: number;
+  totalAuctionsWon: number;
+}
+
+export const CURRENT_SAVE_VERSION = 19;

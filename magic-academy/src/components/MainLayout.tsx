@@ -28,6 +28,7 @@ import BlackMarketPanel from './BlackMarketPanel';
 import './BlackMarketPanel.css';
 import ClassTransferPanel from './ClassTransferPanel';
 import './ClassTransferPanel.css';
+import RivalAcademyPanel from './RivalAcademyPanel';
 
 interface TabConfig {
   id: TabType;
@@ -47,6 +48,7 @@ const tabs: TabConfig[] = [
   { id: 'goals', label: '目标任务', icon: '🎯' },
   { id: 'codex', label: '图鉴成就', icon: '📖' },
   { id: 'club', label: '魔法社团', icon: '🎭' },
+  { id: 'rivalCompetition', label: '多校竞争', icon: '🏰⚔️' },
   { id: 'season', label: '赛季系统', icon: '🏆' },
   { id: 'eventCenter', label: '事件中心', icon: '🎪' },
   { id: 'dormitory', label: '宿舍生活', icon: '🏠' },
@@ -165,6 +167,7 @@ export default function MainLayout() {
         {activeTab === 'goals' && <GoalsModule />}
         {activeTab === 'codex' && <CodexAchievementPanel />}
         {activeTab === 'club' && <ClubPanel />}
+        {activeTab === 'rivalCompetition' && <RivalAcademyPanel />}
         {activeTab === 'season' && <SeasonPanel />}
         {activeTab === 'eventCenter' && <EventCenterPanel />}
         {activeTab === 'kingdomCommission' && <KingdomCommissionPanel />}

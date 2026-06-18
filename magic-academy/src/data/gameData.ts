@@ -8691,3 +8691,497 @@ export const getBlackMarketBuildingBonus = (
   
   return { priceDiscount, riskReduction, itemSlotBonus };
 };
+
+export const RIVAL_ACADEMY_TEMPLATES = [
+  {
+    id: 'dragon_claw',
+    name: '龙爪武学院',
+    description: '以强横战斗力闻名的军事化学院，擅长掠夺资源',
+    icon: '🐉',
+    quality: 'hard' as const,
+    personality: 'aggressive' as const,
+    color: '#dc2626',
+    initialLevel: 3,
+  },
+  {
+    id: 'starlight',
+    name: '星光魔法学院',
+    description: '历史悠久的传统学院，学术实力雄厚',
+    icon: '⭐',
+    quality: 'normal' as const,
+    personality: 'scholarly' as const,
+    color: '#6366f1',
+    initialLevel: 2,
+  },
+  {
+    id: 'forest_heart',
+    name: '森心自然学院',
+    description: '亲近自然的平衡型学院，发展稳定',
+    icon: '🌿',
+    quality: 'easy' as const,
+    personality: 'balanced' as const,
+    color: '#16a34a',
+    initialLevel: 1,
+  },
+  {
+    id: 'iron_wall',
+    name: '铁壁守护学院',
+    description: '防守坚固的学院，资源点控制能力极强',
+    icon: '🛡️',
+    quality: 'hard' as const,
+    personality: 'defensive' as const,
+    color: '#78716c',
+    initialLevel: 3,
+  },
+  {
+    id: 'phoenix_nest',
+    name: '凤凰巢精英学院',
+    description: '顶级精英学院，各方面均衡且强大',
+    icon: '🔥',
+    quality: 'elite' as const,
+    personality: 'aggressive' as const,
+    color: '#f97316',
+    initialLevel: 5,
+  },
+];
+
+export const RESOURCE_POINT_TEMPLATES = [
+  { id: 'gold_mine_1', name: '黄金矿脉', description: '富含金矿的山脉', icon: '⛏️', type: 'gold_mine' as const, level: 1, dailyOutput: { gold: 150 } },
+  { id: 'gold_mine_2', name: '皇家金矿', description: '曾属于王国的金矿', icon: '💰', type: 'gold_mine' as const, level: 2, dailyOutput: { gold: 300 } },
+  { id: 'mana_spring_1', name: '魔力之泉', description: '自然涌出的魔力泉水', icon: '💎', type: 'mana_spring' as const, level: 1, dailyOutput: { mana: 100 } },
+  { id: 'mana_spring_2', name: '星辰魔泉', description: '蕴含星辰之力的魔泉', icon: '✨', type: 'mana_spring' as const, level: 2, dailyOutput: { mana: 200 } },
+  { id: 'food_farm_1', name: '丰饶农场', description: '肥沃土地上的大农场', icon: '🌾', type: 'food_farm' as const, level: 1, dailyOutput: { food: 80 } },
+  { id: 'food_farm_2', name: '魔法果园', description: '种植魔法食材的果园', icon: '🍎', type: 'food_farm' as const, level: 2, dailyOutput: { food: 160 } },
+  { id: 'reputation_monument_1', name: '英雄纪念碑', description: '纪念英雄的宏伟建筑', icon: '🗿', type: 'reputation_monument' as const, level: 1, dailyOutput: { reputation: 15 } },
+  { id: 'reputation_monument_2', name: '荣耀竞技场', description: '全大陆瞩目的竞技场', icon: '🏛️', type: 'reputation_monument' as const, level: 2, dailyOutput: { reputation: 30 } },
+];
+
+export const INITIAL_RIVAL_COMPETITION_STATE: RivalCompetitionState = {
+  unlocked: false,
+  unlockedDay: 0,
+  rivalAcademies: [],
+  growthLogs: [],
+  weeklyRankings: [],
+  currentWeek: 1,
+  resourcePoints: [],
+  activeContestations: [],
+  contestationHistory: [],
+  recruitmentCandidates: [],
+  bidResults: [],
+  lastCandidateRefreshDay: 0,
+  maxActiveContestations: 2,
+  maxBidsPerDay: 3,
+  bidsUsedToday: 0,
+  lastBidResetDay: 0,
+  reputationBonusMultiplier: 1,
+  seasonCompetitionBonus: 0,
+  totalContestationsWon: 0,
+  totalAuctionsWon: 0,
+};
+
+export const generateRivalAcademies = (): RivalAcademy[] => {
+  return RIVAL_ACADEMY_TEMPLATES.map(template => {
+    const baseReputation = template.initialLevel * 150;
+    const baseCombatPower = template.initialLevel * 500 + 
+      (template.quality === 'elite' ? 1000 : template.quality === 'hard' ? 500 : template.quality === 'normal' ? 200 : 0);
+    
+    return {
+      id: template.id,
+      name: template.name,
+      description: template.description,
+      icon: template.icon,
+      level: template.initialLevel,
+      maxLevel: 10,
+      reputation: baseReputation,
+      studentCount: template.initialLevel * 5 + 10,
+      quality: template.quality,
+      personality: template.personality,
+      resources: {
+        gold: template.initialLevel * 500,
+        mana: template.initialLevel * 300,
+        food: template.initialLevel * 100,
+        reputation: baseReputation,
+      },
+      buildingLevels: {
+        main_building: template.initialLevel,
+        library: Math.max(1, template.initialLevel - 1),
+        training_field: Math.max(1, template.initialLevel),
+        dormitory: Math.max(1, template.initialLevel),
+      },
+      averageStudentLevel: template.initialLevel * 2 + 1,
+      combatPower: baseCombatPower,
+      weeklyScore: 0,
+      seasonScore: 0,
+      color: template.color,
+      territoryBonus: 0,
+      lastGrowDay: 0,
+      unlocked: true,
+      defeatedCount: 0,
+      victoryCount: 0,
+    };
+  });
+};
+
+export const generateResourcePoints = (): ResourcePoint[] => {
+  return RESOURCE_POINT_TEMPLATES.map(template => ({
+    id: template.id,
+    name: template.name,
+    description: template.description,
+    icon: template.icon,
+    type: template.type,
+    level: template.level,
+    maxLevel: 5,
+    ownerAcademyId: null,
+    ownerAcademyName: null,
+    dailyOutput: { ...template.dailyOutput },
+    contestationCooldown: 3,
+    lastContestationDay: 0,
+    captureProgress: 0,
+    captureRequired: template.level * 100,
+    contested: false,
+    defenderBonus: 0.2,
+  }));
+};
+
+export const calculateWeeklyScore = (
+  academy: { reputation: number; studentCount: number; level: number },
+  territoryPoints: number,
+  contestationsWon: number,
+  auctionsWon: number
+): number => {
+  return Math.floor(
+    academy.reputation * 0.5 +
+    academy.studentCount * 10 +
+    academy.level * 50 +
+    territoryPoints * 20 +
+    contestationsWon * 100 +
+    auctionsWon * 80
+  );
+};
+
+export const getWeeklyTierRewards = (tier: WeeklyRankTier): Partial<Resource> => {
+  switch (tier) {
+    case 'top1': return { gold: 5000, mana: 3000, food: 500, reputation: 200 };
+    case 'top3': return { gold: 3000, mana: 2000, food: 300, reputation: 120 };
+    case 'top10': return { gold: 1500, mana: 1000, food: 200, reputation: 60 };
+    case 'top50': return { gold: 800, mana: 500, food: 100, reputation: 30 };
+    default: return { gold: 300, mana: 200, food: 50, reputation: 10 };
+  }
+};
+
+export const getWeeklyRankRewards = (rank: number): Partial<Resource> => {
+  if (rank === 1) return { gold: 2000, mana: 1500, reputation: 100 };
+  if (rank === 2) return { gold: 1500, mana: 1000, reputation: 75 };
+  if (rank === 3) return { gold: 1000, mana: 750, reputation: 50 };
+  if (rank <= 10) return { gold: 500, mana: 300, reputation: 25 };
+  if (rank <= 50) return { gold: 200, mana: 150, reputation: 10 };
+  return {};
+};
+
+export const getWeeklyTier = (rank: number, totalAcademies: number): WeeklyRankTier => {
+  if (rank === 1) return 'top1';
+  if (rank <= 3) return 'top3';
+  if (rank <= 10) return 'top10';
+  if (rank <= Math.min(50, totalAcademies)) return 'top50';
+  return 'participant';
+};
+
+export const simulateRivalGrowth = (
+  rival: RivalAcademy,
+  currentDay: number,
+  daysPassed: number = 1
+): { rival: RivalAcademy; logs: RivalAcademyGrowthLog[] } => {
+  const logs: RivalAcademyGrowthLog[] = [];
+  const growthMultiplier = 
+    rival.quality === 'elite' ? 1.5 :
+    rival.quality === 'hard' ? 1.2 :
+    rival.quality === 'normal' ? 1.0 : 0.7;
+  
+  const personalityMultiplier = 
+    rival.personality === 'aggressive' ? 1.2 :
+    rival.personality === 'scholarly' ? 1.1 :
+    rival.personality === 'balanced' ? 1.0 : 0.9;
+  
+  const effectiveMultiplier = growthMultiplier * personalityMultiplier;
+  let newRival = { ...rival };
+  
+  const goldGain = Math.floor(100 * effectiveMultiplier * daysPassed);
+  const manaGain = Math.floor(60 * effectiveMultiplier * daysPassed);
+  const foodGain = Math.floor(40 * effectiveMultiplier * daysPassed);
+  const repGain = Math.floor(5 * effectiveMultiplier * daysPassed);
+  
+  newRival.resources = {
+    gold: newRival.resources.gold + goldGain,
+    mana: newRival.resources.mana + manaGain,
+    food: newRival.resources.food + foodGain,
+    reputation: newRival.resources.reputation + repGain,
+  };
+  newRival.reputation += repGain;
+  
+  const upgradeChance = 0.15 * effectiveMultiplier;
+  if (Math.random() < upgradeChance && newRival.level < newRival.maxLevel) {
+    const buildingIds = Object.keys(newRival.buildingLevels);
+    const randomBuilding = buildingIds[Math.floor(Math.random() * buildingIds.length)];
+    const upgradeCost = 200 * newRival.buildingLevels[randomBuilding];
+    if (newRival.resources.gold >= upgradeCost) {
+      newRival.buildingLevels[randomBuilding]++;
+      newRival.resources.gold -= upgradeCost;
+      logs.push({
+        id: `growth_${rival.id}_${Date.now()}_${Math.random()}`,
+        rivalId: rival.id,
+        day: currentDay,
+        type: 'building_upgrade',
+        description: `${rival.name} 升级了建筑 ${randomBuilding}`,
+        value: 1,
+      });
+    }
+  }
+  
+  const levelUpChance = 0.08 * effectiveMultiplier;
+  if (Math.random() < levelUpChance && newRival.level < newRival.maxLevel) {
+    const levelUpCost = 1000 * newRival.level;
+    if (newRival.resources.gold >= levelUpCost) {
+      newRival.level++;
+      newRival.studentCount += 3;
+      newRival.combatPower += 200;
+      newRival.averageStudentLevel += 1;
+      newRival.resources.gold -= levelUpCost;
+      logs.push({
+        id: `growth_${rival.id}_${Date.now()}_${Math.random()}`,
+        rivalId: rival.id,
+        day: currentDay,
+        type: 'level_up',
+        description: `${rival.name} 学院等级提升到 Lv.${newRival.level}`,
+        value: newRival.level,
+      });
+    }
+  }
+  
+  const recruitChance = 0.25 * effectiveMultiplier;
+  if (Math.random() < recruitChance) {
+    const recruitCount = Math.floor(Math.random() * 3) + 1;
+    newRival.studentCount += recruitCount;
+    newRival.combatPower += recruitCount * 30;
+    logs.push({
+      id: `growth_${rival.id}_${Date.now()}_${Math.random()}`,
+      rivalId: rival.id,
+      day: currentDay,
+      type: 'recruit',
+      description: `${rival.name} 招募了 ${recruitCount} 名新学员`,
+      value: recruitCount,
+    });
+  }
+  
+  newRival.combatPower = Math.floor(
+    newRival.level * 500 +
+    newRival.studentCount * 40 +
+    newRival.averageStudentLevel * 80 +
+    Object.values(newRival.buildingLevels).reduce((a, b) => a + b, 0) * 50
+  );
+  
+  newRival.lastGrowDay = currentDay;
+  
+  return { rival: newRival, logs };
+};
+
+export const generateRecruitmentCandidate = (
+  day: number,
+  minQuality: StudentQuality = 'rare'
+): RecruitmentCandidate => {
+  const qualityRoll = Math.random();
+  let quality: StudentQuality;
+  if (qualityRoll < 0.05) quality = 'legendary';
+  else if (qualityRoll < 0.20) quality = 'epic';
+  else if (qualityRoll < 0.55) quality = 'rare';
+  else quality = 'common';
+  
+  const qualityOrder = ['common', 'rare', 'epic', 'legendary'];
+  if (qualityOrder.indexOf(quality) < qualityOrder.indexOf(minQuality)) {
+    quality = minQuality;
+  }
+  
+  const magicTypes: MagicType[] = ['fire', 'water', 'earth', 'wind', 'light', 'dark'];
+  const magicType = magicTypes[Math.floor(Math.random() * magicTypes.length)];
+  
+  const potentialBase = 
+    quality === 'legendary' ? 1.7 :
+    quality === 'epic' ? 1.3 :
+    quality === 'rare' ? 1.0 : 0.7;
+  const potential = potentialBase + Math.random() * 0.3;
+  
+  const basePrice: Record<StudentQuality, Partial<Resource>> = {
+    common: { gold: 300, reputation: 10 },
+    rare: { gold: 800, reputation: 30 },
+    epic: { gold: 2000, reputation: 80 },
+    legendary: { gold: 5000, reputation: 200 },
+  };
+  
+  const level = 
+    quality === 'legendary' ? 5 + Math.floor(Math.random() * 3) :
+    quality === 'epic' ? 3 + Math.floor(Math.random() * 3) :
+    quality === 'rare' ? 2 + Math.floor(Math.random() * 2) :
+    1;
+  
+  const traitCount = 
+    quality === 'legendary' ? 3 :
+    quality === 'epic' ? 2 :
+    quality === 'rare' ? 1 : 1;
+  
+  return {
+    id: `candidate_${Date.now()}_${Math.random()}`,
+    name: generateStudentName(),
+    quality,
+    magicType,
+    potential,
+    level,
+    traits: generateTraits(quality, traitCount),
+    basePrice: { ...basePrice[quality] },
+    currentBidder: null,
+    currentBid: { ...basePrice[quality] },
+    bidCount: 0,
+    expiresAtDay: day + 3,
+    auctionStatus: 'bidding',
+    winnerId: null,
+    bidHistory: [],
+  };
+};
+
+export const refreshRecruitmentCandidates = (
+  currentCandidates: RecruitmentCandidate[],
+  day: number,
+  count: number = 4
+): RecruitmentCandidate[] => {
+  const activeCandidates = currentCandidates.filter(c => 
+    c.auctionStatus === 'bidding' && c.expiresAtDay > day
+  );
+  const newCandidates: RecruitmentCandidate[] = [];
+  
+  for (let i = activeCandidates.length; i < count; i++) {
+    const minQuality: StudentQuality = i === 0 ? 'epic' : i <= 1 ? 'rare' : 'common';
+    newCandidates.push(generateRecruitmentCandidate(day, minQuality));
+  }
+  
+  return [...activeCandidates, ...newCandidates];
+};
+
+export const calculateRivalBid = (
+  candidate: RecruitmentCandidate,
+  rival: RivalAcademy
+): { gold: number; reputation: number } | null => {
+  const valueMultiplier = 
+    rival.personality === 'aggressive' ? 1.4 :
+    rival.personality === 'scholarly' ? 1.2 :
+    rival.personality === 'balanced' ? 1.1 : 0.9;
+  
+  const qualityMultiplier =
+    candidate.quality === 'legendary' ? 2.0 :
+    candidate.quality === 'epic' ? 1.5 :
+    candidate.quality === 'rare' ? 1.2 : 1.0;
+  
+  const currentBidGold = candidate.currentBid.gold || 0;
+  const currentBidRep = candidate.currentBid.reputation || 0;
+  
+  const minimumBidGold = Math.floor(currentBidGold * 1.15 * valueMultiplier * qualityMultiplier);
+  const minimumBidRep = Math.floor(currentBidRep * 1.1 * valueMultiplier);
+  
+  if (rival.resources.gold < minimumBidGold || rival.reputation < minimumBidRep) {
+    return null;
+  }
+  
+  const maxBidGold = Math.floor(minimumBidGold * (1 + Math.random() * 0.3));
+  const maxBidRep = Math.floor(minimumBidRep * (1 + Math.random() * 0.2));
+  
+  return {
+    gold: Math.min(maxBidGold, rival.resources.gold),
+    reputation: Math.min(maxBidRep, rival.reputation),
+  };
+};
+
+export const canStartContestation = (
+  point: ResourcePoint,
+  playerCombatPower: number,
+  currentDay: number,
+  activeContestations: number,
+  maxActive: number
+): { canStart: boolean; reason?: string } => {
+  if (currentDay - point.lastContestationDay < point.contestationCooldown) {
+    return { canStart: false, reason: `争夺冷却中，还需 ${point.contestationCooldown - (currentDay - point.lastContestationDay)} 天` };
+  }
+  if (activeContestations >= maxActive) {
+    return { canStart: false, reason: '已达到最大同时争夺数' };
+  }
+  if (playerCombatPower < point.captureRequired * 0.5) {
+    return { canStart: false, reason: '战斗力不足，无法发起争夺' };
+  }
+  return { canStart: true };
+};
+
+export const calculateContestationProgress = (
+  challengerCombatPower: number,
+  defenderCombatPower: number,
+  defenderBonus: number,
+  challengerInvestment: number = 0,
+  defenderInvestment: number = 0
+): { challengerProgress: number; defenderProgress: number } => {
+  const effectiveChallenger = challengerCombatPower * (1 + challengerInvestment * 0.001);
+  const effectiveDefender = defenderCombatPower * (1 + defenderBonus) * (1 + defenderInvestment * 0.001);
+  
+  const totalPower = effectiveChallenger + effectiveDefender;
+  const challengerRatio = effectiveChallenger / totalPower;
+  const defenderRatio = effectiveDefender / totalPower;
+  
+  return {
+    challengerProgress: Math.floor(challengerRatio * 100),
+    defenderProgress: Math.floor(defenderRatio * 100),
+  };
+};
+
+export const getResourcePointIcon = (type: ResourcePointType): string => {
+  switch (type) {
+    case 'gold_mine': return '⛏️';
+    case 'mana_spring': return '💎';
+    case 'food_farm': return '🌾';
+    case 'reputation_monument': return '🗿';
+    default: return '🏰';
+  }
+};
+
+export const getResourcePointTypeName = (type: ResourcePointType): string => {
+  switch (type) {
+    case 'gold_mine': return '金矿';
+    case 'mana_spring': return '魔泉';
+    case 'food_farm': return '农场';
+    case 'reputation_monument': return '纪念碑';
+    default: return '资源点';
+  }
+};
+
+export const getPersonalityName = (personality: RivalAcademyPersonality): string => {
+  switch (personality) {
+    case 'aggressive': return '侵略型';
+    case 'balanced': return '平衡型';
+    case 'defensive': return '防守型';
+    case 'scholarly': return '学术型';
+    default: return '未知';
+  }
+};
+
+export const getDifficultyName = (quality: RivalAcademyDifficulty): string => {
+  switch (quality) {
+    case 'easy': return '简单';
+    case 'normal': return '普通';
+    case 'hard': return '困难';
+    case 'elite': return '精英';
+    default: return '未知';
+  }
+};
+
+export const getDifficultyColor = (quality: RivalAcademyDifficulty): string => {
+  switch (quality) {
+    case 'easy': return '#16a34a';
+    case 'normal': return '#3b82f6';
+    case 'hard': return '#dc2626';
+    case 'elite': return '#a855f7';
+    default: return '#666';
+  }
+};
