@@ -20,6 +20,8 @@ import DormitoryPanel from './DormitoryPanel';
 import './DormitoryPanel.css';
 import CodexAchievementPanel from './CodexAchievementPanel';
 import './CodexAchievementPanel.css';
+import DungeonPanel from './DungeonPanel';
+import './DungeonPanel.css';
 
 interface TabConfig {
   id: TabType;
@@ -147,7 +149,7 @@ export default function MainLayout() {
         {activeTab === 'academy' && <AcademyModule />}
         {activeTab === 'recruit' && <RecruitModule onStudentClick={setSelectedStudentId} setConfirmDialog={setConfirmDialog} />}
         {activeTab === 'course' && <CourseModule onStudentClick={setSelectedStudentId} />}
-        {activeTab === 'dungeon' && <DungeonModule onStudentClick={setSelectedStudentId} setConfirmDialog={setConfirmDialog} />}
+        {activeTab === 'dungeon' && <DungeonPanel onStudentClick={setSelectedStudentId} setConfirmDialog={setConfirmDialog} />}
         {activeTab === 'mentor' && <MentorPanel />}
         {activeTab === 'trade' && <TradeHarborPanel />}
         {activeTab === 'alchemy' && <AlchemyPanel />}

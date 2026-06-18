@@ -1463,3 +1463,200 @@ export interface CodexAchievementState {
   codex: CodexState;
   achievement: AchievementState;
 }
+
+export type ElementAdvantageType = 'strong' | 'weak' | 'neutral';
+
+export interface ElementRelation {
+  attacker: MagicType;
+  defender: MagicType;
+  relation: ElementAdvantageType;
+  multiplier: number;
+}
+
+export interface BattleUnit {
+  id: string;
+  name: string;
+  magicType: MagicType;
+  level: number;
+  currentHp: number;
+  maxHp: number;
+  attack: number;
+  defense: number;
+  speed: number;
+  skills: Skill[];
+  isPlayer: boolean;
+  position: number;
+  buffs: Buff[];
+  debuffs: Debuff[];
+  hasActed: boolean;
+  isBoss?: boolean;
+}
+
+export interface Buff {
+  id: string;
+  name: string;
+  type: 'attack_up' | 'defense_up' | 'speed_up' | 'regen' | 'shield';
+  value: number;
+  duration: number;
+  remainingTurns: number;
+}
+
+export interface Debuff {
+  id: string;
+  name: string;
+  type: 'attack_down' | 'defense_down' | 'speed_down' | 'burn' | 'freeze' | 'poison';
+  value: number;
+  duration: number;
+  remainingTurns: number;
+}
+
+export interface BattleSkillResult {
+  skillId: string;
+  skillName: string;
+  casterId: string;
+  casterName: string;
+  targetIds: string[];
+  targetNames: string[];
+  baseDamage: number;
+  finalDamage: number;
+  isCritical: boolean;
+  criticalMultiplier: number;
+  elementRelation: ElementAdvantageType;
+  elementMultiplier: number;
+  totalDamage: number;
+  kills: string[];
+  buffsApplied: Buff[];
+  debuffsApplied: Debuff[];
+}
+
+export interface BattleTurn {
+  turnNumber: number;
+  actions: BattleSkillResult[];
+  playerUnitsRemaining: number;
+  enemyUnitsRemaining: number;
+}
+
+export interface BattleState {
+  status: 'idle' | 'preparing' | 'fighting' | 'victory' | 'defeat';
+  currentWave: number;
+  totalWaves: number;
+  turnCount: number;
+  playerUnits: BattleUnit[];
+  enemyUnits: BattleUnit[];
+  selectedUnitId: string | null;
+  selectedSkillId: string | null;
+  targetableUnitIds: string[];
+  turnHistory: BattleTurn[];
+  currentTurnActions: BattleSkillResult[];
+  isPlayerTurn: boolean;
+  currentUnitIndex: number;
+  turnOrder: string[];
+  autoBattle: boolean;
+  battleSpeed: number;
+}
+
+export interface TeamCompBonus {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  bonusType: 'damage' | 'defense' | 'hp' | 'speed' | 'crit';
+  value: number;
+  requiredElements: MagicType[];
+  elementCount: number;
+}
+
+export interface TeamCompEvaluation {
+  score: number;
+  grade: 'S' | 'A' | 'B' | 'C' | 'D';
+  bonuses: TeamCompBonus[];
+  weaknesses: MagicType[];
+  strengths: MagicType[];
+  coverage: number;
+  synergyLevel: number;
+  recommendations: string[];
+}
+
+export interface WaveEnemyConfig {
+  magicType: MagicType;
+  count: number;
+  isBoss: boolean;
+  levelMultiplier: number;
+}
+
+export interface DungeonWaveConfig {
+  waveNumber: number;
+  enemies: WaveEnemyConfig[];
+  isBossWave: boolean;
+}
+
+export interface EnemyTemplate {
+  id: string;
+  name: string;
+  magicType: MagicType;
+  baseHp: number;
+  baseAttack: number;
+  baseDefense: number;
+  baseSpeed: number;
+  isBoss: boolean;
+  skills: Skill[];
+  icon: string;
+  description: string;
+}
+
+export interface DamageCalculationParams {
+  attacker: BattleUnit;
+  defender: BattleUnit;
+  skill: Skill;
+  teamBonuses: TeamCompBonus[];
+  activeBuffs: Buff[];
+  activeDebuffs: Debuff[];
+  includeCritical: boolean;
+}
+
+export interface DamageResult {
+  baseDamage: number;
+  elementMultiplier: number;
+  elementRelation: ElementAdvantageType;
+  criticalMultiplier: number;
+  isCritical: boolean;
+  buffMultiplier: number;
+  debuffMultiplier: number;
+  defenseReduction: number;
+  finalDamage: number;
+  isKill: boolean;
+}
+
+export interface BattleRewards {
+  gold: number;
+  mana: number;
+  food: number;
+  reputation: number;
+  exp: number;
+  expPerStudent: Record<string, number>;
+  drops: { materialId: string; quantity: number }[];
+}
+
+export interface BattleSettlement {
+  victory: boolean;
+  stars: number;
+  totalTurns: number;
+  wavesCompleted: number;
+  survivingMembers: number;
+  totalMembers: number;
+  averageHpPercent: number;
+  totalDamageDealt: number;
+  totalDamageTaken: number;
+  totalHealingDone: number;
+  mostValuablePlayer: string | null;
+  rewards: BattleRewards;
+  elementBreakdown: Record<MagicType, { damage: number; kills: number }>;
+  skillUsage: Record<string, { uses: number; totalDamage: number }>;
+}
+
+export const ELEMENT_ADVANTAGE_MULTIPLIER = 1.5;
+export const ELEMENT_DISADVANTAGE_MULTIPLIER = 0.75;
+export const CRITICAL_BASE_CHANCE = 0.1;
+export const CRITICAL_BASE_MULTIPLIER = 1.5;
+export const MAX_TEAM_SIZE = 4;
+export const MAX_BATTLE_TURNS = 30;
