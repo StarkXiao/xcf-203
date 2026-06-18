@@ -314,7 +314,7 @@ export interface DormitoryState {
   avgStamina: number;
 }
 
-export const CURRENT_SAVE_VERSION = 16;
+export const CURRENT_SAVE_VERSION = 17;
 
 export type MentorQuality = 'common' | 'rare' | 'epic' | 'legendary';
 export type MentorRank = 'novice' | 'apprentice' | 'journeyman' | 'expert' | 'master' | 'grandmaster';
@@ -1050,6 +1050,120 @@ export interface MapExploreState {
   lastDailyResetDay: number;
 }
 
+export type BlackMarketItemCategory = 'rare_ticket' | 'forbidden_material' | 'limited_discount' | 'mystery_box';
+export type BlackMarketItemRarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
+
+export interface BlackMarketItem {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  category: BlackMarketItemCategory;
+  rarity: BlackMarketItemRarity;
+  basePrice: number;
+  currentPrice: number;
+  discount: number;
+  stock: number;
+  maxStock: number;
+  auditRisk: number;
+  reputationCost: number;
+  isLimited: boolean;
+  expiresAtDay?: number;
+  effects: BlackMarketItemEffect[];
+  requiredAuditLevel?: number;
+}
+
+export interface BlackMarketItemEffect {
+  type: BlackMarketEffectType;
+  value: number;
+  target?: string;
+  quality?: StudentQuality;
+  duration?: number;
+}
+
+export type BlackMarketEffectType =
+  | 'recruit_ticket'
+  | 'gold_gain'
+  | 'mana_gain'
+  | 'reputation_gain'
+  | 'alchemy_material'
+  | 'trade_material'
+  | 'dungeon_sweep_ticket'
+  | 'exp_boost'
+  | 'course_speed_boost'
+  | 'damage_boost'
+  | 'mystery_random';
+
+export interface BlackMarketTransaction {
+  id: string;
+  itemId: string;
+  itemName: string;
+  type: 'buy' | 'sell';
+  price: number;
+  quantity: number;
+  day: number;
+  auditChange: number;
+  reputationChange: number;
+}
+
+export type PenaltySeverity = 'minor' | 'moderate' | 'severe' | 'catastrophic';
+export type PenaltyStatus = 'pending' | 'active' | 'resolved' | 'expired';
+
+export interface BlackMarketPenalty {
+  id: string;
+  name: string;
+  description: string;
+  severity: PenaltySeverity;
+  icon: string;
+  effects: PenaltyEffect[];
+  durationDays: number;
+  remainingDays: number;
+  status: PenaltyStatus;
+  appliedAt: number;
+  resolveCost?: Partial<Resource>;
+}
+
+export interface PenaltyEffect {
+  type: PenaltyEffectType;
+  value: number;
+  target?: string;
+}
+
+export type PenaltyEffectType =
+  | 'gold_loss'
+  | 'reputation_loss'
+  | 'trade_price_penalty'
+  | 'course_speed_penalty'
+  | 'exp_penalty'
+  | 'recruit_quality_penalty'
+  | 'building_cost_penalty'
+  | 'stamina_drain';
+
+export type AuditLevel = 'clean' | 'low' | 'medium' | 'high' | 'critical';
+
+export interface BlackMarketState {
+  unlocked: boolean;
+  auditValue: number;
+  maxAuditValue: number;
+  auditLevel: AuditLevel;
+  currentItems: BlackMarketItem[];
+  lastRefreshDay: number;
+  refreshCost: Partial<Resource>;
+  freeRefreshesPerDay: number;
+  freeRefreshesUsed: number;
+  transactionHistory: BlackMarketTransaction[];
+  activePenalties: BlackMarketPenalty[];
+  penaltyHistory: BlackMarketPenalty[];
+  reputationDiscount: number;
+  riskReduction: number;
+  totalBought: number;
+  totalGoldSpent: number;
+  totalAuditGained: number;
+  successfulDeals: number;
+  failedDeals: number;
+  mysteryBoxOpened: number;
+}
+
 export interface GameState {
   saveVersion: number;
   resources: Resource;
@@ -1084,6 +1198,7 @@ export interface GameState {
   codex: CodexState;
   achievement: AchievementState;
   mapExplore: MapExploreState;
+  blackMarket: BlackMarketState;
 }
 
 export interface CourseBenefitBreakdown {
@@ -1105,7 +1220,7 @@ export interface CourseBenefitBreakdown {
   potionSpeedBoost: number;
 }
 
-export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade' | 'alchemy' | 'eventCenter' | 'kingdomCommission' | 'dormitory' | 'codex' | 'mapExplore';
+export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade' | 'alchemy' | 'eventCenter' | 'kingdomCommission' | 'dormitory' | 'codex' | 'mapExplore' | 'blackMarket';
 
 export type CommissionType = 'course_training' | 'dungeon_dispatch' | 'resource_delivery' | 'comprehensive';
 export type CommissionDifficulty = 'easy' | 'normal' | 'hard' | 'epic' | 'legendary';
@@ -1276,7 +1391,8 @@ export interface EventCenterState {
 export interface DailyEvent {
   type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning' | 'course_queued' | 'course_started' | 'queue_empty' | 'course_conflict' | 'hp_heal' | 'hp_natural_recovery' | 'battle_injury' | 'cannot_battle_injured' | 'club_task_complete' | 'club_joined' | 'club_shop_purchase' | 'club_level_up' | 'club_reputation_gain' | 'trade_order_placed' | 'trade_order_completed' | 'trade_shipment_arrived' | 'trade_price_changed' | 'trade_shipment_risk' | 'trade_harbor_upgrade' | 'mentor_recruited' | 'mentor_level_up' | 'mentor_rank_up' | 'mentor_assigned' | 'mentor_specialization_up' | 'academy_level_up' | 'mentor_salary_paid' | 'student_promoted' | 'alchemy_craft_complete' | 'alchemy_material_synthesized' | 'alchemy_potion_used' | 'alchemy_potion_sold' | 'alchemy_workshop_upgraded' | 'alchemy_recipe_unlocked' | 'event_center_triggered' | 'event_center_resolved' | 'event_center_risk'
   | 'dormitory_event' | 'dormitory_relationship_up' | 'dormitory_room_assigned' | 'dormitory_rest_activity' | 'dormitory_bonus_applied'
-  | 'map_area_unlocked' | 'map_explore_event' | 'map_gathering' | 'map_route_traveled' | 'map_mastery_achieved';
+  | 'map_area_unlocked' | 'map_explore_event' | 'map_gathering' | 'map_route_traveled' | 'map_mastery_achieved'
+  | 'black_market_purchase' | 'black_market_refresh' | 'black_market_penalty' | 'black_market_audit_change' | 'black_market_mystery_opened' | 'black_market_unlocked';
   message: string;
   value?: number;
   studentId?: string;

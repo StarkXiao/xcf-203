@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff, AcademyEventDefinition, KingdomCommission, CommissionStageType, RestActivity, DormitoryState, StudentRelationship, CodexCategory, AchievementType, AchievementRarity, MagicType, MapAreaId } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff, AcademyEventDefinition, KingdomCommission, CommissionStageType, RestActivity, DormitoryState, StudentRelationship, CodexCategory, AchievementType, AchievementRarity, MagicType, MapAreaId, BlackMarketPenalty, PenaltySeverity, AuditLevel, BlackMarketItemCategory, BlackMarketItemRarity } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -205,6 +205,24 @@ import {
   resolveMapExploreEvent,
   discoverRoutesForArea,
   checkMapAreaMastery,
+  INITIAL_BLACK_MARKET_STATE,
+  BLACK_MARKET_RARITY_COLORS,
+  BLACK_MARKET_RARITY_NAMES,
+  BLACK_MARKET_CATEGORY_NAMES,
+  BLACK_MARKET_CATEGORY_ICONS,
+  AUDIT_LEVEL_INFO,
+  getAuditLevel,
+  generateBlackMarketItems,
+  calculateAuditRisk,
+  checkPenaltyTrigger,
+  getRandomPenalty,
+  getPenaltySeverityByAuditLevel,
+  canBuyBlackMarketItem,
+  getMysteryBoxRewards,
+  getBlackMarketBuildingBonus,
+  PENALTY_SEVERITY_COLORS,
+  PENALTY_SEVERITY_NAMES,
+  generateBlackMarketId,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -328,7 +346,15 @@ type GameAction =
   | { type: 'GATHER_MAP_NODE'; nodeId: string }
   | { type: 'RESOLVE_MAP_EXPLORE_EVENT'; eventId: string; choiceId: string }
   | { type: 'DISMISS_MAP_EXPLORE_EVENT' }
-  | { type: 'TRAVEL_MAP_ROUTE'; routeId: string };
+  | { type: 'TRAVEL_MAP_ROUTE'; routeId: string }
+  | { type: 'UNLOCK_BLACK_MARKET' }
+  | { type: 'REFRESH_BLACK_MARKET'; useFree?: boolean }
+  | { type: 'BUY_BLACK_MARKET_ITEM'; itemId: string; quantity: number }
+  | { type: 'UPDATE_AUDIT_VALUE'; amount: number }
+  | { type: 'ADD_BLACK_MARKET_PENALTY'; penalty: BlackMarketPenalty }
+  | { type: 'RESOLVE_BLACK_MARKET_PENALTY'; penaltyId: string }
+  | { type: 'TICK_BLACK_MARKET_PENALTIES' }
+  | { type: 'OPEN_MYSTERY_BOX'; itemId: string; tier: number };
 
 const MAX_STUDENT_CAPACITY = 20;
 
@@ -394,6 +420,7 @@ const initialState: GameState = {
   codex: INITIAL_CODEX_STATE,
   achievement: INITIAL_ACHIEVEMENT_STATE,
   mapExplore: INITIAL_MAP_EXPLORE_STATE,
+  blackMarket: INITIAL_BLACK_MARKET_STATE,
 };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -4984,6 +5011,84 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         finalResources.reputation += dormRepBonus;
       }
 
+      let finalBlackMarket = { ...state.blackMarket };
+      if (state.blackMarket.unlocked) {
+        const auditDecay = Math.max(1, Math.floor(state.blackMarket.auditValue * 0.05));
+        const newAuditValue = Math.max(0, state.blackMarket.auditValue - auditDecay);
+        const newAuditLevel = getAuditLevel(newAuditValue);
+        
+        finalBlackMarket.auditValue = newAuditValue;
+        finalBlackMarket.auditLevel = newAuditLevel;
+        
+        if (auditDecay > 0) {
+          todayEvents.push({
+            type: 'black_market_audit_change',
+            message: `🕵️ 审查值每日衰减 -${auditDecay}（${newAuditLevel}）`,
+            value: -auditDecay,
+          });
+        }
+
+        const updatedPenalties = finalBlackMarket.activePenalties
+          .map(p => ({
+            ...p,
+            remainingDays: p.remainingDays - 1,
+            status: (p.remainingDays - 1 <= 0 ? 'expired' as const : p.status),
+          }))
+          .filter(p => p.status === 'active');
+        finalBlackMarket.activePenalties = updatedPenalties;
+
+        const buildingBonus = getBlackMarketBuildingBonus(state.buildings);
+        const penaltyTriggered = checkPenaltyTrigger(newAuditLevel, buildingBonus.riskReduction);
+        if (penaltyTriggered) {
+          const severity = getPenaltySeverityByAuditLevel(newAuditLevel);
+          const penalty = getRandomPenalty(severity, newDay);
+          
+          for (const effect of penalty.effects) {
+            if (effect.type === 'gold_loss') {
+              finalResources.gold = Math.max(0, finalResources.gold - effect.value);
+            } else if (effect.type === 'reputation_loss') {
+              finalResources.reputation = Math.max(0, finalResources.reputation - effect.value);
+            }
+          }
+          
+          finalBlackMarket.activePenalties.push(penalty);
+          finalBlackMarket.penaltyHistory = [...finalBlackMarket.penaltyHistory.slice(-19), penalty];
+          finalBlackMarket.failedDeals += 1;
+          
+          todayEvents.push({
+            type: 'black_market_penalty',
+            message: `🚨 黑市审查触发处罚：${penalty.icon}${penalty.name} - ${penalty.description}`,
+          });
+        }
+
+        finalBlackMarket.freeRefreshesUsed = 0;
+
+        const daysSinceRefresh = newDay - finalBlackMarket.lastRefreshDay;
+        if (daysSinceRefresh >= 3) {
+          const itemCount = 6 + buildingBonus.itemSlotBonus;
+          const items = generateBlackMarketItems(newDay, itemCount);
+          finalBlackMarket.currentItems = items;
+          finalBlackMarket.lastRefreshDay = newDay;
+          
+          todayEvents.push({
+            type: 'black_market_refresh',
+            message: '🔄 黑市商品已自动刷新',
+          });
+        }
+      } else if (state.day >= 7 && state.resources.reputation >= 100) {
+        finalBlackMarket.unlocked = true;
+        const buildingBonus = getBlackMarketBuildingBonus(state.buildings);
+        const itemCount = 6 + buildingBonus.itemSlotBonus;
+        const items = generateBlackMarketItems(newDay, itemCount);
+        finalBlackMarket.currentItems = items;
+        finalBlackMarket.lastRefreshDay = newDay;
+        
+        todayEvents.push({
+          type: 'black_market_unlocked',
+          message: '🎭 神秘黑市已开启！在隐蔽的角落进行风险与机遇的交易',
+        });
+      }
+
       return {
         ...state,
         day: newDay,
@@ -5011,6 +5116,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         },
         eventCenter: newEventCenter,
         dormitory: updatedDormitoryState,
+        blackMarket: finalBlackMarket,
       };
     }
 
@@ -6492,6 +6598,319 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
+    case 'UNLOCK_BLACK_MARKET': {
+      const buildingBonus = getBlackMarketBuildingBonus(state.buildings);
+      const itemCount = 6 + buildingBonus.itemSlotBonus;
+      const items = generateBlackMarketItems(state.day, itemCount);
+      
+      return {
+        ...state,
+        blackMarket: {
+          ...state.blackMarket,
+          unlocked: true,
+          currentItems: items,
+          lastRefreshDay: state.day,
+        },
+      };
+    }
+
+    case 'REFRESH_BLACK_MARKET': {
+      if (!state.blackMarket.unlocked) return state;
+      
+      const buildingBonus = getBlackMarketBuildingBonus(state.buildings);
+      const itemCount = 6 + buildingBonus.itemSlotBonus;
+      const items = generateBlackMarketItems(state.day, itemCount);
+      
+      let newResources = { ...state.resources };
+      let newFreeRefreshes = state.blackMarket.freeRefreshesUsed;
+      
+      if (action.useFree) {
+        if (newFreeRefreshes >= state.blackMarket.freeRefreshesPerDay) return state;
+        newFreeRefreshes += 1;
+      } else {
+        const cost = state.blackMarket.refreshCost;
+        if (newResources.gold < (cost.gold || 0) || newResources.reputation < (cost.reputation || 0)) return state;
+        newResources.gold -= cost.gold || 0;
+        newResources.reputation -= cost.reputation || 0;
+      }
+
+      const refreshEvent: DailyEvent = {
+        type: 'black_market_refresh',
+        message: '🔄 黑市商品已刷新',
+      };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push({ day: state.day, events: [refreshEvent] });
+
+      return {
+        ...state,
+        resources: newResources,
+        dailyLogs: recentLogs,
+        blackMarket: {
+          ...state.blackMarket,
+          currentItems: items,
+          lastRefreshDay: state.day,
+          freeRefreshesUsed: newFreeRefreshes,
+        },
+      };
+    }
+
+    case 'BUY_BLACK_MARKET_ITEM': {
+      const item = state.blackMarket.currentItems.find(i => i.id === action.itemId);
+      if (!item || item.stock < action.quantity) return state;
+
+      const buildingBonus = getBlackMarketBuildingBonus(state.buildings);
+      const totalPrice = Math.floor(item.currentPrice * (1 - buildingBonus.priceDiscount) * action.quantity);
+      const totalRepCost = item.reputationCost * action.quantity;
+      const auditGain = calculateAuditRisk(item.auditRisk, buildingBonus.riskReduction + state.blackMarket.riskReduction, action.quantity);
+
+      if (state.resources.gold < totalPrice) return state;
+      if (totalRepCost > 0 && state.resources.reputation < totalRepCost) return state;
+      if (state.blackMarket.auditValue + auditGain > state.blackMarket.maxAuditValue) return state;
+
+      let newResources = {
+        ...state.resources,
+        gold: state.resources.gold - totalPrice,
+        reputation: state.resources.reputation - (totalRepCost > 0 ? totalRepCost : 0),
+      };
+
+      let newRecruitTickets = { ...state.recruitTickets };
+
+      for (const effect of item.effects) {
+        const qty = effect.value * action.quantity;
+        switch (effect.type) {
+          case 'gold_gain':
+            newResources.gold += qty;
+            break;
+          case 'mana_gain':
+            newResources.mana += qty;
+            break;
+          case 'reputation_gain':
+            newResources.reputation += qty;
+            break;
+          case 'recruit_ticket':
+            if (effect.quality) {
+              newRecruitTickets[effect.quality] = (newRecruitTickets[effect.quality] || 0) + qty;
+            }
+            break;
+        }
+      }
+
+      const newAuditValue = Math.min(state.blackMarket.maxAuditValue, state.blackMarket.auditValue + auditGain);
+      const newAuditLevel = getAuditLevel(newAuditValue);
+
+      const transaction = {
+        id: generateBlackMarketId(),
+        itemId: item.id,
+        itemName: item.name,
+        type: 'buy' as const,
+        price: totalPrice,
+        quantity: action.quantity,
+        day: state.day,
+        auditChange: auditGain,
+        reputationChange: -totalRepCost,
+      };
+
+      const buyEvent: DailyEvent = {
+        type: 'black_market_purchase',
+        message: `🎭 黑市购买：${item.icon}${item.name} ×${action.quantity}，花费 ${totalPrice} 金币`,
+        value: totalPrice,
+      };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push({ day: state.day, events: [buyEvent] });
+
+      return {
+        ...state,
+        resources: newResources,
+        recruitTickets: newRecruitTickets,
+        dailyLogs: recentLogs,
+        blackMarket: {
+          ...state.blackMarket,
+          auditValue: newAuditValue,
+          auditLevel: newAuditLevel,
+          currentItems: state.blackMarket.currentItems.map(i =>
+            i.id === action.itemId ? { ...i, stock: i.stock - action.quantity } : i
+          ),
+          transactionHistory: [...state.blackMarket.transactionHistory.slice(-49), transaction],
+          totalBought: state.blackMarket.totalBought + action.quantity,
+          totalGoldSpent: state.blackMarket.totalGoldSpent + totalPrice,
+          totalAuditGained: state.blackMarket.totalAuditGained + auditGain,
+          successfulDeals: state.blackMarket.successfulDeals + 1,
+        },
+      };
+    }
+
+    case 'UPDATE_AUDIT_VALUE': {
+      const newValue = Math.max(0, Math.min(state.blackMarket.maxAuditValue, state.blackMarket.auditValue + action.amount));
+      const newLevel = getAuditLevel(newValue);
+
+      const auditEvent: DailyEvent = {
+        type: 'black_market_audit_change',
+        message: action.amount > 0 
+          ? `⚠️ 审查值上升 +${action.amount}（${newLevel}）`
+          : `✅ 审查值下降 ${action.amount}（${newLevel}）`,
+        value: action.amount,
+      };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push({ day: state.day, events: [auditEvent] });
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        blackMarket: {
+          ...state.blackMarket,
+          auditValue: newValue,
+          auditLevel: newLevel,
+        },
+      };
+    }
+
+    case 'ADD_BLACK_MARKET_PENALTY': {
+      const penalty = action.penalty;
+      
+      let newResources = { ...state.resources };
+      for (const effect of penalty.effects) {
+        if (effect.type === 'gold_loss') {
+          newResources.gold = Math.max(0, newResources.gold - effect.value);
+        } else if (effect.type === 'reputation_loss') {
+          newResources.reputation = Math.max(0, newResources.reputation - effect.value);
+        }
+      }
+
+      const penaltyEvent: DailyEvent = {
+        type: 'black_market_penalty',
+        message: `🚨 黑市处罚：${penalty.icon}${penalty.name} - ${penalty.description}`,
+      };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push({ day: state.day, events: [penaltyEvent] });
+
+      return {
+        ...state,
+        resources: newResources,
+        dailyLogs: recentLogs,
+        blackMarket: {
+          ...state.blackMarket,
+          activePenalties: [...state.blackMarket.activePenalties, penalty],
+          penaltyHistory: [...state.blackMarket.penaltyHistory.slice(-19), penalty],
+          failedDeals: state.blackMarket.failedDeals + 1,
+        },
+      };
+    }
+
+    case 'RESOLVE_BLACK_MARKET_PENALTY': {
+      const penalty = state.blackMarket.activePenalties.find(p => p.id === action.penaltyId);
+      if (!penalty || !penalty.resolveCost) return state;
+
+      const cost = penalty.resolveCost;
+      if (state.resources.gold < (cost.gold || 0) ||
+          state.resources.mana < (cost.mana || 0) ||
+          state.resources.food < (cost.food || 0) ||
+          state.resources.reputation < (cost.reputation || 0)) {
+        return state;
+      }
+
+      return {
+        ...state,
+        resources: {
+          gold: state.resources.gold - (cost.gold || 0),
+          mana: state.resources.mana - (cost.mana || 0),
+          food: state.resources.food - (cost.food || 0),
+          reputation: state.resources.reputation - (cost.reputation || 0),
+        },
+        blackMarket: {
+          ...state.blackMarket,
+          activePenalties: state.blackMarket.activePenalties.map(p =>
+            p.id === action.penaltyId ? { ...p, status: 'resolved' as const, remainingDays: 0 } : p
+          ),
+        },
+      };
+    }
+
+    case 'TICK_BLACK_MARKET_PENALTIES': {
+      const updatedPenalties = state.blackMarket.activePenalties
+        .map(p => ({
+          ...p,
+          remainingDays: p.remainingDays - 1,
+          status: (p.remainingDays - 1 <= 0 ? 'expired' as const : p.status),
+        }))
+        .filter(p => p.status === 'active');
+
+      const expiredCount = state.blackMarket.activePenalties.filter(p => p.remainingDays <= 1).length;
+
+      if (expiredCount === 0 && updatedPenalties.length === state.blackMarket.activePenalties.length) {
+        return state;
+      }
+
+      return {
+        ...state,
+        blackMarket: {
+          ...state.blackMarket,
+          activePenalties: updatedPenalties,
+        },
+      };
+    }
+
+    case 'OPEN_MYSTERY_BOX': {
+      const item = state.blackMarket.currentItems.find(i => i.id === action.itemId);
+      if (!item || item.stock < 1 || item.category !== 'mystery_box') return state;
+
+      const buildingBonus = getBlackMarketBuildingBonus(state.buildings);
+      const price = Math.floor(item.currentPrice * (1 - buildingBonus.priceDiscount));
+      const repCost = item.reputationCost;
+      const baseAuditGain = calculateAuditRisk(item.auditRisk, buildingBonus.riskReduction + state.blackMarket.riskReduction);
+
+      if (state.resources.gold < price) return state;
+      if (repCost > 0 && state.resources.reputation < repCost) return state;
+
+      const { rewards, auditChange } = getMysteryBoxRewards(action.tier, state.day);
+      const totalAuditGain = baseAuditGain + auditChange;
+
+      if (state.blackMarket.auditValue + totalAuditGain > state.blackMarket.maxAuditValue) return state;
+
+      let newResources = {
+        gold: state.resources.gold - price + (rewards.gold || 0),
+        mana: state.resources.mana + (rewards.mana || 0),
+        food: state.resources.food + (rewards.food || 0),
+        reputation: state.resources.reputation - repCost + (rewards.reputation || 0),
+      };
+
+      let newRecruitTickets = { ...state.recruitTickets };
+      if (rewards.recruitTickets) {
+        for (const [quality, count] of Object.entries(rewards.recruitTickets)) {
+          if (count && count > 0) {
+            newRecruitTickets[quality as StudentQuality] = (newRecruitTickets[quality as StudentQuality] || 0) + count;
+          }
+        }
+      }
+
+      const newAuditValue = Math.min(state.blackMarket.maxAuditValue, state.blackMarket.auditValue + totalAuditGain);
+      const newAuditLevel = getAuditLevel(newAuditValue);
+
+      const mysteryEvent: DailyEvent = {
+        type: 'black_market_mystery_opened',
+        message: `🎁 开启${item.name}，获得神秘奖励！`,
+      };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push({ day: state.day, events: [mysteryEvent] });
+
+      return {
+        ...state,
+        resources: newResources,
+        recruitTickets: newRecruitTickets,
+        dailyLogs: recentLogs,
+        blackMarket: {
+          ...state.blackMarket,
+          auditValue: newAuditValue,
+          auditLevel: newAuditLevel,
+          currentItems: state.blackMarket.currentItems.map(i =>
+            i.id === action.itemId ? { ...i, stock: i.stock - 1 } : i
+          ),
+          mysteryBoxOpened: state.blackMarket.mysteryBoxOpened + 1,
+          totalGoldSpent: state.blackMarket.totalGoldSpent + price,
+          totalAuditGained: state.blackMarket.totalAuditGained + totalAuditGain,
+        },
+      };
+    }
+
     default:
       return state;
   }
@@ -6717,6 +7136,21 @@ interface GameContextType {
   updateCodexBuilding: (buildingId: string, level: number) => void;
   updateCodexDungeon: (dungeonId: string, stars?: number, cleared?: boolean) => void;
   updateCodexEvent: (eventId: string, choiceId?: string) => void;
+  unlockBlackMarket: () => void;
+  refreshBlackMarket: (useFree?: boolean) => boolean;
+  buyBlackMarketItem: (itemId: string, quantity?: number) => boolean;
+  updateAuditValue: (amount: number) => void;
+  resolveBlackMarketPenalty: (penaltyId: string) => boolean;
+  openMysteryBox: (itemId: string, tier: number) => boolean;
+  BLACK_MARKET_RARITY_COLORS: Record<BlackMarketItemRarity, string>;
+  BLACK_MARKET_RARITY_NAMES: Record<BlackMarketItemRarity, string>;
+  BLACK_MARKET_CATEGORY_NAMES: Record<BlackMarketItemCategory, string>;
+  BLACK_MARKET_CATEGORY_ICONS: Record<BlackMarketItemCategory, string>;
+  AUDIT_LEVEL_INFO: Record<AuditLevel, { name: string; color: string; description: string }>;
+  PENALTY_SEVERITY_COLORS: Record<PenaltySeverity, string>;
+  PENALTY_SEVERITY_NAMES: Record<PenaltySeverity, string>;
+  canBuyBlackMarketItemCtx: typeof canBuyBlackMarketItem;
+  getBlackMarketBuildingBonusCtx: typeof getBlackMarketBuildingBonus;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -7683,6 +8117,62 @@ export function GameProvider({ children }: { children: ReactNode }) {
       canExploreAreaCtx: canExploreArea,
       canGatherNodeCtx: canGatherNode,
       canTravelRouteCtx: canTravelRoute,
+      unlockBlackMarket: () => dispatch({ type: 'UNLOCK_BLACK_MARKET' }),
+      refreshBlackMarket: (useFree = false) => {
+        if (useFree && state.blackMarket.freeRefreshesUsed >= state.blackMarket.freeRefreshesPerDay) return false;
+        if (!useFree) {
+          const cost = state.blackMarket.refreshCost;
+          if (state.resources.gold < (cost.gold || 0) || state.resources.reputation < (cost.reputation || 0)) return false;
+        }
+        dispatch({ type: 'REFRESH_BLACK_MARKET', useFree });
+        return true;
+      },
+      buyBlackMarketItem: (itemId: string, quantity = 1) => {
+        const item = state.blackMarket.currentItems.find(i => i.id === itemId);
+        if (!item) return false;
+        const buildingBonus = getBlackMarketBuildingBonus(state.buildings);
+        const canBuy = canBuyBlackMarketItem(
+          item,
+          quantity,
+          state.resources.gold,
+          state.resources.reputation,
+          state.blackMarket.auditValue,
+          state.blackMarket.maxAuditValue,
+          buildingBonus
+        );
+        if (!canBuy.ok) return false;
+        dispatch({ type: 'BUY_BLACK_MARKET_ITEM', itemId, quantity });
+        return true;
+      },
+      updateAuditValue: (amount: number) => dispatch({ type: 'UPDATE_AUDIT_VALUE', amount }),
+      resolveBlackMarketPenalty: (penaltyId: string) => {
+        const penalty = state.blackMarket.activePenalties.find(p => p.id === penaltyId);
+        if (!penalty || !penalty.resolveCost) return false;
+        const cost = penalty.resolveCost;
+        if (state.resources.gold < (cost.gold || 0) ||
+            state.resources.mana < (cost.mana || 0) ||
+            state.resources.food < (cost.food || 0) ||
+            state.resources.reputation < (cost.reputation || 0)) {
+          return false;
+        }
+        dispatch({ type: 'RESOLVE_BLACK_MARKET_PENALTY', penaltyId });
+        return true;
+      },
+      openMysteryBox: (itemId: string, tier: number) => {
+        const item = state.blackMarket.currentItems.find(i => i.id === itemId);
+        if (!item || item.stock < 1 || item.category !== 'mystery_box') return false;
+        dispatch({ type: 'OPEN_MYSTERY_BOX', itemId, tier });
+        return true;
+      },
+      BLACK_MARKET_RARITY_COLORS,
+      BLACK_MARKET_RARITY_NAMES,
+      BLACK_MARKET_CATEGORY_NAMES,
+      BLACK_MARKET_CATEGORY_ICONS,
+      AUDIT_LEVEL_INFO,
+      PENALTY_SEVERITY_COLORS,
+      PENALTY_SEVERITY_NAMES,
+      canBuyBlackMarketItemCtx: canBuyBlackMarketItem,
+      getBlackMarketBuildingBonusCtx: getBlackMarketBuildingBonus,
     }}>
       {children}
     </GameContext.Provider>

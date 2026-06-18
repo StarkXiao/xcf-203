@@ -1,4 +1,4 @@
-import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState, KingdomCommission, CommissionStage, CommissionType, CommissionDifficulty, CommissionStageType, CommissionRankInfo, KingdomCommissionState, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, RestActivity, DormitoryEventDef, DormitoryEventInstance, StudentCodexEntry, SkillCodexEntry, CodexState, CodexStats, CodexCategory, Achievement, AchievementState, AchievementType, AchievementRarity, Title, MapAreaId, MapAreaRarity, MapAreaStatus, MapArea, MapGatheringNode, MapExploreEventDef, MapExploreEventInstance, MapRoute, MapExploreState, MapEventCategory, GatheringNodeType, RouteType } from '../types/game';
+import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState, KingdomCommission, CommissionStage, CommissionType, CommissionDifficulty, CommissionStageType, CommissionRankInfo, KingdomCommissionState, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, RestActivity, DormitoryEventDef, DormitoryEventInstance, StudentCodexEntry, SkillCodexEntry, CodexState, CodexStats, CodexCategory, Achievement, AchievementState, AchievementType, AchievementRarity, Title, MapAreaId, MapAreaRarity, MapAreaStatus, MapArea, MapGatheringNode, MapExploreEventDef, MapExploreEventInstance, MapRoute, MapExploreState, MapEventCategory, GatheringNodeType, RouteType, BlackMarketItem, BlackMarketItemCategory, BlackMarketItemRarity, BlackMarketState, BlackMarketPenalty, PenaltySeverity, AuditLevel } from '../types/game';
 import {
   HP_BATTLE_THRESHOLD,
   HP_COURSE_EFFICIENCY_THRESHOLD,
@@ -7650,4 +7650,645 @@ export const discoverRoutesForArea = (areaId: MapAreaId, routes: MapRoute[]): Ma
 
 export const checkMapAreaMastery = (area: MapArea): boolean => {
   return area.masteryProgress >= area.masteryThreshold && area.status !== 'mastered';
+};
+
+export const BLACK_MARKET_RARITY_COLORS: Record<BlackMarketItemRarity, string> = {
+  common: '#9e9e9e',
+  rare: '#2196f3',
+  epic: '#9c27b0',
+  legendary: '#ff9800',
+  mythic: '#e91e63',
+};
+
+export const BLACK_MARKET_RARITY_NAMES: Record<BlackMarketItemRarity, string> = {
+  common: '普通',
+  rare: '稀有',
+  epic: '史诗',
+  legendary: '传说',
+  mythic: '神话',
+};
+
+export const BLACK_MARKET_CATEGORY_NAMES: Record<BlackMarketItemCategory, string> = {
+  rare_ticket: '稀有票券',
+  forbidden_material: '禁术素材',
+  limited_discount: '限时折扣',
+  mystery_box: '神秘宝箱',
+};
+
+export const BLACK_MARKET_CATEGORY_ICONS: Record<BlackMarketItemCategory, string> = {
+  rare_ticket: '🎫',
+  forbidden_material: '💀',
+  limited_discount: '⏰',
+  mystery_box: '🎁',
+};
+
+export const AUDIT_LEVEL_INFO: Record<AuditLevel, { name: string; minValue: number; color: string; description: string }> = {
+  clean: { name: '清白', minValue: 0, color: '#4CAF50', description: '审查值极低，安全无忧' },
+  low: { name: '轻微', minValue: 20, color: '#8BC34A', description: '有少量可疑交易记录' },
+  medium: { name: '中度', minValue: 40, color: '#FFC107', description: '引起了审查部门的注意' },
+  high: { name: '高度', minValue: 60, color: '#FF9800', description: '频繁被审查部门调查' },
+  critical: { name: '危险', minValue: 80, color: '#f44336', description: '随时可能触发严重处罚' },
+};
+
+export const getAuditLevel = (auditValue: number): AuditLevel => {
+  if (auditValue >= 80) return 'critical';
+  if (auditValue >= 60) return 'high';
+  if (auditValue >= 40) return 'medium';
+  if (auditValue >= 20) return 'low';
+  return 'clean';
+};
+
+export const BLACK_MARKET_ITEM_TEMPLATES: BlackMarketItem[] = [
+  {
+    id: 'rare_ticket_common',
+    name: '黑市普通招募券',
+    icon: '🎫',
+    description: '来源不明的普通招募券，价格低廉但有审查风险',
+    category: 'rare_ticket',
+    rarity: 'common',
+    basePrice: 80,
+    currentPrice: 80,
+    discount: 0.2,
+    stock: 3,
+    maxStock: 5,
+    auditRisk: 3,
+    reputationCost: 0,
+    isLimited: false,
+    effects: [{ type: 'recruit_ticket', value: 1, quality: 'common' }],
+  },
+  {
+    id: 'rare_ticket_rare',
+    name: '黑市稀有招募券',
+    icon: '🎟️',
+    description: '通过特殊渠道获得的稀有招募券',
+    category: 'rare_ticket',
+    rarity: 'rare',
+    basePrice: 250,
+    currentPrice: 250,
+    discount: 0.15,
+    stock: 2,
+    maxStock: 3,
+    auditRisk: 6,
+    reputationCost: 5,
+    isLimited: false,
+    effects: [{ type: 'recruit_ticket', value: 1, quality: 'rare' }],
+  },
+  {
+    id: 'rare_ticket_epic',
+    name: '黑市史诗招募券',
+    icon: '🎪',
+    description: '极其稀有的史诗级招募券，来自地下拍卖',
+    category: 'rare_ticket',
+    rarity: 'epic',
+    basePrice: 700,
+    currentPrice: 700,
+    discount: 0.1,
+    stock: 1,
+    maxStock: 2,
+    auditRisk: 12,
+    reputationCost: 15,
+    isLimited: true,
+    effects: [{ type: 'recruit_ticket', value: 1, quality: 'epic' }],
+  },
+  {
+    id: 'rare_ticket_legendary',
+    name: '黑市传说招募券',
+    icon: '👑',
+    description: '传说中的顶级招募券，据说能招来传奇学员',
+    category: 'rare_ticket',
+    rarity: 'legendary',
+    basePrice: 1800,
+    currentPrice: 1800,
+    discount: 0.1,
+    stock: 1,
+    maxStock: 1,
+    auditRisk: 20,
+    reputationCost: 30,
+    isLimited: true,
+    effects: [{ type: 'recruit_ticket', value: 1, quality: 'legendary' }],
+  },
+  {
+    id: 'forbidden_void_essence',
+    name: '虚空精华',
+    icon: '🌀',
+    description: '来自虚空深渊的禁忌素材，蕴含强大黑暗力量',
+    category: 'forbidden_material',
+    rarity: 'epic',
+    basePrice: 500,
+    currentPrice: 500,
+    discount: 0,
+    stock: 5,
+    maxStock: 10,
+    auditRisk: 8,
+    reputationCost: 10,
+    isLimited: false,
+    effects: [{ type: 'alchemy_material', value: 3 }],
+  },
+  {
+    id: 'forbidden_dragon_blood',
+    name: '古龙血晶',
+    icon: '🐉',
+    description: '远古巨龙的血液结晶，极度危险且珍贵',
+    category: 'forbidden_material',
+    rarity: 'legendary',
+    basePrice: 1200,
+    currentPrice: 1200,
+    discount: 0,
+    stock: 2,
+    maxStock: 3,
+    auditRisk: 15,
+    reputationCost: 20,
+    isLimited: true,
+    effects: [{ type: 'alchemy_material', value: 5 }],
+  },
+  {
+    id: 'forbidden_dark_crystal',
+    name: '暗影魔晶',
+    icon: '💎',
+    description: '吸收了无数怨念的黑暗水晶，慎用',
+    category: 'forbidden_material',
+    rarity: 'rare',
+    basePrice: 300,
+    currentPrice: 300,
+    discount: 0,
+    stock: 5,
+    maxStock: 8,
+    auditRisk: 5,
+    reputationCost: 5,
+    isLimited: false,
+    effects: [{ type: 'trade_material', value: 5 }],
+  },
+  {
+    id: 'limited_gold_bundle',
+    name: '限时金币大包',
+    icon: '💰',
+    description: '限时特价的金币大礼包，超值划算',
+    category: 'limited_discount',
+    rarity: 'rare',
+    basePrice: 0,
+    currentPrice: 0,
+    discount: 0.3,
+    stock: 1,
+    maxStock: 1,
+    auditRisk: 2,
+    reputationCost: 20,
+    isLimited: true,
+    effects: [{ type: 'gold_gain', value: 1000 }],
+  },
+  {
+    id: 'limited_mana_bundle',
+    name: '限时魔力大包',
+    icon: '🔮',
+    description: '限时特价的魔力大礼包',
+    category: 'limited_discount',
+    rarity: 'rare',
+    basePrice: 0,
+    currentPrice: 0,
+    discount: 0.3,
+    stock: 1,
+    maxStock: 1,
+    auditRisk: 2,
+    reputationCost: 20,
+    isLimited: true,
+    effects: [{ type: 'mana_gain', value: 800 }],
+  },
+  {
+    id: 'limited_reputation_pack',
+    name: '声望走私包',
+    icon: '⭐',
+    description: '通过特殊渠道快速获取声望，但风险较高',
+    category: 'limited_discount',
+    rarity: 'epic',
+    basePrice: 500,
+    currentPrice: 500,
+    discount: 0.2,
+    stock: 1,
+    maxStock: 1,
+    auditRisk: 15,
+    reputationCost: -50,
+    isLimited: true,
+    effects: [{ type: 'reputation_gain', value: 100 }],
+  },
+  {
+    id: 'mystery_box_common',
+    name: '普通神秘箱',
+    icon: '📦',
+    description: '内含随机物品的神秘箱子，碰碰运气吧',
+    category: 'mystery_box',
+    rarity: 'common',
+    basePrice: 150,
+    currentPrice: 150,
+    discount: 0,
+    stock: 5,
+    maxStock: 5,
+    auditRisk: 5,
+    reputationCost: 0,
+    isLimited: false,
+    effects: [{ type: 'mystery_random', value: 1 }],
+  },
+  {
+    id: 'mystery_box_rare',
+    name: '稀有神秘箱',
+    icon: '🎁',
+    description: '更高品质的神秘箱，有机会获得稀有物品',
+    category: 'mystery_box',
+    rarity: 'rare',
+    basePrice: 400,
+    currentPrice: 400,
+    discount: 0,
+    stock: 3,
+    maxStock: 3,
+    auditRisk: 8,
+    reputationCost: 5,
+    isLimited: false,
+    effects: [{ type: 'mystery_random', value: 2 }],
+  },
+  {
+    id: 'mystery_box_epic',
+    name: '史诗神秘箱',
+    icon: '🎀',
+    description: '史诗级神秘箱，保底稀有以上品质',
+    category: 'mystery_box',
+    rarity: 'epic',
+    basePrice: 1000,
+    currentPrice: 1000,
+    discount: 0,
+    stock: 2,
+    maxStock: 2,
+    auditRisk: 12,
+    reputationCost: 10,
+    isLimited: true,
+    effects: [{ type: 'mystery_random', value: 3 }],
+  },
+  {
+    id: 'mystery_box_legendary',
+    name: '传说神秘箱',
+    icon: '🏆',
+    description: '传说级神秘箱，有机会获得神话级物品！',
+    category: 'mystery_box',
+    rarity: 'legendary',
+    basePrice: 2500,
+    currentPrice: 2500,
+    discount: 0,
+    stock: 1,
+    maxStock: 1,
+    auditRisk: 18,
+    reputationCost: 25,
+    isLimited: true,
+    effects: [{ type: 'mystery_random', value: 4 }],
+  },
+  {
+    id: 'limited_sweep_ticket',
+    name: '副本扫荡券',
+    icon: '⚡',
+    description: '可以直接扫荡已通关的副本，获取奖励',
+    category: 'limited_discount',
+    rarity: 'rare',
+    basePrice: 200,
+    currentPrice: 200,
+    discount: 0.25,
+    stock: 3,
+    maxStock: 5,
+    auditRisk: 4,
+    reputationCost: 5,
+    isLimited: true,
+    effects: [{ type: 'dungeon_sweep_ticket', value: 3 }],
+  },
+  {
+    id: 'forbidden_phoenix_ash',
+    name: '凤凰余烬',
+    icon: '🔥',
+    description: '传说中凤凰涅槃后留下的灰烬，蕴含重生之力',
+    category: 'forbidden_material',
+    rarity: 'mythic',
+    basePrice: 3000,
+    currentPrice: 3000,
+    discount: 0,
+    stock: 1,
+    maxStock: 1,
+    auditRisk: 25,
+    reputationCost: 40,
+    isLimited: true,
+    effects: [{ type: 'alchemy_material', value: 10 }],
+  },
+];
+
+export const BLACK_MARKET_PENALTY_TEMPLATES: Omit<BlackMarketPenalty, 'id' | 'status' | 'appliedAt' | 'remainingDays'>[] = [
+  {
+    name: '小额罚款',
+    description: '审查部门发现了一些可疑交易，处以小额罚款',
+    severity: 'minor',
+    icon: '📋',
+    effects: [{ type: 'gold_loss', value: 100 }],
+    durationDays: 1,
+    resolveCost: { gold: 50 },
+  },
+  {
+    name: '声望受损',
+    description: '黑市交易的流言传开，学院声望下降',
+    severity: 'minor',
+    icon: '📉',
+    effects: [{ type: 'reputation_loss', value: 10 }],
+    durationDays: 3,
+    resolveCost: { reputation: 20 },
+  },
+  {
+    name: '贸易调查',
+    description: '贸易部门展开调查，贸易价格暂时恶化',
+    severity: 'moderate',
+    icon: '🔍',
+    effects: [{ type: 'trade_price_penalty', value: 0.15 }],
+    durationDays: 3,
+    resolveCost: { gold: 300, reputation: 30 },
+  },
+  {
+    name: '课程审查',
+    description: '教育部门介入审查，课程效率下降',
+    severity: 'moderate',
+    icon: '📚',
+    effects: [{ type: 'course_speed_penalty', value: 0.1 }, { type: 'exp_penalty', value: 0.1 }],
+    durationDays: 5,
+    resolveCost: { gold: 500, mana: 200 },
+  },
+  {
+    name: '招募限制',
+    description: '招募渠道被监控，招募品质暂时下降',
+    severity: 'moderate',
+    icon: '🚫',
+    effects: [{ type: 'recruit_quality_penalty', value: 1 }],
+    durationDays: 5,
+    resolveCost: { gold: 800, reputation: 50 },
+  },
+  {
+    name: '重大罚款',
+    description: '严重的违规交易被发现，处以巨额罚款',
+    severity: 'severe',
+    icon: '💸',
+    effects: [{ type: 'gold_loss', value: 500 }, { type: 'reputation_loss', value: 30 }],
+    durationDays: 1,
+    resolveCost: { gold: 1000, reputation: 100 },
+  },
+  {
+    name: '建筑审批延迟',
+    description: '所有建筑升级费用增加，审批变慢',
+    severity: 'severe',
+    icon: '🏗️',
+    effects: [{ type: 'building_cost_penalty', value: 0.2 }],
+    durationDays: 7,
+    resolveCost: { gold: 1500, reputation: 80 },
+  },
+  {
+    name: '全面制裁',
+    description: '最严重的处罚，各方面都受到影响',
+    severity: 'catastrophic',
+    icon: '⚠️',
+    effects: [
+      { type: 'gold_loss', value: 1000 },
+      { type: 'reputation_loss', value: 50 },
+      { type: 'trade_price_penalty', value: 0.25 },
+      { type: 'exp_penalty', value: 0.15 },
+      { type: 'stamina_drain', value: 10 },
+    ],
+    durationDays: 10,
+    resolveCost: { gold: 3000, mana: 1000, reputation: 200 },
+  },
+];
+
+export const PENALTY_SEVERITY_COLORS: Record<PenaltySeverity, string> = {
+  minor: '#8BC34A',
+  moderate: '#FFC107',
+  severe: '#FF9800',
+  catastrophic: '#f44336',
+};
+
+export const PENALTY_SEVERITY_NAMES: Record<PenaltySeverity, string> = {
+  minor: '轻微',
+  moderate: '中等',
+  severe: '严重',
+  catastrophic: '灾难性',
+};
+
+export const INITIAL_BLACK_MARKET_STATE: BlackMarketState = {
+  unlocked: false,
+  auditValue: 0,
+  maxAuditValue: 100,
+  auditLevel: 'clean',
+  currentItems: [],
+  lastRefreshDay: 0,
+  refreshCost: { gold: 100, reputation: 10 },
+  freeRefreshesPerDay: 1,
+  freeRefreshesUsed: 0,
+  transactionHistory: [],
+  activePenalties: [],
+  penaltyHistory: [],
+  reputationDiscount: 0,
+  riskReduction: 0,
+  totalBought: 0,
+  totalGoldSpent: 0,
+  totalAuditGained: 0,
+  successfulDeals: 0,
+  failedDeals: 0,
+  mysteryBoxOpened: 0,
+};
+
+export const generateBlackMarketId = (): string => {
+  return `bm_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+};
+
+export const generateBlackMarketItems = (
+  day: number,
+  itemCount: number = 6
+): BlackMarketItem[] => {
+  const items: BlackMarketItem[] = [];
+  const usedIds = new Set<string>();
+  const templates = [...BLACK_MARKET_ITEM_TEMPLATES];
+  
+  const shuffled = templates.sort(() => Math.random() - 0.5);
+  
+  for (let i = 0; i < Math.min(itemCount, shuffled.length); i++) {
+    const template = shuffled[i];
+    if (usedIds.has(template.id)) continue;
+    usedIds.add(template.id);
+    
+    const priceVariation = 0.8 + Math.random() * 0.4;
+    const currentPrice = Math.floor(template.basePrice * priceVariation * (1 - template.discount));
+    
+    const stock = Math.max(1, Math.floor(template.maxStock * (0.5 + Math.random() * 0.5)));
+    
+    items.push({
+      ...template,
+      id: `${template.id}_${generateBlackMarketId()}`,
+      currentPrice,
+      stock,
+      expiresAtDay: template.isLimited ? day + 3 : undefined,
+    });
+  }
+  
+  return items.sort((a, b) => {
+    const rarityOrder = ['mythic', 'legendary', 'epic', 'rare', 'common'];
+    return rarityOrder.indexOf(a.rarity) - rarityOrder.indexOf(b.rarity);
+  });
+};
+
+export const calculateAuditRisk = (
+  baseRisk: number,
+  riskReduction: number,
+  quantity: number = 1
+): number => {
+  const reducedRisk = Math.max(0, baseRisk * (1 - riskReduction));
+  return Math.round(reducedRisk * quantity);
+};
+
+export const checkPenaltyTrigger = (
+  auditLevel: AuditLevel,
+  riskReduction: number = 0
+): boolean => {
+  const triggerChances: Record<AuditLevel, number> = {
+    clean: 0,
+    low: 0.05,
+    medium: 0.15,
+    high: 0.3,
+    critical: 0.5,
+  };
+  const baseChance = triggerChances[auditLevel];
+  const adjustedChance = Math.max(0, baseChance * (1 - riskReduction));
+  return Math.random() < adjustedChance;
+};
+
+export const getRandomPenalty = (
+  severity: PenaltySeverity,
+  day: number
+): BlackMarketPenalty => {
+  const templates = BLACK_MARKET_PENALTY_TEMPLATES.filter(p => p.severity === severity);
+  const template = templates[Math.floor(Math.random() * templates.length)];
+  
+  return {
+    id: `penalty_${generateBlackMarketId()}`,
+    ...template,
+    remainingDays: template.durationDays,
+    status: 'active',
+    appliedAt: day,
+  };
+};
+
+export const getPenaltySeverityByAuditLevel = (
+  auditLevel: AuditLevel
+): PenaltySeverity => {
+  switch (auditLevel) {
+    case 'low':
+      return 'minor';
+    case 'medium':
+      return 'moderate';
+    case 'high':
+      return 'severe';
+    case 'critical':
+      return 'catastrophic';
+    default:
+      return 'minor';
+  }
+};
+
+export const canBuyBlackMarketItem = (
+  item: BlackMarketItem,
+  quantity: number,
+  gold: number,
+  reputation: number,
+  auditValue: number,
+  maxAuditValue: number,
+  buildingBonus: { priceDiscount: number; riskReduction: number } = { priceDiscount: 0, riskReduction: 0 }
+): { ok: boolean; reason?: string } => {
+  if (item.stock < quantity) {
+    return { ok: false, reason: '库存不足' };
+  }
+  
+  const effectivePrice = Math.floor(item.currentPrice * (1 - buildingBonus.priceDiscount));
+  const totalPrice = effectivePrice * quantity;
+  if (gold < totalPrice) {
+    return { ok: false, reason: '金币不足' };
+  }
+  
+  if (item.reputationCost > 0 && reputation < item.reputationCost * quantity) {
+    return { ok: false, reason: '声望不足' };
+  }
+  
+  const auditGain = calculateAuditRisk(item.auditRisk, buildingBonus.riskReduction, quantity);
+  if (auditValue + auditGain > maxAuditValue) {
+    return { ok: false, reason: '审查值将超出上限' };
+  }
+  
+  return { ok: true };
+};
+
+export const reduceAuditValue = (
+  currentAudit: number,
+  amount: number,
+  reputationCost: number,
+  currentReputation: number
+): { newAudit: number; reputationSpent: number } => {
+  if (currentReputation < reputationCost) {
+    return { newAudit: currentAudit, reputationSpent: 0 };
+  }
+  const newAudit = Math.max(0, currentAudit - amount);
+  return { newAudit, reputationSpent: reputationCost };
+};
+
+export const getMysteryBoxRewards = (
+  tier: number,
+  _day: number
+): { rewards: Partial<Resource> & { recruitTickets?: Partial<Record<StudentQuality, number>> }; auditChange: number } => {
+  const rewards: Partial<Resource> & { recruitTickets?: Partial<Record<StudentQuality, number>> } = {};
+  let auditChange = 2;
+  
+  const baseGold = 50 * tier;
+  const baseMana = 30 * tier;
+  
+  rewards.gold = Math.floor(baseGold * (0.8 + Math.random() * 0.4));
+  rewards.mana = Math.floor(baseMana * (0.8 + Math.random() * 0.4));
+  
+  const bonusRoll = Math.random();
+  if (bonusRoll < 0.3) {
+    rewards.food = Math.floor(20 * tier * (0.5 + Math.random()));
+  } else if (bonusRoll < 0.5) {
+    rewards.reputation = Math.floor(5 * tier * (0.5 + Math.random()));
+  } else if (bonusRoll < 0.7 && tier >= 2) {
+    const quality: StudentQuality = tier >= 4 ? 'epic' : tier >= 3 ? 'rare' : 'common';
+    rewards.recruitTickets = { [quality]: 1 };
+    auditChange += 3;
+  } else if (bonusRoll < 0.85 && tier >= 3) {
+    rewards.gold = Math.floor((rewards.gold || 0) * 2);
+    rewards.mana = Math.floor((rewards.mana || 0) * 2);
+  } else if (tier >= 4) {
+    rewards.recruitTickets = { legendary: 1 };
+    auditChange += 8;
+  }
+  
+  return { rewards, auditChange };
+};
+
+export const getBlackMarketBuildingBonus = (
+  buildings: Building[]
+): { priceDiscount: number; riskReduction: number; itemSlotBonus: number } => {
+  let priceDiscount = 0;
+  let riskReduction = 0;
+  let itemSlotBonus = 0;
+  
+  const tradeHarbor = buildings.find(b => b.id === 'trade_harbor');
+  if (tradeHarbor && tradeHarbor.level > 0) {
+    priceDiscount += tradeHarbor.level * 0.01;
+    itemSlotBonus += Math.floor(tradeHarbor.level / 3);
+  }
+  
+  const auctionHouse = buildings.find(b => b.id === 'auction_house');
+  if (auctionHouse && auctionHouse.level > 0) {
+    priceDiscount += auctionHouse.level * 0.02;
+    riskReduction += auctionHouse.level * 0.03;
+    itemSlotBonus += Math.floor(auctionHouse.level / 2);
+  }
+  
+  const guardPost = buildings.find(b => b.id === 'guard_post');
+  if (guardPost && guardPost.level > 0) {
+    riskReduction += guardPost.level * 0.05;
+  }
+  
+  return { priceDiscount, riskReduction, itemSlotBonus };
 };
