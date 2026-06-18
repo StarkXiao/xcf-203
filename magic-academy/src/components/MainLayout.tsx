@@ -26,6 +26,8 @@ import MapExplorePanel from './MapExplorePanel';
 import './MapExplorePanel.css';
 import BlackMarketPanel from './BlackMarketPanel';
 import './BlackMarketPanel.css';
+import ClassTransferPanel from './ClassTransferPanel';
+import './ClassTransferPanel.css';
 
 interface TabConfig {
   id: TabType;
@@ -50,6 +52,7 @@ const tabs: TabConfig[] = [
   { id: 'dormitory', label: '宿舍生活', icon: '🏠' },
   { id: 'mapExplore', label: '地图探索', icon: '🗺️' },
   { id: 'blackMarket', label: '神秘黑市', icon: '🎭' },
+  { id: 'classTransfer', label: '学员转职', icon: '⚔️' },
   { id: 'settlement', label: '资源结算', icon: '💰' },
   { id: 'records', label: '经营记录', icon: '📊' },
   { id: 'settings', label: '设置存档', icon: '⚙️' },
@@ -168,6 +171,7 @@ export default function MainLayout() {
         {activeTab === 'dormitory' && <DormitoryPanel />}
         {activeTab === 'mapExplore' && <MapExplorePanel />}
         {activeTab === 'blackMarket' && <BlackMarketPanel />}
+        {activeTab === 'classTransfer' && <ClassTransferPanel />}
         {activeTab === 'settlement' && <SettlementModule setConfirmDialog={setConfirmDialog} />}
         {activeTab === 'records' && <RecordsModule />}
         {activeTab === 'settings' && <SettingsModule />}

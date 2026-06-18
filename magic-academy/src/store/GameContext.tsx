@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff, AcademyEventDefinition, KingdomCommission, CommissionStageType, RestActivity, DormitoryState, StudentRelationship, CodexCategory, AchievementType, AchievementRarity, MagicType, MapAreaId, BlackMarketPenalty, PenaltySeverity, AuditLevel, BlackMarketItemCategory, BlackMarketItemRarity } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff, AcademyEventDefinition, KingdomCommission, CommissionStageType, RestActivity, DormitoryState, StudentRelationship, CodexCategory, AchievementType, AchievementRarity, MagicType, MapAreaId, BlackMarketPenalty, PenaltySeverity, AuditLevel, BlackMarketItemCategory, BlackMarketItemRarity, ClassId, SpecializationBranchId, SkillTreeNodeId } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -223,6 +223,19 @@ import {
   PENALTY_SEVERITY_COLORS,
   PENALTY_SEVERITY_NAMES,
   generateBlackMarketId,
+  INITIAL_CLASS_TRANSFER_STATE,
+  CLASS_DEFINITIONS,
+  getClassDefinition,
+  canTransferToClass,
+  canUnlockSkillNode,
+  canUnlockSpecialization,
+  calculateClassExpToLevel,
+  calculateClassStatBonuses,
+  getEmptyStudentClassState,
+  CLASS_TRANSFER_NAMES,
+  CLASS_TRANSFER_ICONS,
+  SPECIALIZATION_NAMES,
+  SPECIALIZATION_ICONS,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -354,7 +367,13 @@ type GameAction =
   | { type: 'ADD_BLACK_MARKET_PENALTY'; penalty: BlackMarketPenalty }
   | { type: 'RESOLVE_BLACK_MARKET_PENALTY'; penaltyId: string }
   | { type: 'TICK_BLACK_MARKET_PENALTIES' }
-  | { type: 'OPEN_MYSTERY_BOX'; itemId: string; tier: number };
+  | { type: 'OPEN_MYSTERY_BOX'; itemId: string; tier: number }
+  | { type: 'UNLOCK_CLASS_TRANSFER' }
+  | { type: 'TRANSFER_CLASS'; studentId: string; classId: ClassId }
+  | { type: 'UNLOCK_SKILL_NODE'; studentId: string; nodeId: SkillTreeNodeId }
+  | { type: 'UNLOCK_SPECIALIZATION_BRANCH'; studentId: string; branchId: SpecializationBranchId }
+  | { type: 'ADD_SPECIALIZATION_POINT'; studentId: string }
+  | { type: 'ADD_CLASS_EXP'; studentId: string; exp: number };
 
 const MAX_STUDENT_CAPACITY = 20;
 
@@ -421,6 +440,7 @@ const initialState: GameState = {
   achievement: INITIAL_ACHIEVEMENT_STATE,
   mapExplore: INITIAL_MAP_EXPLORE_STATE,
   blackMarket: INITIAL_BLACK_MARKET_STATE,
+  classTransfer: INITIAL_CLASS_TRANSFER_STATE,
 };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -6911,6 +6931,215 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
+    case 'UNLOCK_CLASS_TRANSFER':
+      return {
+        ...state,
+        classTransfer: { ...state.classTransfer, unlocked: true },
+      };
+
+    case 'TRANSFER_CLASS': {
+      const classDef = CLASS_DEFINITIONS.find(c => c.id === action.classId);
+      if (!classDef) return state;
+      const student = state.students.find(s => s.id === action.studentId);
+      if (!student) return state;
+      const existingClassState = state.classTransfer.studentClasses[action.studentId];
+      if (existingClassState?.classId) return state;
+      const { canTransfer, unmetRequirements } = canTransferToClass(
+        classDef, student, state.mentorState.mentors, state.resources, !!existingClassState?.classId
+      );
+      if (!canTransfer) return state;
+      const cost = classDef.requirements.cost;
+      const newStudentClassState: typeof existingClassState = {
+        classId: action.classId,
+        classLevel: 1,
+        classExp: 0,
+        skillPoints: classDef.skillPointsPerLevel,
+        unlockedNodes: [],
+        specializationId: null,
+        specializationPoints: 0,
+        totalSkillPointsEarned: classDef.skillPointsPerLevel,
+        transferDay: state.day,
+      };
+      return {
+        ...state,
+        resources: {
+          gold: state.resources.gold - cost.gold,
+          mana: state.resources.mana - cost.mana,
+          food: state.resources.food - cost.food,
+          reputation: state.resources.reputation - cost.reputation,
+        },
+        classTransfer: {
+          ...state.classTransfer,
+          studentClasses: {
+            ...state.classTransfer.studentClasses,
+            [action.studentId]: newStudentClassState,
+          },
+          totalTransfers: state.classTransfer.totalTransfers + 1,
+        },
+        dailyLogs: [...state.dailyLogs.slice(-29), {
+          day: state.day,
+          events: [{
+            type: 'class_transfer' as const,
+            message: `⚔️ ${student.name} 成功转职为 ${CLASS_TRANSFER_NAMES[action.classId]}！`,
+            studentId: student.id,
+            studentName: student.name,
+          }],
+        }],
+      };
+    }
+
+    case 'UNLOCK_SKILL_NODE': {
+      const classState = state.classTransfer.studentClasses[action.studentId];
+      if (!classState?.classId) return state;
+      const classDef = getClassDefinition(classState.classId);
+      if (!classDef) return state;
+      const { canUnlock } = canUnlockSkillNode(action.nodeId, classDef, classState);
+      if (!canUnlock) return state;
+      const node = classDef.skillTree.find(n => n.id === action.nodeId);
+      if (!node) return state;
+      const student = state.students.find(s => s.id === action.studentId);
+      return {
+        ...state,
+        classTransfer: {
+          ...state.classTransfer,
+          studentClasses: {
+            ...state.classTransfer.studentClasses,
+            [action.studentId]: {
+              ...classState,
+              skillPoints: classState.skillPoints - node.cost,
+              unlockedNodes: [...classState.unlockedNodes, action.nodeId],
+            },
+          },
+        },
+        dailyLogs: student ? [...state.dailyLogs.slice(-29), {
+          day: state.day,
+          events: [{
+            type: 'skill_node_unlocked' as const,
+            message: `🔮 ${student.name} 解锁技能节点: ${node.name}`,
+            studentId: student.id,
+            studentName: student.name,
+          }],
+        }] : state.dailyLogs,
+      };
+    }
+
+    case 'UNLOCK_SPECIALIZATION_BRANCH': {
+      const classState = state.classTransfer.studentClasses[action.studentId];
+      if (!classState?.classId) return state;
+      const classDef = getClassDefinition(classState.classId);
+      if (!classDef) return state;
+      const { canUnlock } = canUnlockSpecialization(action.branchId, classDef, classState);
+      if (!canUnlock) return state;
+      const branch = classDef.specializations.find(b => b.id === action.branchId);
+      if (!branch) return state;
+      const student = state.students.find(s => s.id === action.studentId);
+      return {
+        ...state,
+        classTransfer: {
+          ...state.classTransfer,
+          studentClasses: {
+            ...state.classTransfer.studentClasses,
+            [action.studentId]: {
+              ...classState,
+              skillPoints: classState.skillPoints - branch.unlockCost,
+              specializationId: action.branchId,
+            },
+          },
+        },
+        dailyLogs: student ? [...state.dailyLogs.slice(-29), {
+          day: state.day,
+          events: [{
+            type: 'specialization_unlocked' as const,
+            message: `⚡ ${student.name} 解锁专精分支: ${SPECIALIZATION_NAMES[action.branchId]}`,
+            studentId: student.id,
+            studentName: student.name,
+          }],
+        }] : state.dailyLogs,
+      };
+    }
+
+    case 'ADD_SPECIALIZATION_POINT': {
+      const classState = state.classTransfer.studentClasses[action.studentId];
+      if (!classState?.classId || !classState.specializationId) return state;
+      const classDef = getClassDefinition(classState.classId);
+      if (!classDef) return state;
+      const branch = classDef.specializations.find(b => b.id === classState.specializationId);
+      if (!branch) return state;
+      if (classState.specializationPoints >= branch.maxPoints) return state;
+      if (classState.skillPoints < 1) return state;
+      const student = state.students.find(s => s.id === action.studentId);
+      return {
+        ...state,
+        classTransfer: {
+          ...state.classTransfer,
+          studentClasses: {
+            ...state.classTransfer.studentClasses,
+            [action.studentId]: {
+              ...classState,
+              skillPoints: classState.skillPoints - 1,
+              specializationPoints: classState.specializationPoints + 1,
+            },
+          },
+        },
+        dailyLogs: student ? [...state.dailyLogs.slice(-29), {
+          day: state.day,
+          events: [{
+            type: 'specialization_point_added' as const,
+            message: `⬆️ ${student.name} 专精通点: ${SPECIALIZATION_NAMES[classState.specializationId]} ${classState.specializationPoints + 1}/${branch.maxPoints}`,
+            studentId: student.id,
+            studentName: student.name,
+          }],
+        }] : state.dailyLogs,
+      };
+    }
+
+    case 'ADD_CLASS_EXP': {
+      const classState = state.classTransfer.studentClasses[action.studentId];
+      if (!classState?.classId) return state;
+      const classDef = getClassDefinition(classState.classId);
+      if (!classDef) return state;
+      let newExp = classState.classExp + action.exp;
+      let newLevel = classState.classLevel;
+      let newSkillPoints = classState.skillPoints;
+      let newTotalSP = classState.totalSkillPointsEarned;
+      const events: DailyEvent[] = [];
+      const student = state.students.find(s => s.id === action.studentId);
+      while (newExp >= calculateClassExpToLevel(newLevel)) {
+        newExp -= calculateClassExpToLevel(newLevel);
+        newLevel++;
+        const spGain = classDef.skillPointsPerLevel;
+        newSkillPoints += spGain;
+        newTotalSP += spGain;
+        if (student) {
+          events.push({
+            type: 'class_level_up' as const,
+            message: `⬆️ ${student.name} 的${CLASS_TRANSFER_NAMES[classState.classId]}职业等级提升至 Lv.${newLevel}！获得${spGain}技能点`,
+            studentId: student.id,
+            studentName: student.name,
+          });
+        }
+      }
+      const newHighest = Math.max(state.classTransfer.highestClassLevel, newLevel);
+      return {
+        ...state,
+        classTransfer: {
+          ...state.classTransfer,
+          highestClassLevel: newHighest,
+          studentClasses: {
+            ...state.classTransfer.studentClasses,
+            [action.studentId]: {
+              ...classState,
+              classLevel: newLevel,
+              classExp: newExp,
+              skillPoints: newSkillPoints,
+              totalSkillPointsEarned: newTotalSP,
+            },
+          },
+        },
+        dailyLogs: events.length > 0 ? [...state.dailyLogs.slice(-29), { day: state.day, events }] : state.dailyLogs,
+      };
+    }
+
     default:
       return state;
   }
@@ -7151,6 +7380,12 @@ interface GameContextType {
   PENALTY_SEVERITY_NAMES: Record<PenaltySeverity, string>;
   canBuyBlackMarketItemCtx: typeof canBuyBlackMarketItem;
   getBlackMarketBuildingBonusCtx: typeof getBlackMarketBuildingBonus;
+  unlockClassTransfer: () => void;
+  transferClass: (studentId: string, classId: ClassId) => boolean;
+  unlockSkillNode: (studentId: string, nodeId: SkillTreeNodeId) => boolean;
+  unlockSpecializationBranch: (studentId: string, branchId: SpecializationBranchId) => boolean;
+  addSpecializationPoint: (studentId: string) => void;
+  addClassExp: (studentId: string, exp: number) => void;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -8163,6 +8398,52 @@ export function GameProvider({ children }: { children: ReactNode }) {
         if (!item || item.stock < 1 || item.category !== 'mystery_box') return false;
         dispatch({ type: 'OPEN_MYSTERY_BOX', itemId, tier });
         return true;
+      },
+      unlockClassTransfer: () => {
+        dispatch({ type: 'UNLOCK_CLASS_TRANSFER' });
+      },
+      transferClass: (studentId: string, classId: ClassId) => {
+        const classDef = CLASS_DEFINITIONS.find(c => c.id === classId);
+        if (!classDef) return false;
+        const student = state.students.find(s => s.id === studentId);
+        if (!student) return false;
+        const existingClassState = state.classTransfer.studentClasses[studentId];
+        if (existingClassState?.classId) return false;
+        const { canTransfer } = canTransferToClass(
+          classDef, student, state.mentorState.mentors, state.resources, !!existingClassState?.classId
+        );
+        if (!canTransfer) return false;
+        const cost = classDef.requirements.cost;
+        if (state.resources.gold < cost.gold || state.resources.mana < cost.mana ||
+            state.resources.food < cost.food || state.resources.reputation < cost.reputation) return false;
+        dispatch({ type: 'TRANSFER_CLASS', studentId, classId });
+        return true;
+      },
+      unlockSkillNode: (studentId: string, nodeId: SkillTreeNodeId) => {
+        const classState = state.classTransfer.studentClasses[studentId];
+        if (!classState?.classId) return false;
+        const classDef = getClassDefinition(classState.classId);
+        if (!classDef) return false;
+        const { canUnlock } = canUnlockSkillNode(nodeId, classDef, classState);
+        if (!canUnlock) return false;
+        dispatch({ type: 'UNLOCK_SKILL_NODE', studentId, nodeId });
+        return true;
+      },
+      unlockSpecializationBranch: (studentId: string, branchId: SpecializationBranchId) => {
+        const classState = state.classTransfer.studentClasses[studentId];
+        if (!classState?.classId) return false;
+        const classDef = getClassDefinition(classState.classId);
+        if (!classDef) return false;
+        const { canUnlock } = canUnlockSpecialization(branchId, classDef, classState);
+        if (!canUnlock) return false;
+        dispatch({ type: 'UNLOCK_SPECIALIZATION_BRANCH', studentId, branchId });
+        return true;
+      },
+      addSpecializationPoint: (studentId: string) => {
+        dispatch({ type: 'ADD_SPECIALIZATION_POINT', studentId });
+      },
+      addClassExp: (studentId: string, exp: number) => {
+        dispatch({ type: 'ADD_CLASS_EXP', studentId, exp });
       },
       BLACK_MARKET_RARITY_COLORS,
       BLACK_MARKET_RARITY_NAMES,

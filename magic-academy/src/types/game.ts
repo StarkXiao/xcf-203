@@ -314,7 +314,104 @@ export interface DormitoryState {
   avgStamina: number;
 }
 
-export const CURRENT_SAVE_VERSION = 17;
+export const CURRENT_SAVE_VERSION = 18;
+
+export type ClassId =
+  | 'flame_warrior' | 'frost_mage' | 'earth_guardian'
+  | 'wind_runner' | 'light_priest' | 'dark_assassin';
+
+export type SpecializationBranchId =
+  | 'flame_burst' | 'flame_soul'
+  | 'frost_domain' | 'tide_heal'
+  | 'iron_wall' | 'mountain_force'
+  | 'gale_slash' | 'storm_call'
+  | 'holy_cure' | 'judgment_light'
+  | 'shadow_kill' | 'curse_art';
+
+export type SkillTreeNodeId =
+  | 'node_atk_1' | 'node_atk_2' | 'node_atk_3'
+  | 'node_def_1' | 'node_def_2' | 'node_def_3'
+  | 'node_hp_1' | 'node_hp_2' | 'node_hp_3'
+  | 'node_spd_1' | 'node_spd_2'
+  | 'node_crit_1' | 'node_crit_2'
+  | 'node_spec_1' | 'node_spec_2' | 'node_spec_3'
+  | 'node_ult';
+
+export interface ClassTransferRequirement {
+  requiredLevel: number;
+  requiredQuality: StudentQuality;
+  requiredCourseId: string;
+  requiredDungeonId: string;
+  requiredMentorMagicType: MagicType;
+  cost: Resource;
+}
+
+export interface SkillTreeNodeEffect {
+  type: 'attack_bonus' | 'defense_bonus' | 'hp_bonus' | 'speed_bonus'
+    | 'crit_chance' | 'crit_damage' | 'skill_damage_bonus' | 'exp_bonus'
+    | 'dungeon_bonus' | 'course_speed_bonus' | 'special_skill';
+  value: number;
+  target?: MagicType;
+  skillId?: string;
+  skillName?: string;
+  skillDamage?: number;
+}
+
+export interface SkillTreeNode {
+  id: SkillTreeNodeId;
+  name: string;
+  icon: string;
+  description: string;
+  effects: SkillTreeNodeEffect[];
+  cost: number;
+  prerequisites: SkillTreeNodeId[];
+  row: number;
+  col: number;
+  branchRequired?: SpecializationBranchId;
+}
+
+export interface SpecializationBranch {
+  id: SpecializationBranchId;
+  name: string;
+  icon: string;
+  description: string;
+  unlockCost: number;
+  bonusPerPoint: SkillTreeNodeEffect;
+  maxPoints: number;
+  requiredNodes: SkillTreeNodeId[];
+}
+
+export interface ClassDefinition {
+  id: ClassId;
+  name: string;
+  icon: string;
+  description: string;
+  magicType: MagicType;
+  requirements: ClassTransferRequirement;
+  specializations: SpecializationBranch[];
+  skillTree: SkillTreeNode[];
+  baseStatBonus: { attack: number; defense: number; hp: number; speed: number };
+  skillPointsPerLevel: number;
+}
+
+export interface StudentClassState {
+  classId: ClassId | null;
+  classLevel: number;
+  classExp: number;
+  skillPoints: number;
+  unlockedNodes: SkillTreeNodeId[];
+  specializationId: SpecializationBranchId | null;
+  specializationPoints: number;
+  totalSkillPointsEarned: number;
+  transferDay: number | null;
+}
+
+export interface ClassTransferState {
+  unlocked: boolean;
+  studentClasses: Record<string, StudentClassState>;
+  totalTransfers: number;
+  highestClassLevel: number;
+}
 
 export type MentorQuality = 'common' | 'rare' | 'epic' | 'legendary';
 export type MentorRank = 'novice' | 'apprentice' | 'journeyman' | 'expert' | 'master' | 'grandmaster';
@@ -1199,6 +1296,7 @@ export interface GameState {
   achievement: AchievementState;
   mapExplore: MapExploreState;
   blackMarket: BlackMarketState;
+  classTransfer: ClassTransferState;
 }
 
 export interface CourseBenefitBreakdown {
@@ -1220,7 +1318,7 @@ export interface CourseBenefitBreakdown {
   potionSpeedBoost: number;
 }
 
-export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade' | 'alchemy' | 'eventCenter' | 'kingdomCommission' | 'dormitory' | 'codex' | 'mapExplore' | 'blackMarket';
+export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade' | 'alchemy' | 'eventCenter' | 'kingdomCommission' | 'dormitory' | 'codex' | 'mapExplore' | 'blackMarket' | 'classTransfer';
 
 export type CommissionType = 'course_training' | 'dungeon_dispatch' | 'resource_delivery' | 'comprehensive';
 export type CommissionDifficulty = 'easy' | 'normal' | 'hard' | 'epic' | 'legendary';
@@ -1392,7 +1490,8 @@ export interface DailyEvent {
   type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning' | 'course_queued' | 'course_started' | 'queue_empty' | 'course_conflict' | 'hp_heal' | 'hp_natural_recovery' | 'battle_injury' | 'cannot_battle_injured' | 'club_task_complete' | 'club_joined' | 'club_shop_purchase' | 'club_level_up' | 'club_reputation_gain' | 'trade_order_placed' | 'trade_order_completed' | 'trade_shipment_arrived' | 'trade_price_changed' | 'trade_shipment_risk' | 'trade_harbor_upgrade' | 'mentor_recruited' | 'mentor_level_up' | 'mentor_rank_up' | 'mentor_assigned' | 'mentor_specialization_up' | 'academy_level_up' | 'mentor_salary_paid' | 'student_promoted' | 'alchemy_craft_complete' | 'alchemy_material_synthesized' | 'alchemy_potion_used' | 'alchemy_potion_sold' | 'alchemy_workshop_upgraded' | 'alchemy_recipe_unlocked' | 'event_center_triggered' | 'event_center_resolved' | 'event_center_risk'
   | 'dormitory_event' | 'dormitory_relationship_up' | 'dormitory_room_assigned' | 'dormitory_rest_activity' | 'dormitory_bonus_applied'
   | 'map_area_unlocked' | 'map_explore_event' | 'map_gathering' | 'map_route_traveled' | 'map_mastery_achieved'
-  | 'black_market_purchase' | 'black_market_refresh' | 'black_market_penalty' | 'black_market_audit_change' | 'black_market_mystery_opened' | 'black_market_unlocked';
+  | 'black_market_purchase' | 'black_market_refresh' | 'black_market_penalty' | 'black_market_audit_change' | 'black_market_mystery_opened' | 'black_market_unlocked'
+  | 'class_transfer' | 'class_level_up' | 'skill_node_unlocked' | 'specialization_unlocked' | 'specialization_point_added';
   message: string;
   value?: number;
   studentId?: string;

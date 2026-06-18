@@ -1,4 +1,4 @@
-import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState, KingdomCommission, CommissionStage, CommissionType, CommissionDifficulty, CommissionStageType, CommissionRankInfo, KingdomCommissionState, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, RestActivity, DormitoryEventDef, DormitoryEventInstance, StudentCodexEntry, SkillCodexEntry, CodexState, CodexStats, CodexCategory, Achievement, AchievementState, AchievementType, AchievementRarity, Title, MapAreaId, MapAreaRarity, MapAreaStatus, MapArea, MapGatheringNode, MapExploreEventDef, MapExploreEventInstance, MapRoute, MapExploreState, MapEventCategory, GatheringNodeType, RouteType, BlackMarketItem, BlackMarketItemCategory, BlackMarketItemRarity, BlackMarketState, BlackMarketPenalty, PenaltySeverity, AuditLevel } from '../types/game';
+import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState, KingdomCommission, CommissionStage, CommissionType, CommissionDifficulty, CommissionStageType, CommissionRankInfo, KingdomCommissionState, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, RestActivity, DormitoryEventDef, DormitoryEventInstance, StudentCodexEntry, SkillCodexEntry, CodexState, CodexStats, CodexCategory, Achievement, AchievementState, AchievementType, AchievementRarity, Title, MapAreaId, MapAreaRarity, MapAreaStatus, MapArea, MapGatheringNode, MapExploreEventDef, MapExploreEventInstance, MapRoute, MapExploreState, MapEventCategory, GatheringNodeType, RouteType, BlackMarketItem, BlackMarketItemCategory, BlackMarketItemRarity, BlackMarketState, BlackMarketPenalty, PenaltySeverity, AuditLevel, ClassId, SpecializationBranchId, SkillTreeNodeId, ClassTransferState, StudentClassState, SkillTreeNodeEffect, ClassDefinition } from '../types/game';
 import {
   HP_BATTLE_THRESHOLD,
   HP_COURSE_EFFICIENCY_THRESHOLD,
@@ -8263,6 +8263,399 @@ export const getMysteryBoxRewards = (
   }
   
   return { rewards, auditChange };
+};
+
+export const CLASS_TRANSFER_NAMES: Record<ClassId, string> = {
+  flame_warrior: '火焰战士',
+  frost_mage: '寒冰法师',
+  earth_guardian: '大地守护者',
+  wind_runner: '风行者',
+  light_priest: '圣光祭司',
+  dark_assassin: '暗影刺客',
+};
+
+export const CLASS_TRANSFER_ICONS: Record<ClassId, string> = {
+  flame_warrior: '🔥',
+  frost_mage: '❄️',
+  earth_guardian: '🏔️',
+  wind_runner: '🌪️',
+  light_priest: '✨',
+  dark_assassin: '🌑',
+};
+
+export const CLASS_TRANSFER_MAGIC_TYPES: Record<ClassId, MagicType> = {
+  flame_warrior: 'fire',
+  frost_mage: 'water',
+  earth_guardian: 'earth',
+  wind_runner: 'wind',
+  light_priest: 'light',
+  dark_assassin: 'dark',
+};
+
+export const SPECIALIZATION_NAMES: Record<SpecializationBranchId, string> = {
+  flame_burst: '爆裂之焰',
+  flame_soul: '不灭炎魂',
+  frost_domain: '极寒领域',
+  tide_heal: '潮汐治愈',
+  iron_wall: '钢铁壁垒',
+  mountain_force: '山岳之力',
+  gale_slash: '疾风斩击',
+  storm_call: '风暴召唤',
+  holy_cure: '神圣治愈',
+  judgment_light: '审判之光',
+  shadow_kill: '暗影杀戮',
+  curse_art: '诅咒之术',
+};
+
+export const SPECIALIZATION_ICONS: Record<SpecializationBranchId, string> = {
+  flame_burst: '💥', flame_soul: '🜂',
+  frost_domain: '🧊', tide_heal: '🌊',
+  iron_wall: '🛡️', mountain_force: '⛰️',
+  gale_slash: '🗡️', storm_call: '⛈️',
+  holy_cure: '💖', judgment_light: '⚡',
+  shadow_kill: '🗡️', curse_art: '🔮',
+};
+
+const SHARED_SKILL_TREE: SkillTreeNode[] = [
+  { id: 'node_atk_1', name: '力量觉醒', icon: '⚔️', description: '攻击力+5%', effects: [{ type: 'attack_bonus', value: 0.05 }], cost: 1, prerequisites: [], row: 0, col: 1 },
+  { id: 'node_def_1', name: '坚韧体魄', icon: '🛡️', description: '防御力+5%', effects: [{ type: 'defense_bonus', value: 0.05 }], cost: 1, prerequisites: [], row: 0, col: 3 },
+  { id: 'node_hp_1', name: '生命强化', icon: '❤️', description: '生命值+10%', effects: [{ type: 'hp_bonus', value: 0.1 }], cost: 1, prerequisites: [], row: 0, col: 5 },
+  { id: 'node_atk_2', name: '锐利之刃', icon: '🗡️', description: '攻击力+8%', effects: [{ type: 'attack_bonus', value: 0.08 }], cost: 2, prerequisites: ['node_atk_1'], row: 1, col: 0 },
+  { id: 'node_spd_1', name: '迅捷步法', icon: '💨', description: '速度+5%', effects: [{ type: 'speed_bonus', value: 0.05 }], cost: 2, prerequisites: ['node_atk_1'], row: 1, col: 2 },
+  { id: 'node_def_2', name: '铁壁之身', icon: '🏰', description: '防御力+8%', effects: [{ type: 'defense_bonus', value: 0.08 }], cost: 2, prerequisites: ['node_def_1'], row: 1, col: 4 },
+  { id: 'node_hp_2', name: '生命涌泉', icon: '💚', description: '生命值+15%', effects: [{ type: 'hp_bonus', value: 0.15 }], cost: 2, prerequisites: ['node_hp_1'], row: 1, col: 6 },
+  { id: 'node_crit_1', name: '弱点洞察', icon: '🎯', description: '暴击率+5%', effects: [{ type: 'crit_chance', value: 0.05 }], cost: 2, prerequisites: ['node_spd_1'], row: 2, col: 1 },
+  { id: 'node_atk_3', name: '毁灭之力', icon: '💥', description: '攻击力+12%', effects: [{ type: 'attack_bonus', value: 0.12 }], cost: 3, prerequisites: ['node_atk_2'], row: 2, col: 0 },
+  { id: 'node_def_3', name: '不朽之躯', icon: '🏛️', description: '防御力+12%', effects: [{ type: 'defense_bonus', value: 0.12 }], cost: 3, prerequisites: ['node_def_2'], row: 2, col: 4 },
+  { id: 'node_hp_3', name: '不灭生命力', icon: '🌟', description: '生命值+20%', effects: [{ type: 'hp_bonus', value: 0.2 }], cost: 3, prerequisites: ['node_hp_2'], row: 2, col: 6 },
+  { id: 'node_spd_2', name: '闪电反射', icon: '⚡', description: '速度+8%，暴击伤害+15%', effects: [{ type: 'speed_bonus', value: 0.08 }, { type: 'crit_damage', value: 0.15 }], cost: 3, prerequisites: ['node_crit_1'], row: 3, col: 1 },
+  { id: 'node_crit_2', name: '致命一击', icon: '☠️', description: '暴击率+8%，暴击伤害+20%', effects: [{ type: 'crit_chance', value: 0.08 }, { type: 'crit_damage', value: 0.2 }], cost: 3, prerequisites: ['node_crit_1'], row: 3, col: 3 },
+  { id: 'node_spec_1', name: '专精入门', icon: '📖', description: '技能伤害+10%', effects: [{ type: 'skill_damage_bonus', value: 0.1 }], cost: 3, prerequisites: ['node_atk_3', 'node_crit_2'], row: 4, col: 1 },
+  { id: 'node_spec_2', name: '专精通晓', icon: '📜', description: '技能伤害+15%，副本奖励+10%', effects: [{ type: 'skill_damage_bonus', value: 0.15 }, { type: 'dungeon_bonus', value: 0.1 }], cost: 4, prerequisites: ['node_spec_1'], row: 4, col: 3 },
+  { id: 'node_spec_3', name: '专精精通', icon: '🔮', description: '技能伤害+20%，经验+15%', effects: [{ type: 'skill_damage_bonus', value: 0.2 }, { type: 'exp_bonus', value: 0.15 }], cost: 5, prerequisites: ['node_spec_2'], row: 5, col: 2 },
+  { id: 'node_ult', name: '终极觉醒', icon: '👑', description: '全属性+10%，课程速度+15%', effects: [{ type: 'attack_bonus', value: 0.1 }, { type: 'defense_bonus', value: 0.1 }, { type: 'hp_bonus', value: 0.1 }, { type: 'course_speed_bonus', value: 0.15 }], cost: 6, prerequisites: ['node_spec_3'], row: 6, col: 3 },
+];
+
+export const CLASS_DEFINITIONS: ClassDefinition[] = [
+  {
+    id: 'flame_warrior',
+    name: '火焰战士',
+    icon: '🔥',
+    description: '以烈火为武器的近战战士，拥有极高的爆发输出能力，擅长在战场上撕裂敌人的防线',
+    magicType: 'fire',
+    requirements: {
+      requiredLevel: 5,
+      requiredQuality: 'common',
+      requiredCourseId: 'fire_magic',
+      requiredDungeonId: 'dark_forest',
+      requiredMentorMagicType: 'fire',
+      cost: { gold: 500, mana: 300, food: 50, reputation: 30 },
+    },
+    specializations: [
+      { id: 'flame_burst', name: '爆裂之焰', icon: '💥', description: '极致的火焰爆发，将攻击力推向巅峰', unlockCost: 3, bonusPerPoint: { type: 'attack_bonus', value: 0.03 }, maxPoints: 10, requiredNodes: ['node_atk_3', 'node_crit_2'] },
+      { id: 'flame_soul', name: '不灭炎魂', icon: '🜂', description: '永恒的火焰之魂，提升生存与持续作战能力', unlockCost: 3, bonusPerPoint: { type: 'hp_bonus', value: 0.03 }, maxPoints: 10, requiredNodes: ['node_hp_3', 'node_def_3'] },
+    ],
+    skillTree: SHARED_SKILL_TREE,
+    baseStatBonus: { attack: 15, defense: 5, hp: 50, speed: 3 },
+    skillPointsPerLevel: 2,
+  },
+  {
+    id: 'frost_mage',
+    name: '寒冰法师',
+    icon: '❄️',
+    description: '操控寒冰之力的远程法师，擅长控制与范围伤害，冰封一切敌人',
+    magicType: 'water',
+    requirements: {
+      requiredLevel: 5,
+      requiredQuality: 'common',
+      requiredCourseId: 'water_magic',
+      requiredDungeonId: 'dark_forest',
+      requiredMentorMagicType: 'water',
+      cost: { gold: 500, mana: 300, food: 50, reputation: 30 },
+    },
+    specializations: [
+      { id: 'frost_domain', name: '极寒领域', icon: '🧊', description: '扩展冰霜控制范围，强化群体控制能力', unlockCost: 3, bonusPerPoint: { type: 'skill_damage_bonus', value: 0.03 }, maxPoints: 10, requiredNodes: ['node_atk_3', 'node_spec_1'] },
+      { id: 'tide_heal', name: '潮汐治愈', icon: '🌊', description: '用水之力量治愈伤痛，成为队伍的治疗支柱', unlockCost: 3, bonusPerPoint: { type: 'hp_bonus', value: 0.02 }, maxPoints: 10, requiredNodes: ['node_hp_3', 'node_def_3'] },
+    ],
+    skillTree: SHARED_SKILL_TREE,
+    baseStatBonus: { attack: 12, defense: 8, hp: 40, speed: 5 },
+    skillPointsPerLevel: 2,
+  },
+  {
+    id: 'earth_guardian',
+    name: '大地守护者',
+    icon: '🏔️',
+    description: '以大地之力构筑坚不可摧的防御，是队伍中最可靠的前排壁垒',
+    magicType: 'earth',
+    requirements: {
+      requiredLevel: 5,
+      requiredQuality: 'common',
+      requiredCourseId: 'earth_magic',
+      requiredDungeonId: 'dark_forest',
+      requiredMentorMagicType: 'earth',
+      cost: { gold: 500, mana: 300, food: 50, reputation: 30 },
+    },
+    specializations: [
+      { id: 'iron_wall', name: '钢铁壁垒', icon: '🛡️', description: '极致的防御专精，成为团队最坚实的护盾', unlockCost: 3, bonusPerPoint: { type: 'defense_bonus', value: 0.03 }, maxPoints: 10, requiredNodes: ['node_def_3', 'node_hp_3'] },
+      { id: 'mountain_force', name: '山岳之力', icon: '⛰️', description: '大地的力量凝聚为攻击，防守反击两不误', unlockCost: 3, bonusPerPoint: { type: 'attack_bonus', value: 0.02 }, maxPoints: 10, requiredNodes: ['node_atk_3', 'node_def_3'] },
+    ],
+    skillTree: SHARED_SKILL_TREE,
+    baseStatBonus: { attack: 8, defense: 15, hp: 80, speed: 0 },
+    skillPointsPerLevel: 2,
+  },
+  {
+    id: 'wind_runner',
+    name: '风行者',
+    icon: '🌪️',
+    description: '追逐风之极意的敏捷战士，以速度和暴击主宰战场节奏',
+    magicType: 'wind',
+    requirements: {
+      requiredLevel: 5,
+      requiredQuality: 'common',
+      requiredCourseId: 'wind_magic',
+      requiredDungeonId: 'dark_forest',
+      requiredMentorMagicType: 'wind',
+      cost: { gold: 500, mana: 300, food: 50, reputation: 30 },
+    },
+    specializations: [
+      { id: 'gale_slash', name: '疾风斩击', icon: '🗡️', description: '将风凝聚于刃，一击必杀的极致斩击', unlockCost: 3, bonusPerPoint: { type: 'crit_chance', value: 0.02 }, maxPoints: 10, requiredNodes: ['node_atk_3', 'node_crit_2'] },
+      { id: 'storm_call', name: '风暴召唤', icon: '⛈️', description: '召唤毁灭性风暴，掌控范围伤害的天象', unlockCost: 3, bonusPerPoint: { type: 'skill_damage_bonus', value: 0.03 }, maxPoints: 10, requiredNodes: ['node_spec_1', 'node_atk_3'] },
+    ],
+    skillTree: SHARED_SKILL_TREE,
+    baseStatBonus: { attack: 10, defense: 5, hp: 30, speed: 10 },
+    skillPointsPerLevel: 2,
+  },
+  {
+    id: 'light_priest',
+    name: '圣光祭司',
+    icon: '✨',
+    description: '以圣光之力拯救与庇护队友，是队伍中最不可或缺的支援核心',
+    magicType: 'light',
+    requirements: {
+      requiredLevel: 8,
+      requiredQuality: 'rare',
+      requiredCourseId: 'light_magic',
+      requiredDungeonId: 'ancient_ruins',
+      requiredMentorMagicType: 'light',
+      cost: { gold: 800, mana: 500, food: 80, reputation: 60 },
+    },
+    specializations: [
+      { id: 'holy_cure', name: '神圣治愈', icon: '💖', description: '极致的治疗之力，让队友永远不会倒下', unlockCost: 4, bonusPerPoint: { type: 'hp_bonus', value: 0.03 }, maxPoints: 10, requiredNodes: ['node_hp_3', 'node_spec_1'] },
+      { id: 'judgment_light', name: '审判之光', icon: '⚡', description: '以圣光之力惩戒邪恶，光明亦能毁灭', unlockCost: 4, bonusPerPoint: { type: 'attack_bonus', value: 0.03 }, maxPoints: 10, requiredNodes: ['node_atk_3', 'node_spec_1'] },
+    ],
+    skillTree: SHARED_SKILL_TREE,
+    baseStatBonus: { attack: 8, defense: 10, hp: 60, speed: 5 },
+    skillPointsPerLevel: 2,
+  },
+  {
+    id: 'dark_assassin',
+    name: '暗影刺客',
+    icon: '🌑',
+    description: '潜伏于暗影中的致命杀手，一击毙命是最高信条',
+    magicType: 'dark',
+    requirements: {
+      requiredLevel: 8,
+      requiredQuality: 'rare',
+      requiredCourseId: 'dark_magic',
+      requiredDungeonId: 'ancient_ruins',
+      requiredMentorMagicType: 'dark',
+      cost: { gold: 800, mana: 500, food: 80, reputation: 60 },
+    },
+    specializations: [
+      { id: 'shadow_kill', name: '暗影杀戮', icon: '🗡️', description: '极致的暗杀技艺，对单体造成毁灭性伤害', unlockCost: 4, bonusPerPoint: { type: 'crit_damage', value: 0.04 }, maxPoints: 10, requiredNodes: ['node_atk_3', 'node_crit_2'] },
+      { id: 'curse_art', name: '诅咒之术', icon: '🔮', description: '暗影中的诅咒大师，让敌人在痛苦中消亡', unlockCost: 4, bonusPerPoint: { type: 'skill_damage_bonus', value: 0.03 }, maxPoints: 10, requiredNodes: ['node_spec_1', 'node_crit_2'] },
+    ],
+    skillTree: SHARED_SKILL_TREE,
+    baseStatBonus: { attack: 15, defense: 3, hp: 30, speed: 8 },
+    skillPointsPerLevel: 2,
+  },
+];
+
+export const getClassDefinition = (classId: ClassId): ClassDefinition | undefined => {
+  return CLASS_DEFINITIONS.find(c => c.id === classId);
+};
+
+export const getClassesForMagicType = (magicType: MagicType): ClassDefinition[] => {
+  return CLASS_DEFINITIONS.filter(c => c.magicType === magicType);
+};
+
+export const canTransferToClass = (
+  classDef: ClassDefinition,
+  student: { level: number; quality: StudentQuality; courseHistory: { courseId: string }[]; dungeonHistory: { dungeonId: string; victory: boolean }[] },
+  mentors: { magicType: MagicType; status: string; assignedCourses: string[] }[],
+  resources: Resource,
+  hasExistingClass: boolean
+): { canTransfer: boolean; unmetRequirements: { type: string; description: string; current: string; required: string }[] } => {
+  const unmetRequirements: { type: string; description: string; current: string; required: string }[] = [];
+  const req = classDef.requirements;
+
+  if (hasExistingClass) {
+    unmetRequirements.push({ type: 'existing', description: '已有职业', current: '已转职', required: '未转职' });
+  }
+
+  if (student.level < req.requiredLevel) {
+    unmetRequirements.push({ type: 'level', description: '等级要求', current: `Lv.${student.level}`, required: `Lv.${req.requiredLevel}` });
+  }
+
+  const qualityOrder: Record<StudentQuality, number> = { common: 0, rare: 1, epic: 2, legendary: 3 };
+  if (qualityOrder[student.quality] < qualityOrder[req.requiredQuality]) {
+    unmetRequirements.push({ type: 'quality', description: '品质要求', current: student.quality, required: req.requiredQuality });
+  }
+
+  const hasCourse = student.courseHistory.some(ch => ch.courseId === req.requiredCourseId);
+  if (!hasCourse) {
+    unmetRequirements.push({ type: 'course', description: '课程前置', current: '未完成', required: req.requiredCourseId });
+  }
+
+  const hasDungeon = student.dungeonHistory.some(dh => dh.dungeonId === req.requiredDungeonId && dh.victory);
+  if (!hasDungeon) {
+    unmetRequirements.push({ type: 'dungeon', description: '副本通关', current: '未通关', required: req.requiredDungeonId });
+  }
+
+  const hasMentor = mentors.some(m => m.magicType === req.requiredMentorMagicType);
+  if (!hasMentor) {
+    unmetRequirements.push({ type: 'mentor', description: '导师指导', current: '无', required: `${req.requiredMentorMagicType}系导师` });
+  }
+
+  if (resources.gold < req.cost.gold || resources.mana < req.cost.mana || resources.food < req.cost.food || resources.reputation < req.cost.reputation) {
+    unmetRequirements.push({ type: 'resource', description: '资源不足', current: `💰${resources.gold} 🔮${resources.mana} 🍖${resources.food} ⭐${resources.reputation}`, required: `💰${req.cost.gold} 🔮${req.cost.mana} 🍖${req.cost.food} ⭐${req.cost.reputation}` });
+  }
+
+  return { canTransfer: unmetRequirements.length === 0, unmetRequirements };
+};
+
+export const canUnlockSkillNode = (
+  nodeId: SkillTreeNodeId,
+  classDef: ClassDefinition,
+  studentClassState: StudentClassState
+): { canUnlock: boolean; reasons: string[] } => {
+  const reasons: string[] = [];
+  const node = classDef.skillTree.find(n => n.id === nodeId);
+
+  if (!node) {
+    reasons.push('节点不存在');
+    return { canUnlock: false, reasons };
+  }
+
+  if (studentClassState.unlockedNodes.includes(nodeId)) {
+    reasons.push('已解锁');
+    return { canUnlock: false, reasons };
+  }
+
+  if (studentClassState.skillPoints < node.cost) {
+    reasons.push(`技能点不足 (需要${node.cost}，当前${studentClassState.skillPoints})`);
+  }
+
+  for (const prereqId of node.prerequisites) {
+    if (!studentClassState.unlockedNodes.includes(prereqId)) {
+      const prereqNode = classDef.skillTree.find(n => n.id === prereqId);
+      reasons.push(`前置节点未解锁: ${prereqNode?.name || prereqId}`);
+    }
+  }
+
+  if (node.branchRequired && studentClassState.specializationId !== node.branchRequired) {
+    reasons.push(`需要选择专精分支: ${SPECIALIZATION_NAMES[node.branchRequired]}`);
+  }
+
+  return { canUnlock: reasons.length === 0, reasons };
+};
+
+export const canUnlockSpecialization = (
+  branchId: SpecializationBranchId,
+  classDef: ClassDefinition,
+  studentClassState: StudentClassState
+): { canUnlock: boolean; reasons: string[] } => {
+  const reasons: string[] = [];
+  const branch = classDef.specializations.find(b => b.id === branchId);
+
+  if (!branch) {
+    reasons.push('专精分支不存在');
+    return { canUnlock: false, reasons };
+  }
+
+  if (studentClassState.specializationId !== null) {
+    reasons.push('已选择其他专精分支');
+    return { canUnlock: false, reasons };
+  }
+
+  if (studentClassState.skillPoints < branch.unlockCost) {
+    reasons.push(`技能点不足 (需要${branch.unlockCost}，当前${studentClassState.skillPoints})`);
+  }
+
+  for (const reqNodeId of branch.requiredNodes) {
+    if (!studentClassState.unlockedNodes.includes(reqNodeId)) {
+      const reqNode = classDef.skillTree.find(n => n.id === reqNodeId);
+      reasons.push(`前置节点未解锁: ${reqNode?.name || reqNodeId}`);
+    }
+  }
+
+  return { canUnlock: reasons.length === 0, reasons };
+};
+
+export const calculateClassExpToLevel = (classLevel: number): number => {
+  return classLevel * 50 + 100;
+};
+
+export const calculateClassStatBonuses = (
+  classDef: ClassDefinition,
+  studentClassState: StudentClassState
+): { attack: number; defense: number; hp: number; speed: number } => {
+  let attack = classDef.baseStatBonus.attack * (1 + (studentClassState.classLevel - 1) * 0.1);
+  let defense = classDef.baseStatBonus.defense * (1 + (studentClassState.classLevel - 1) * 0.1);
+  let hp = classDef.baseStatBonus.hp * (1 + (studentClassState.classLevel - 1) * 0.1);
+  let speed = classDef.baseStatBonus.speed * (1 + (studentClassState.classLevel - 1) * 0.1);
+
+  for (const nodeId of studentClassState.unlockedNodes) {
+    const node = classDef.skillTree.find(n => n.id === nodeId);
+    if (node) {
+      for (const effect of node.effects) {
+        switch (effect.type) {
+          case 'attack_bonus': attack += attack * effect.value; break;
+          case 'defense_bonus': defense += defense * effect.value; break;
+          case 'hp_bonus': hp += hp * effect.value; break;
+          case 'speed_bonus': speed += speed * effect.value; break;
+        }
+      }
+    }
+  }
+
+  if (studentClassState.specializationId) {
+    const branch = classDef.specializations.find(b => b.id === studentClassState.specializationId);
+    if (branch) {
+      const bonus = branch.bonusPerPoint;
+      const points = studentClassState.specializationPoints;
+      switch (bonus.type) {
+        case 'attack_bonus': attack += attack * bonus.value * points; break;
+        case 'defense_bonus': defense += defense * bonus.value * points; break;
+        case 'hp_bonus': hp += hp * bonus.value * points; break;
+        case 'speed_bonus': speed += speed * bonus.value * points; break;
+        case 'skill_damage_bonus': attack += attack * bonus.value * points; break;
+        case 'crit_chance': attack += attack * 0.02 * points; break;
+        case 'crit_damage': attack += attack * 0.03 * points; break;
+      }
+    }
+  }
+
+  return { attack: Math.floor(attack), defense: Math.floor(defense), hp: Math.floor(hp), speed: Math.floor(speed) };
+};
+
+export const getEmptyStudentClassState = (): StudentClassState => ({
+  classId: null,
+  classLevel: 0,
+  classExp: 0,
+  skillPoints: 0,
+  unlockedNodes: [],
+  specializationId: null,
+  specializationPoints: 0,
+  totalSkillPointsEarned: 0,
+  transferDay: null,
+});
+
+export const INITIAL_CLASS_TRANSFER_STATE: ClassTransferState = {
+  unlocked: false,
+  studentClasses: {},
+  totalTransfers: 0,
+  highestClassLevel: 0,
 };
 
 export const getBlackMarketBuildingBonus = (

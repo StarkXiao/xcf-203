@@ -24,6 +24,7 @@ import {
   INITIAL_ACHIEVEMENT_STATE,
   INITIAL_MAP_EXPLORE_STATE,
   INITIAL_BLACK_MARKET_STATE,
+  INITIAL_CLASS_TRANSFER_STATE,
 } from './gameData';
 
 type SaveData = Record<string, unknown>;
@@ -532,6 +533,15 @@ function migrateV16ToV17(ctx: MigrationContext): SaveData {
   return data;
 }
 
+function migrateV17ToV18(ctx: MigrationContext): SaveData {
+  const data = { ...ctx.data };
+
+  data.classTransfer = { ...INITIAL_CLASS_TRANSFER_STATE };
+
+  data.saveVersion = 18;
+  return data;
+}
+
 const MIGRATION_CHAIN: Record<number, MigrationStep> = {
   0: migrateV0ToV1,
   1: migrateV1ToV2,
@@ -550,6 +560,7 @@ const MIGRATION_CHAIN: Record<number, MigrationStep> = {
   14: migrateV14ToV15,
   15: migrateV15ToV16,
   16: migrateV16ToV17,
+  17: migrateV17ToV18,
 };
 
 export function migrateSave(rawData: SaveData): GameState {
@@ -879,6 +890,10 @@ function normalizeToGameState(data: SaveData): GameState {
     ? { ...INITIAL_BLACK_MARKET_STATE, ...(data.blackMarket as Record<string, unknown>) }
     : INITIAL_BLACK_MARKET_STATE;
 
+  const classTransfer = data.classTransfer && typeof data.classTransfer === 'object'
+    ? { ...INITIAL_CLASS_TRANSFER_STATE, ...(data.classTransfer as Record<string, unknown>) }
+    : INITIAL_CLASS_TRANSFER_STATE;
+
   return {
     saveVersion: CURRENT_SAVE_VERSION,
     resources,
@@ -914,6 +929,7 @@ function normalizeToGameState(data: SaveData): GameState {
     achievement,
     mapExplore,
     blackMarket,
+    classTransfer,
   };
 }
 
