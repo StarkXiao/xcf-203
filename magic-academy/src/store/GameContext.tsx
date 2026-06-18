@@ -238,7 +238,8 @@ type GameAction =
   | { type: 'UNLOCK_EVENT_CENTER' }
   | { type: 'TRIGGER_EVENT_CENTER'; event: AcademyEventDefinition }
   | { type: 'RESOLVE_EVENT_CENTER'; choiceId: string }
-  | { type: 'DISMISS_EVENT_CENTER' };
+  | { type: 'DISMISS_EVENT_CENTER' }
+  | { type: 'CLAIM_EVENT_REWARD' };
 
 const MAX_STUDENT_CAPACITY = 20;
 
@@ -4425,6 +4426,35 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         finalResources = { ...finalResources, gold: tempGold };
       }
 
+      let newEventCenter = { ...state.eventCenter };
+      if (state.eventCenter.unlocked && !state.eventCenter.currentEvent && state.students.length > 0) {
+        const daysSinceLastEvent = newDay - state.eventCenter.lastEventDay;
+        if (daysSinceLastEvent >= state.eventCenter.minDaysBetweenEvents) {
+          if (Math.random() < state.eventCenter.eventChance) {
+            const triggered = selectRandomEvent(
+              newDay,
+              state.resources.reputation,
+              updatedStudents.length,
+              state.eventCenter.cooldowns,
+              null
+            );
+            if (triggered) {
+              newEventCenter = { ...newEventCenter, currentEvent: triggered };
+              todayEvents.push({
+                type: 'event_center_triggered',
+                message: `${triggered.icon} 事件发生：${triggered.name}！请到事件中心处理`,
+              });
+            }
+          }
+        }
+      } else if (!state.eventCenter.unlocked && state.day >= 3 && updatedStudents.length >= 1) {
+        newEventCenter = { ...newEventCenter, unlocked: true };
+        todayEvents.push({
+          type: 'event_center_triggered',
+          message: '📢 学院事件中心已开启！每日推进时可能触发随机事件',
+        });
+      }
+
       const dailyLog: DailyLog = {
         day: state.day,
         events: todayEvents,
@@ -4570,35 +4600,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const alchemyCraftTickState = gameReducer(state, { type: 'TICK_ALCHEMY_CRAFTINGS' });
       const alchemyBuffExpireState = gameReducer(alchemyCraftTickState, { type: 'EXPIRE_ALCHEMY_BUFFS' });
 
-      let newEventCenter = { ...state.eventCenter };
-      if (state.eventCenter.unlocked && !state.eventCenter.currentEvent && state.students.length > 0) {
-        const daysSinceLastEvent = newDay - state.eventCenter.lastEventDay;
-        if (daysSinceLastEvent >= state.eventCenter.minDaysBetweenEvents) {
-          if (Math.random() < state.eventCenter.eventChance) {
-            const triggered = selectRandomEvent(
-              newDay,
-              state.resources.reputation,
-              updatedStudents.length,
-              state.eventCenter.cooldowns,
-              null
-            );
-            if (triggered) {
-              newEventCenter = { ...newEventCenter, currentEvent: triggered };
-              todayEvents.push({
-                type: 'event_center_triggered',
-                message: `${triggered.icon} 事件发生：${triggered.name}！请到事件中心处理`,
-              });
-            }
-          }
-        }
-      } else if (!state.eventCenter.unlocked && state.day >= 3 && updatedStudents.length >= 1) {
-        newEventCenter = { ...newEventCenter, unlocked: true };
-        todayEvents.push({
-          type: 'event_center_triggered',
-          message: '📢 学院事件中心已开启！每日推进时可能触发随机事件',
-        });
-      }
-
       return {
         ...state,
         day: newDay,
@@ -4709,6 +4710,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         state.students.map(s => ({ id: s.id, magicType: s.magicType }))
       );
 
+      const choice = event.choices.find(c => c.id === action.choiceId);
+      const reputationBonus = choice?.reputationBonus || 0;
+
       const instance = {
         id: `event_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         eventId: event.id,
@@ -4723,21 +4727,60 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         outcomeText: result.outcomeText,
       };
 
-      const choice = event.choices.find(c => c.id === action.choiceId);
-      const newResources = {
-        gold: Math.max(0, state.resources.gold + (result.resourceChange.gold || 0)),
-        mana: Math.max(0, state.resources.mana + (result.resourceChange.mana || 0)),
-        food: Math.max(0, state.resources.food + (result.resourceChange.food || 0)),
-        reputation: Math.max(0, state.resources.reputation + (result.resourceChange.reputation || 0) + (choice?.reputationBonus || 0)),
+      const baseResources = {
+        gold: (result.resourceChange.gold || 0),
+        mana: (result.resourceChange.mana || 0),
+        food: (result.resourceChange.food || 0),
+        reputation: (result.resourceChange.reputation || 0) + reputationBonus,
       };
 
+      const rarityBonus: Partial<Resource> = {};
+      if (!result.wasRiskTriggered) {
+        switch (event.rarity) {
+          case 'uncommon':
+            rarityBonus.gold = 10;
+            rarityBonus.mana = 5;
+            break;
+          case 'rare':
+            rarityBonus.gold = 30;
+            rarityBonus.mana = 15;
+            rarityBonus.food = 10;
+            break;
+          case 'epic':
+            rarityBonus.gold = 80;
+            rarityBonus.mana = 40;
+            rarityBonus.food = 25;
+            rarityBonus.reputation = 10;
+            break;
+          case 'legendary':
+            rarityBonus.gold = 200;
+            rarityBonus.mana = 100;
+            rarityBonus.food = 60;
+            rarityBonus.reputation = 30;
+            break;
+        }
+      }
+
+      const totalResources = {
+        gold: Math.max(0, state.resources.gold + baseResources.gold),
+        mana: Math.max(0, state.resources.mana + baseResources.mana),
+        food: Math.max(0, state.resources.food + baseResources.food),
+        reputation: Math.max(0, state.resources.reputation + baseResources.reputation),
+      };
+
+      const allAffectedIds = new Set<string>(result.affectedStudentIds);
+      if (result.moraleChange !== 0 || result.staminaChange !== 0) {
+        state.students.forEach(s => allAffectedIds.add(s.id));
+      }
+
       const updatedStudents = state.students.map(s => {
-        const isAffected = result.affectedStudentIds.includes(s.id);
+        const isAffected = allAffectedIds.has(s.id);
+        if (!isAffected) return s;
         return {
           ...s,
-          morale: isAffected ? Math.max(0, Math.min(100, s.morale + result.moraleChange)) : (result.moraleChange !== 0 ? Math.max(0, Math.min(100, s.morale + result.moraleChange)) : s.morale),
-          stamina: isAffected ? Math.max(0, Math.min(100, s.stamina + result.staminaChange)) : (result.staminaChange !== 0 ? Math.max(0, Math.min(100, s.stamina + result.staminaChange)) : s.stamina),
-          currentHp: isAffected && result.hpChange !== 0 ? Math.max(1, Math.min(s.maxHp, s.currentHp + result.hpChange)) : s.currentHp,
+          morale: Math.max(0, Math.min(100, s.morale + (result.moraleChange || 0))),
+          stamina: Math.max(0, Math.min(100, s.stamina + (result.staminaChange || 0))),
+          currentHp: result.hpChange !== 0 ? Math.max(1, Math.min(s.maxHp, s.currentHp + (result.hpChange || 0))) : s.currentHp,
         };
       });
 
@@ -4757,20 +4800,27 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const isGood = !result.wasRiskTriggered;
       const newStreak = isGood ? state.eventCenter.stats.streakResolved + 1 : 0;
 
+      const pendingReward = Object.keys(rarityBonus).length > 0 ? rarityBonus : null;
+
       const eventLog: DailyEvent = {
         type: result.wasRiskTriggered ? 'event_center_risk' : 'event_center_resolved',
-        message: `${event.icon} ${event.name}：${result.outcomeText}`,
+        message: `${event.icon} ${event.name}：${result.outcomeText}${pendingReward ? '（可领取结局奖励）' : ''}`,
         value: Object.values(result.resourceChange).reduce((a, b) => a + (b || 0), 0),
       };
 
-      const recentLogs = state.dailyLogs.slice(-29);
-      recentLogs.push({ day: state.day, events: [eventLog] });
+      const recentLogs = [...state.dailyLogs];
+      if (recentLogs.length > 0 && recentLogs[recentLogs.length - 1].day === state.day) {
+        recentLogs[recentLogs.length - 1].events.push(eventLog);
+      } else {
+        recentLogs.push({ day: state.day, events: [eventLog] });
+      }
+      const finalLogs = recentLogs.slice(-30);
 
       return {
         ...state,
-        resources: newResources,
+        resources: totalResources,
         students: updatedStudents,
-        dailyLogs: recentLogs,
+        dailyLogs: finalLogs,
         eventCenter: {
           ...state.eventCenter,
           currentEvent: null,
@@ -4788,10 +4838,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               [event.rarity]: (state.eventCenter.stats.eventsByRarity[event.rarity] || 0) + 1,
             },
             totalResourceGained: {
-              gold: state.eventCenter.stats.totalResourceGained.gold + (gained.gold || 0),
-              mana: state.eventCenter.stats.totalResourceGained.mana + (gained.mana || 0),
-              food: state.eventCenter.stats.totalResourceGained.food + (gained.food || 0),
-              reputation: state.eventCenter.stats.totalResourceGained.reputation + (gained.reputation || 0),
+              gold: state.eventCenter.stats.totalResourceGained.gold + (gained.gold || 0) + (rarityBonus.gold || 0),
+              mana: state.eventCenter.stats.totalResourceGained.mana + (gained.mana || 0) + (rarityBonus.mana || 0),
+              food: state.eventCenter.stats.totalResourceGained.food + (gained.food || 0) + (rarityBonus.food || 0),
+              reputation: state.eventCenter.stats.totalResourceGained.reputation + (gained.reputation || 0) + (rarityBonus.reputation || 0),
             },
             totalResourceLost: {
               gold: state.eventCenter.stats.totalResourceLost.gold + (lost.gold || 0),
@@ -4807,19 +4857,49 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             maxStreak: Math.max(newStreak, state.eventCenter.stats.maxStreak),
           },
           lastEventDay: state.day,
+          pendingReward,
         },
       };
     }
 
-    case 'DISMISS_EVENT_CENTER':
+    case 'CLAIM_EVENT_REWARD': {
+      const reward = state.eventCenter.pendingReward;
+      if (!reward) return state;
+
+      const claimLog: DailyEvent = {
+        type: 'event_center_resolved',
+        message: `🎁 已领取事件结局奖励：${Object.entries(reward)
+          .filter(([_, v]) => v && v > 0)
+          .map(([k, v]) => {
+            const icons: Record<string, string> = { gold: '💰', mana: '🔮', food: '🍖', reputation: '⭐' };
+            return `${icons[k] || ''}+${v}`;
+          })
+          .join(' ')}`,
+      };
+
+      const recentLogs = [...state.dailyLogs];
+      if (recentLogs.length > 0 && recentLogs[recentLogs.length - 1].day === state.day) {
+        recentLogs[recentLogs.length - 1].events.push(claimLog);
+      } else {
+        recentLogs.push({ day: state.day, events: [claimLog] });
+      }
+      const finalLogs = recentLogs.slice(-30);
+
       return {
         ...state,
+        resources: {
+          gold: state.resources.gold + (reward.gold || 0),
+          mana: state.resources.mana + (reward.mana || 0),
+          food: state.resources.food + (reward.food || 0),
+          reputation: state.resources.reputation + (reward.reputation || 0),
+        },
+        dailyLogs: finalLogs,
         eventCenter: {
           ...state.eventCenter,
-          currentEvent: null,
-          lastEventDay: state.day,
+          pendingReward: null,
         },
       };
+    }
 
     default:
       return state;
@@ -4974,6 +5054,7 @@ interface GameContextType {
   unlockEventCenter: () => void;
   resolveEventCenter: (choiceId: string) => void;
   dismissEventCenter: () => void;
+  claimEventReward: () => void;
   selectRandomEvent: typeof selectRandomEvent;
   ACADEMY_EVENTS: typeof ACADEMY_EVENTS;
   EVENT_RARITY_COLORS: typeof EVENT_RARITY_COLORS;
@@ -5827,6 +5908,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       unlockEventCenter: () => dispatch({ type: 'UNLOCK_EVENT_CENTER' }),
       resolveEventCenter: (choiceId: string) => dispatch({ type: 'RESOLVE_EVENT_CENTER', choiceId }),
       dismissEventCenter: () => dispatch({ type: 'DISMISS_EVENT_CENTER' }),
+      claimEventReward: () => dispatch({ type: 'CLAIM_EVENT_REWARD' }),
       selectRandomEvent,
       ACADEMY_EVENTS,
       EVENT_RARITY_COLORS,

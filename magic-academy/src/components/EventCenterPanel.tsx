@@ -7,6 +7,7 @@ export default function EventCenterPanel() {
     state,
     resolveEventCenter,
     dismissEventCenter,
+    claimEventReward,
     EVENT_RARITY_COLORS,
     EVENT_RARITY_NAMES,
     EVENT_CATEGORY_ICONS,
@@ -14,7 +15,7 @@ export default function EventCenterPanel() {
   } = useGame();
 
   const [activeTab, setActiveTab] = useState<'current' | 'history' | 'stats'>(
-    state.eventCenter.currentEvent ? 'current' : 'history'
+    state.eventCenter.currentEvent || state.eventCenter.pendingReward ? 'current' : 'history'
   );
   const [selectedHistoryIdx, setSelectedHistoryIdx] = useState<number | null>(null);
 
@@ -167,13 +168,32 @@ export default function EventCenterPanel() {
               </div>
             </div>
           ) : (
-            <div className="ec-no-event">
-              <div className="ec-no-event-icon">🌅</div>
-              <p className="ec-no-event-title">当前没有待处理事件</p>
-              <p className="ec-no-event-desc">每日推进时可能会触发随机事件，请留意通知</p>
-              <div className="ec-event-chance">
-                <span>事件触发概率：{Math.round(eventCenter.eventChance * 100)}%</span>
-                <span>最短间隔：{eventCenter.minDaysBetweenEvents}天</span>
+            <div className="ec-current">
+              {eventCenter.pendingReward && (
+                <div className="ec-pending-reward">
+                  <div className="ec-reward-header">
+                    <span className="ec-reward-icon">🎁</span>
+                    <div className="ec-reward-info">
+                      <h3 className="ec-reward-title">待领取结局奖励</h3>
+                      <p className="ec-reward-desc">恭喜！成功解决事件，获得额外奖励！</p>
+                    </div>
+                  </div>
+                  <div className="ec-reward-amount">
+                    {formatResourceChange(eventCenter.pendingReward)}
+                  </div>
+                  <button className="ec-claim-btn" onClick={claimEventReward}>
+                    ✨ 领取奖励
+                  </button>
+                </div>
+              )}
+              <div className="ec-no-event">
+                <div className="ec-no-event-icon">🌅</div>
+                <p className="ec-no-event-title">当前没有待处理事件</p>
+                <p className="ec-no-event-desc">每日推进时可能会触发随机事件，请留意通知</p>
+                <div className="ec-event-chance">
+                  <span>事件触发概率：{Math.round(eventCenter.eventChance * 100)}%</span>
+                  <span>最短间隔：{eventCenter.minDaysBetweenEvents}天</span>
+                </div>
               </div>
             </div>
           )}

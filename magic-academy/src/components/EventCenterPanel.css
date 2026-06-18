@@ -2,6 +2,80 @@
   max-width: 100%;
 }
 
+.ec-pending-reward {
+  background: linear-gradient(135deg, #ff9800, #f44336);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+  color: white;
+  text-align: center;
+  animation: ec-glow 2s ease-in-out infinite;
+}
+
+@keyframes ec-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(255, 152, 0, 0.4); }
+  50% { box-shadow: 0 0 40px rgba(255, 152, 0, 0.8); }
+}
+
+.ec-reward-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.ec-reward-icon {
+  font-size: 2.5rem;
+}
+
+.ec-reward-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin: 0 0 0.25rem 0;
+}
+
+.ec-reward-desc {
+  font-size: 0.85rem;
+  opacity: 0.9;
+  margin: 0;
+}
+
+.ec-reward-amount {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0.75rem 0;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  display: inline-block;
+}
+
+.ec-claim-btn {
+  display: block;
+  width: 100%;
+  max-width: 250px;
+  margin: 0.5rem auto 0;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #f44336;
+  background: white;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ec-claim-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.ec-claim-btn:active {
+  transform: scale(0.98);
+}
+
 .ec-locked,
 .ec-no-event,
 .ec-empty {

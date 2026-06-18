@@ -104,13 +104,13 @@ export default function MainLayout() {
         <div className="day-info">
           <span>第 {state.day} 天</span>
           <span>学员: {state.students.length}/{getCapacity()}</span>
-          {state.eventCenter.unlocked && state.eventCenter.currentEvent && (
+          {state.eventCenter.unlocked && (state.eventCenter.currentEvent || state.eventCenter.pendingReward) && (
             <span
               className="event-notification"
-              title="有新事件需要处理！"
+              title={state.eventCenter.currentEvent ? '有新事件需要处理！' : '有待领取的结局奖励！'}
               onClick={() => setActiveTab('eventCenter')}
             >
-              🎪 ⚡
+              {state.eventCenter.currentEvent ? '🎪 ⚡' : '🎪 🎁'}
             </span>
           )}
           {state.autoSaveConfig.enabled && (
@@ -3893,4 +3893,4 @@ function StudentDetailModal({ student, onClose }: StudentDetailModalProps) {
   );
 }
 
-export { AcademyModule, RecruitModule, CourseModule, DungeonModule, SettlementModule, SettingsModule, RecordsModule, StudentDetailModal, ConfirmDialog };
+export { AcademyModule, RecruitModule, CourseModule, DungeonModule, SettlementModule, SettingsModule, RecordsModule, StudentDetailModal, ConfirmDialog, EventCenterPanel };
