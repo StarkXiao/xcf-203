@@ -1,4 +1,4 @@
-import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState, KingdomCommission, CommissionStage, CommissionType, CommissionDifficulty, CommissionStageType, CommissionRankInfo, KingdomCommissionState, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, RestActivity, DormitoryEventDef, DormitoryScheduleSlot, DormitoryEventInstance, StudentCodexEntry, SkillCodexEntry, CodexState, CodexStats, CodexCategory, Achievement, AchievementState, AchievementType, AchievementRarity, Title } from '../types/game';
+import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState, KingdomCommission, CommissionStage, CommissionType, CommissionDifficulty, CommissionStageType, CommissionRankInfo, KingdomCommissionState, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, RestActivity, DormitoryEventDef, DormitoryEventInstance, StudentCodexEntry, SkillCodexEntry, CodexState, CodexStats, CodexCategory, Achievement, AchievementState, AchievementType, AchievementRarity, Title } from '../types/game';
 import {
   HP_BATTLE_THRESHOLD,
   HP_COURSE_EFFICIENCY_THRESHOLD,
@@ -6381,7 +6381,6 @@ export const getBattleRelationshipBonus = (relationships: StudentRelationship[],
   const descriptions: string[] = [];
   
   for (const rel of teamRels) {
-    const info = RELATIONSHIP_LEVELS.find(l => l.level === rel.level);
     switch (rel.level) {
       case 'bonded':
         totalBonus += 0.12;
@@ -6806,43 +6805,47 @@ export const calculateCodexStats = (codex: CodexState): CodexStats => {
   };
 };
 
-export const INITIAL_CODEX_STATE: CodexState = {
-  unlocked: true,
-  students: STUDENT_CODEX_TEMPLATES.map(t => ({ ...t, unlocked: false, totalRecruited: 0 })),
-  skills: SKILL_CODEX.map(s => ({ ...s, unlocked: false, totalUnlockedByStudents: 0 })),
-  buildings: INITIAL_BUILDINGS.map(b => ({
-    id: b.id,
-    name: b.name,
-    description: b.description,
-    icon: '🏛️',
-    maxLevel: b.maxLevel,
+export const INITIAL_CODEX_STATE: CodexState = (() => {
+  const state: CodexState = {
     unlocked: true,
-    highestLevelReached: b.level,
-  })),
-  dungeons: INITIAL_DUNGEONS.map(d => ({
-    id: d.id,
-    name: d.name,
-    level: d.level,
-    description: `等级 ${d.level} 的挑战副本`,
-    icon: '⚔️',
-    unlocked: false,
-    bestStars: 0,
-    totalClears: 0,
-  })),
-  events: [],
-  stats: {
-    totalEntries: 0,
-    unlockedEntries: 0,
-    completionPercent: 0,
-    byCategory: {
-      student: { total: 0, unlocked: 0 },
-      skill: { total: 0, unlocked: 0 },
-      building: { total: 0, unlocked: 0 },
-      dungeon: { total: 0, unlocked: 0 },
-      event: { total: 0, unlocked: 0 },
+    students: STUDENT_CODEX_TEMPLATES.map(t => ({ ...t, unlocked: false, totalRecruited: 0 })),
+    skills: SKILL_CODEX.map(s => ({ ...s, unlocked: false, totalUnlockedByStudents: 0 })),
+    buildings: INITIAL_BUILDINGS.map(b => ({
+      id: b.id,
+      name: b.name,
+      description: b.description,
+      icon: '🏛️',
+      maxLevel: b.maxLevel,
+      unlocked: true,
+      highestLevelReached: b.level,
+    })),
+    dungeons: INITIAL_DUNGEONS.map(d => ({
+      id: d.id,
+      name: d.name,
+      level: d.level,
+      description: `等级 ${d.level} 的挑战副本`,
+      icon: '⚔️',
+      unlocked: false,
+      bestStars: 0,
+      totalClears: 0,
+    })),
+    events: [],
+    stats: {
+      totalEntries: 0,
+      unlockedEntries: 0,
+      completionPercent: 0,
+      byCategory: {
+        student: { total: 0, unlocked: 0 },
+        skill: { total: 0, unlocked: 0 },
+        building: { total: 0, unlocked: 0 },
+        dungeon: { total: 0, unlocked: 0 },
+        event: { total: 0, unlocked: 0 },
+      },
     },
-  },
-};
+  };
+  state.stats = calculateCodexStats(state);
+  return state;
+})();
 
 export const INITIAL_ACHIEVEMENT_STATE: AchievementState = {
   unlocked: true,

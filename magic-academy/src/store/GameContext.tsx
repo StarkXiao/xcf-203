@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff, AcademyEventDefinition, KingdomCommission, CommissionStageType, RestActivity, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, DormitoryEventInstance, CodexCategory, AchievementType, AchievementRarity, MagicType } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff, AcademyEventDefinition, KingdomCommission, CommissionStageType, RestActivity, DormitoryState, StudentRelationship, CodexCategory, AchievementType, AchievementRarity, MagicType } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -518,7 +518,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const newGoalProgress = {
         ...state.goalProgress,
         recruits: state.goalProgress.recruits + 1,
-        totalStudents: state.students.length + 1,
+        totalStudents: state.students.length,
       };
       
       const newWeeklyGoals = {
@@ -542,6 +542,49 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         newSeasonTotalPoints
       );
       const newSeasonCurrentStage = getCurrentSeasonStage(newSeasonStageRewards, newSeasonTotalPoints);
+
+      const codexId = `${result.resultQuality}_${result.details.magicType}`;
+      const updatedCodexStudents = state.codex.students.map(entry => {
+        if (entry.id === codexId) {
+          return {
+            ...entry,
+            unlocked: true,
+            totalRecruited: entry.totalRecruited + 1,
+            firstUnlockedAt: entry.firstUnlockedAt ?? state.day,
+          };
+        }
+        return entry;
+      });
+      
+      const newCodex = {
+        ...state.codex,
+        students: updatedCodexStudents,
+      };
+      newCodex.stats = calculateCodexStats(newCodex);
+      
+      const { achievements: updatedAchievements, newTitles } = updateAchievementProgress(
+        state.achievement.achievements,
+        'student_collector',
+        state.students.length
+      );
+      
+      const rareCount = state.students.filter(s => 
+        s.quality === 'rare' || s.quality === 'epic' || s.quality === 'legendary'
+      ).length;
+      const { achievements: updatedAchievements2 } = updateAchievementProgress(
+        updatedAchievements,
+        'rare_student_hunter',
+        rareCount
+      );
+      
+      let newTitlesList = state.achievement.titles;
+      for (const titleId of newTitles) {
+        newTitlesList = unlockTitle(newTitlesList, titleId, state.day);
+      }
+      
+      const totalAchievementPoints = updatedAchievements2.reduce((sum, a) => {
+        return sum + a.stages.filter(s => s.unlocked).length * (a.rarity === 'legendary' ? 100 : a.rarity === 'epic' ? 50 : a.rarity === 'rare' ? 25 : 10);
+      }, 0);
       
       return {
         ...state,
@@ -564,6 +607,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           seasonPoints: newSeasonTotalPoints,
           stageRewards: newSeasonStageRewards,
           currentStage: newSeasonCurrentStage,
+        },
+        codex: newCodex,
+        achievement: {
+          ...state.achievement,
+          achievements: updatedAchievements2,
+          titles: newTitlesList,
+          totalAchievementPoints,
         },
       };
     }
@@ -4833,11 +4883,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             if (relIndex >= 0) {
               rel = dormRelationshipsWithExp[relIndex];
             } else {
+              const initialInfo = getRelationshipInfo(0);
               rel = {
                 studentId1: id1,
                 studentId2: id2,
                 exp: 0,
                 level: 'stranger' as const,
+                expToNext: initialInfo.expToNext,
                 dailyInteracted: false,
               };
               dormRelationshipsWithExp.push(rel);
@@ -4847,7 +4899,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             const schedule1 = state.dormitory.schedules.find(s => s.studentId === id1 && s.day === state.day);
             const schedule2 = state.dormitory.schedules.find(s => s.studentId === id2 && s.day === state.day);
             const socialActivity = schedule1 && schedule2 && schedule1.activity === schedule2.activity &&
-              (schedule1.activity === 'socialize' || schedule1.activity === 'study_leisure' || schedule1.activity === 'cook_together');
+              (schedule1.activity === 'socialize' || schedule1.activity === 'study_leisure');
 
             let expGain = 1;
             if (socialActivity) {
@@ -4867,9 +4919,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               if (newLevel !== rel.level) {
                 const s1 = state.students.find(s => s.id === id1);
                 const s2 = state.students.find(s => s.id === id2);
+                const relInfo = getRelationshipInfo(newExp);
                 todayEvents.push({
-                  type: 'relationship_level_up',
-                  message: `💕 ${s1?.name || id1} 和 ${s2?.name || id2} 关系提升为「${getRelationshipInfo(newLevel).name}」！`,
+                  type: 'dormitory_relationship_up',
+                  message: `💕 ${s1?.name || id1} 和 ${s2?.name || id2} 关系提升为「${relInfo.name}」！`,
                   value: 1,
                 });
               }
@@ -6049,7 +6102,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       
       if (!result) return state;
       
-      const { achievements: updatedAchievements, reward } = result;
+      const { achievements: updatedAchievements, reward, titleId } = result;
+      
+      let updatedTitles = state.achievement.titles;
+      if (titleId) {
+        updatedTitles = unlockTitle(updatedTitles, titleId, state.day);
+      }
       
       return {
         ...state,
@@ -6062,6 +6120,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         achievement: {
           ...state.achievement,
           achievements: updatedAchievements,
+          titles: updatedTitles,
         },
       };
     }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
-import type { RestActivity, DormitoryEventInstance } from '../types/game';
+import type { RestActivity } from '../types/game';
 import './DormitoryPanel.css';
 
 export default function DormitoryPanel() {
@@ -13,19 +13,14 @@ export default function DormitoryPanel() {
     calculateDormitoryComfort,
     calculateRoomCapacity,
     calculateRestActivityResult,
-    getRelationshipLevel,
-    getRelationshipInfo,
     RELATIONSHIP_LEVELS,
     REST_ACTIVITIES,
     DORMITORY_EVENTS,
-    getRestActivityIcon,
-    getRestActivityName,
     getMoraleLabel,
     getStaminaLabel,
   } = useGame();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'rooms' | 'rest' | 'relationships' | 'events'>('overview');
-  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [pendingEventId, setPendingEventId] = useState<string | null>(null);
 
   const dormitoryLevel = state.buildings.find(b => b.id === 'dormitory')?.level || 0;
@@ -50,12 +45,6 @@ export default function DormitoryPanel() {
   }, [unresolvedEvents.length]);
 
   const getStudentName = (id: string) => state.students.find(s => s.id === id)?.name || '未知学员';
-
-  const getRelationshipBetween = (id1: string, id2: string) => {
-    return dormitory.relationships.find(
-      r => (r.studentId1 === id1 && r.studentId2 === id2) || (r.studentId1 === id2 && r.studentId2 === id1)
-    );
-  };
 
   const getStudentRoom = (studentId: string) => {
     return dormitory.rooms.find(r => r.residentIds.includes(studentId));
