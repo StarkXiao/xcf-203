@@ -4265,6 +4265,108 @@ export const calculateMentorPromotionBonus = (
   };
 };
 
+export const getNextStudentQuality = (quality: StudentQuality): StudentQuality | null => {
+  if (quality === 'common') return 'rare';
+  if (quality === 'rare') return 'epic';
+  if (quality === 'epic') return 'legendary';
+  return null;
+};
+
+export const getQualityUpgradeRequirements = (quality: StudentQuality): { level: number } => {
+  switch (quality) {
+    case 'common': return { level: 5 };
+    case 'rare': return { level: 10 };
+    case 'epic': return { level: 15 };
+    default: return { level: 999 };
+  }
+};
+
+export interface StudentPromotionResult {
+  qualityUpgraded: boolean;
+  oldQuality?: StudentQuality;
+  newQuality?: StudentQuality;
+  bonusExpGained: number;
+  bonusLevelsGained: number;
+}
+
+export const tryStudentPromotion = (
+  student: Student,
+  mentors: Mentor[],
+  academies: MentorAcademy[]
+): StudentPromotionResult => {
+  const promotionCheck = calculateMentorPromotionBonus(student, mentors, academies);
+  const { qualityUpgradeChance, levelUpChanceBonus } = promotionCheck.mentorBonus;
+
+  let bonusExpGained = 0;
+  const bonusLevelsGained = 0;
+  let qualityUpgraded = false;
+  let oldQuality: StudentQuality | undefined;
+  let newQuality: StudentQuality | undefined;
+
+  if (levelUpChanceBonus > 0) {
+    const roll = Math.random();
+    if (roll < levelUpChanceBonus) {
+      bonusExpGained = Math.floor(student.level * 50 * levelUpChanceBonus);
+    }
+  }
+
+  const nextQuality = getNextStudentQuality(student.quality);
+  if (nextQuality) {
+    const requirements = getQualityUpgradeRequirements(student.quality);
+    if (student.level >= requirements.level) {
+      const baseChance = 0.02;
+      const totalChance = baseChance + qualityUpgradeChance;
+      const roll = Math.random();
+      if (roll < totalChance) {
+        qualityUpgraded = true;
+        oldQuality = student.quality;
+        newQuality = nextQuality;
+      }
+    }
+  }
+
+  return {
+    qualityUpgraded,
+    oldQuality,
+    newQuality,
+    bonusExpGained,
+    bonusLevelsGained,
+  };
+};
+
+export const applyQualityUpgradeToStudent = (student: Student, newQuality: StudentQuality, currentDay: number = 0): Student => {
+  const qualityMult = getQualityMultiplier(newQuality);
+  const oldQualityMult = getQualityMultiplier(student.quality);
+  const potentialBoost = (qualityMult - oldQualityMult) * 0.3;
+
+  const newPotential = Math.min(2.5, student.potential + potentialBoost);
+  const newMaxHp = Math.floor(student.maxHp * (1 + (qualityMult - oldQualityMult) * 0.5));
+
+  const qualityNames: Record<StudentQuality, string> = {
+    common: '普通',
+    rare: '稀有',
+    epic: '史诗',
+    legendary: '传说',
+  };
+
+  const newGrowthRecords = [...student.growthRecords, {
+    id: `growth_${student.id}_quality_${Date.now()}`,
+    type: 'quality_up' as const,
+    day: currentDay,
+    description: `品质晋升: ${qualityNames[student.quality]} → ${qualityNames[newQuality]}`,
+    details: { oldQuality: student.quality, newQuality, potentialBoost },
+  }];
+
+  return {
+    ...student,
+    quality: newQuality,
+    potential: Number(newPotential.toFixed(2)),
+    maxHp: newMaxHp,
+    currentHp: Math.min(student.currentHp, newMaxHp),
+    growthRecords: newGrowthRecords,
+  };
+};
+
 export const canAssignMentorToCourse = (
   mentor: Mentor,
   courseId: string

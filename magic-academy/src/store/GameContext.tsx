@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -112,6 +112,8 @@ import {
   calculateMentorCourseBonus,
   calculateMentorDungeonBonus,
   calculateMentorPromotionBonus,
+  tryStudentPromotion,
+  applyQualityUpgradeToStudent,
   canAssignMentorToCourse,
   canMentorLeadDungeon,
   getAcademyUpgradeCost,
@@ -1148,7 +1150,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           }
         }
 
-        return {
+        let updatedStudent: StudentType = {
           ...s,
           currentHp: newCurrentHp,
           maxHp: newMaxHp,
@@ -1160,6 +1162,60 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           growthRecords: newGrowthRecords,
           dungeonHistory: [...s.dungeonHistory, dungeonEntry],
         };
+
+        if (leveledUp && victory) {
+          const dungeonPromoResult = tryStudentPromotion(
+            updatedStudent,
+            state.mentorState.mentors,
+            state.mentorState.academies
+          );
+
+          if (dungeonPromoResult.qualityUpgraded && dungeonPromoResult.newQuality) {
+            updatedStudent = applyQualityUpgradeToStudent(
+              updatedStudent,
+              dungeonPromoResult.newQuality,
+              state.day
+            );
+            battleEvents.push({
+              type: 'student_promoted',
+              message: `🌟 ${s.name} 品质晋升！${dungeonPromoResult.oldQuality} → ${dungeonPromoResult.newQuality}`,
+              studentId: s.id,
+              studentName: s.name,
+              value: 1,
+            });
+          }
+
+          if (dungeonPromoResult.bonusExpGained > 0) {
+            let bonusExp = updatedStudent.exp + dungeonPromoResult.bonusExpGained;
+            let bonusLevel = updatedStudent.level;
+            let bonusLeveledUp = false;
+            const oldBonusLevel = bonusLevel;
+            while (bonusExp >= bonusLevel * 100) {
+              bonusExp -= bonusLevel * 100;
+              bonusLevel++;
+              bonusLeveledUp = true;
+            }
+            if (bonusLeveledUp) {
+              const levelRecord: GrowthRecord = {
+                id: `growth_${s.id}_dungeon_bonus_${Date.now()}`,
+                type: 'level_up',
+                day: state.day,
+                description: `导师加成升级: Lv.${oldBonusLevel} → Lv.${bonusLevel}`,
+                details: { oldLevel: oldBonusLevel, newLevel: bonusLevel, fromMentor: true },
+              };
+              updatedStudent = {
+                ...updatedStudent,
+                level: bonusLevel,
+                exp: bonusExp,
+                growthRecords: [...updatedStudent.growthRecords, levelRecord],
+              };
+            } else {
+              updatedStudent = { ...updatedStudent, exp: bonusExp };
+            }
+          }
+        }
+
+        return updatedStudent;
       });
 
       let updatedMentors = state.mentorState.mentors;
@@ -3250,7 +3306,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             let newStatus: StudentType['status'] = 'idle';
             let newCourseDaysRemaining = 0;
             const newCourseProgress = 0;
-            const newGrowthRecords = [...student.growthRecords];
+            let newGrowthRecords = [...student.growthRecords];
             let leveledUp = false;
             let skillUnlocked = false;
             const totalExpGained = finalExpGain;
@@ -3406,6 +3462,82 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               finalCurrentHp = recalculated.currentHp;
             }
 
+            let promotedStudent: StudentType = {
+              ...student,
+              level: finalLevel,
+              exp: finalExp,
+              skills: newSkills,
+              maxHp: finalMaxHp,
+              currentHp: finalCurrentHp,
+              growthRecords: newGrowthRecords,
+              morale: newMorale,
+              stamina: newStamina,
+            };
+
+            const promotionResult = tryStudentPromotion(
+              promotedStudent,
+              state.mentorState.mentors,
+              state.mentorState.academies
+            );
+
+            if (promotionResult.qualityUpgraded && promotionResult.newQuality) {
+              promotedStudent = applyQualityUpgradeToStudent(
+                promotedStudent,
+                promotionResult.newQuality,
+                state.day
+              );
+              todayEvents.push({
+                type: 'student_promoted',
+                message: `🌟 ${student.name} 品质晋升！${promotionResult.oldQuality} → ${promotionResult.newQuality}`,
+                studentId: student.id,
+                studentName: student.name,
+                value: 1,
+              });
+            }
+
+            if (promotionResult.bonusExpGained > 0) {
+              let bonusExp = promotedStudent.exp + promotionResult.bonusExpGained;
+              let bonusLevel = promotedStudent.level;
+              let bonusLeveledUp = false;
+              const oldBonusLevel = bonusLevel;
+              while (bonusExp >= bonusLevel * 100) {
+                bonusExp -= bonusLevel * 100;
+                bonusLevel++;
+                bonusLeveledUp = true;
+              }
+              if (bonusLeveledUp) {
+                const levelRecord: GrowthRecord = {
+                  id: `growth_${student.id}_bonus_${Date.now()}`,
+                  type: 'level_up',
+                  day: state.day,
+                  description: `导师加成升级: Lv.${oldBonusLevel} → Lv.${bonusLevel}`,
+                  details: { oldLevel: oldBonusLevel, newLevel: bonusLevel, fromMentor: true },
+                };
+                promotedStudent = {
+                  ...promotedStudent,
+                  level: bonusLevel,
+                  exp: bonusExp,
+                  growthRecords: [...promotedStudent.growthRecords, levelRecord],
+                };
+                const hpRecalc = recalculateStudentMaxHp({
+                  ...promotedStudent,
+                  maxHp: promotedStudent.maxHp,
+                  currentHp: promotedStudent.currentHp,
+                });
+                promotedStudent.maxHp = hpRecalc.maxHp;
+                promotedStudent.currentHp = hpRecalc.currentHp;
+              } else {
+                promotedStudent = { ...promotedStudent, exp: bonusExp };
+              }
+            }
+
+            finalLevel = promotedStudent.level;
+            finalExp = promotedStudent.exp;
+            newSkills = promotedStudent.skills;
+            finalMaxHp = promotedStudent.maxHp;
+            finalCurrentHp = promotedStudent.currentHp;
+            newGrowthRecords = promotedStudent.growthRecords;
+
             updatedStudents.push({
               ...student,
               status: newStatus,
@@ -3450,16 +3582,80 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               progressingMaxHp = recalculated.maxHp;
               progressingCurrentHp = recalculated.currentHp;
             }
-            updatedStudents.push({
+
+            let progressStudent: StudentType = {
               ...student,
-              courseProgress: newProgress,
-              courseDaysRemaining: daysRemaining,
-              exp: newExp,
               level: newLevel,
-              currentHp: progressingCurrentHp,
+              exp: newExp,
               maxHp: progressingMaxHp,
+              currentHp: progressingCurrentHp,
               morale: newMorale,
               stamina: newStamina,
+            };
+
+            if (newLevel > student.level) {
+              const dailyPromoResult = tryStudentPromotion(
+                progressStudent,
+                state.mentorState.mentors,
+                state.mentorState.academies
+              );
+
+              if (dailyPromoResult.qualityUpgraded && dailyPromoResult.newQuality) {
+                progressStudent = applyQualityUpgradeToStudent(
+                  progressStudent,
+                  dailyPromoResult.newQuality,
+                  state.day
+                );
+                todayEvents.push({
+                  type: 'student_promoted',
+                  message: `🌟 ${student.name} 品质晋升！${dailyPromoResult.oldQuality} → ${dailyPromoResult.newQuality}`,
+                  studentId: student.id,
+                  studentName: student.name,
+                  value: 1,
+                });
+              }
+
+              if (dailyPromoResult.bonusExpGained > 0) {
+                let bonusExp = progressStudent.exp + dailyPromoResult.bonusExpGained;
+                let bonusLevel = progressStudent.level;
+                let bonusLeveledUp = false;
+                const oldBonusLevel = bonusLevel;
+                while (bonusExp >= bonusLevel * 100) {
+                  bonusExp -= bonusLevel * 100;
+                  bonusLevel++;
+                  bonusLeveledUp = true;
+                }
+                if (bonusLeveledUp) {
+                  const levelRecord: GrowthRecord = {
+                    id: `growth_${student.id}_daily_bonus_${Date.now()}`,
+                    type: 'level_up',
+                    day: state.day,
+                    description: `导师加成升级: Lv.${oldBonusLevel} → Lv.${bonusLevel}`,
+                    details: { oldLevel: oldBonusLevel, newLevel: bonusLevel, fromMentor: true },
+                  };
+                  progressStudent = {
+                    ...progressStudent,
+                    level: bonusLevel,
+                    exp: bonusExp,
+                    growthRecords: [...progressStudent.growthRecords, levelRecord],
+                  };
+                  const hpRecalc = recalculateStudentMaxHp({
+                    ...progressStudent,
+                    maxHp: progressStudent.maxHp,
+                    currentHp: progressStudent.currentHp,
+                  });
+                  progressStudent.maxHp = hpRecalc.maxHp;
+                  progressStudent.currentHp = hpRecalc.currentHp;
+                } else {
+                  progressStudent = { ...progressStudent, exp: bonusExp };
+                }
+              }
+            }
+
+            updatedStudents.push({
+              ...progressStudent,
+              courseProgress: newProgress,
+              courseDaysRemaining: daysRemaining,
             });
           }
         } else if (student.status === 'idle' && student.courseQueue.length > 0) {

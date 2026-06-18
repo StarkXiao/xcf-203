@@ -77,7 +77,7 @@ export interface RecruitmentInfo {
 
 export interface GrowthRecord {
   id: string;
-  type: 'level_up' | 'skill_unlock' | 'trait_gain' | 'potential_boost';
+  type: 'level_up' | 'skill_unlock' | 'trait_gain' | 'potential_boost' | 'quality_up';
   day: number;
   description: string;
   details?: Record<string, unknown>;
