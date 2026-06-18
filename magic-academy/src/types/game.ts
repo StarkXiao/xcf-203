@@ -918,6 +918,8 @@ export interface GameState {
   eventCenter: EventCenterState;
   kingdomCommission: KingdomCommissionState;
   dormitory: DormitoryState;
+  codex: CodexState;
+  achievement: AchievementState;
 }
 
 export interface CourseBenefitBreakdown {
@@ -939,7 +941,7 @@ export interface CourseBenefitBreakdown {
   potionSpeedBoost: number;
 }
 
-export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade' | 'alchemy' | 'eventCenter' | 'kingdomCommission' | 'dormitory';
+export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade' | 'alchemy' | 'eventCenter' | 'kingdomCommission' | 'dormitory' | 'codex';
 
 export type CommissionType = 'course_training' | 'dungeon_dispatch' | 'resource_delivery' | 'comprehensive';
 export type CommissionDifficulty = 'easy' | 'normal' | 'hard' | 'epic' | 'legendary';
@@ -1323,3 +1325,141 @@ export const HEAL_FOOD_PER_HP = 2;
 export const HEAL_INSTANT_MANA_COST = 5;
 export const HEAL_INSTANT_GOLD_COST = 10;
 export const HEAL_INSTANT_FOOD_COST = 3;
+
+export type CodexCategory = 'student' | 'skill' | 'building' | 'dungeon' | 'event';
+
+export interface StudentCodexEntry {
+  id: string;
+  name: string;
+  quality: StudentQuality;
+  magicType: MagicType;
+  description: string;
+  icon: string;
+  unlocked: boolean;
+  firstUnlockedAt?: number;
+  totalRecruited: number;
+}
+
+export interface SkillCodexEntry {
+  id: string;
+  name: string;
+  type: MagicType;
+  damage: number;
+  cost: number;
+  description: string;
+  icon: string;
+  rarity: 'common' | 'rare' | 'epic' | 'legendary';
+  unlocked: boolean;
+  firstUnlockedAt?: number;
+  totalUnlockedByStudents: number;
+}
+
+export interface BuildingCodexEntry {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  maxLevel: number;
+  unlocked: boolean;
+  firstUnlockedAt?: number;
+  highestLevelReached: number;
+}
+
+export interface DungeonCodexEntry {
+  id: string;
+  name: string;
+  level: number;
+  description: string;
+  icon: string;
+  unlocked: boolean;
+  firstUnlockedAt?: number;
+  firstClearedAt?: number;
+  bestStars: number;
+  totalClears: number;
+}
+
+export interface EventCodexEntry {
+  id: string;
+  name: string;
+  category: AcademyEventCategory;
+  rarity: AcademyEventRarity;
+  description: string;
+  icon: string;
+  unlocked: boolean;
+  firstUnlockedAt?: number;
+  timesEncountered: number;
+  choicesMade: Record<string, number>;
+}
+
+export interface CodexStats {
+  totalEntries: number;
+  unlockedEntries: number;
+  completionPercent: number;
+  byCategory: Record<CodexCategory, { total: number; unlocked: number }>;
+}
+
+export interface CodexState {
+  unlocked: boolean;
+  students: StudentCodexEntry[];
+  skills: SkillCodexEntry[];
+  buildings: BuildingCodexEntry[];
+  dungeons: DungeonCodexEntry[];
+  events: EventCodexEntry[];
+  stats: CodexStats;
+}
+
+export type AchievementType = 'collection' | 'progression' | 'combat' | 'economy' | 'social' | 'special';
+export type AchievementRarity = 'common' | 'rare' | 'epic' | 'legendary';
+
+export interface AchievementStage {
+  stage: number;
+  name: string;
+  description: string;
+  target: number;
+  reward: Partial<Resource> & { titleId?: string };
+  claimed: boolean;
+  unlocked: boolean;
+}
+
+export interface Achievement {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  type: AchievementType;
+  rarity: AchievementRarity;
+  stages: AchievementStage[];
+  currentStage: number;
+  currentProgress: number;
+  totalStages: number;
+}
+
+export interface Title {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  rarity: AchievementRarity;
+  effect: TitleEffect;
+  unlocked: boolean;
+  unlockedAt?: number;
+  equipped: boolean;
+}
+
+export interface TitleEffect {
+  type: 'gold_bonus' | 'mana_bonus' | 'reputation_bonus' | 'exp_bonus' | 'all_stats_bonus' | 'recruit_quality_bonus';
+  value: number;
+}
+
+export interface AchievementState {
+  unlocked: boolean;
+  achievements: Achievement[];
+  titles: Title[];
+  totalAchievementPoints: number;
+  currentEquippedTitle: string | null;
+}
+
+export interface CodexAchievementState {
+  codex: CodexState;
+  achievement: AchievementState;
+}

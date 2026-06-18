@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff, AcademyEventDefinition, KingdomCommission, CommissionStageType, RestActivity, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, DormitoryEventInstance } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff, AcademyEventDefinition, KingdomCommission, CommissionStageType, RestActivity, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, DormitoryEventInstance, CodexCategory, AchievementType, AchievementRarity, MagicType } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -179,6 +179,23 @@ import {
   DORMITORY_EVENTS,
   getRestActivityIcon,
   getRestActivityName,
+  SKILL_CODEX,
+  STUDENT_CODEX_TEMPLATES,
+  ACHIEVEMENTS,
+  TITLES,
+  ACHIEVEMENT_RARITY_COLORS,
+  ACHIEVEMENT_RARITY_NAMES,
+  ACHIEVEMENT_TYPE_NAMES,
+  ACHIEVEMENT_TYPE_ICONS,
+  CODEX_CATEGORY_NAMES,
+  CODEX_CATEGORY_ICONS,
+  calculateCodexStats,
+  INITIAL_CODEX_STATE,
+  INITIAL_ACHIEVEMENT_STATE,
+  updateAchievementProgress,
+  claimAchievementReward,
+  unlockTitle,
+  equipTitle,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -287,7 +304,15 @@ type GameAction =
   | { type: 'REASSIGN_DORMITORY_ROOM'; studentId: string; roomId: string }
   | { type: 'RESOLVE_DORMITORY_EVENT'; eventInstanceId: string; choiceId?: string }
   | { type: 'REFRESH_DORMITORY_ROOMS' }
-  | { type: 'UPDATE_DORMITORY_BONUSES' };
+  | { type: 'UPDATE_DORMITORY_BONUSES' }
+  | { type: 'UPDATE_CODEX_STUDENT'; studentQuality: StudentQuality; studentMagicType: MagicType }
+  | { type: 'UPDATE_CODEX_SKILL'; skillId: string }
+  | { type: 'UPDATE_CODEX_BUILDING'; buildingId: string; level: number }
+  | { type: 'UPDATE_CODEX_DUNGEON'; dungeonId: string; stars?: number; cleared?: boolean }
+  | { type: 'UPDATE_CODEX_EVENT'; eventId: string; choiceId?: string }
+  | { type: 'UPDATE_ACHIEVEMENT_PROGRESS'; achievementId: string; progress: number }
+  | { type: 'CLAIM_ACHIEVEMENT_REWARD'; achievementId: string; stageIndex: number }
+  | { type: 'EQUIP_TITLE'; titleId: string | null };
 
 const MAX_STUDENT_CAPACITY = 20;
 
@@ -350,6 +375,8 @@ const initialState: GameState = {
   eventCenter: INITIAL_EVENT_CENTER_STATE,
   kingdomCommission: INITIAL_KINGDOM_COMMISSION_STATE,
   dormitory: INITIAL_DORMITORY_STATE,
+  codex: INITIAL_CODEX_STATE,
+  achievement: INITIAL_ACHIEVEMENT_STATE,
 };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -5727,6 +5754,336 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
+    case 'UPDATE_CODEX_STUDENT': {
+      const { studentQuality, studentMagicType } = action;
+      const codexId = `${studentQuality}_${studentMagicType}`;
+      
+      const updatedStudents = state.codex.students.map(entry => {
+        if (entry.id === codexId) {
+          return {
+            ...entry,
+            unlocked: true,
+            totalRecruited: entry.totalRecruited + 1,
+            firstUnlockedAt: entry.firstUnlockedAt ?? state.day,
+          };
+        }
+        return entry;
+      });
+      
+      const newCodex = {
+        ...state.codex,
+        students: updatedStudents,
+      };
+      newCodex.stats = calculateCodexStats(newCodex);
+      
+      const { achievements: updatedAchievements, newTitles } = updateAchievementProgress(
+        state.achievement.achievements,
+        'student_collector',
+        state.students.length
+      );
+      
+      const rareCount = state.students.filter(s => s.quality === 'rare' || s.quality === 'epic' || s.quality === 'legendary').length;
+      const { achievements: updatedAchievements2 } = updateAchievementProgress(
+        updatedAchievements,
+        'rare_student_hunter',
+        rareCount
+      );
+      
+      let newTitlesList = state.achievement.titles;
+      for (const titleId of newTitles) {
+        newTitlesList = unlockTitle(newTitlesList, titleId, state.day);
+      }
+      
+      return {
+        ...state,
+        codex: newCodex,
+        achievement: {
+          ...state.achievement,
+          achievements: updatedAchievements2,
+          titles: newTitlesList,
+        },
+      };
+    }
+
+    case 'UPDATE_CODEX_SKILL': {
+      const { skillId } = action;
+      
+      const updatedSkills = state.codex.skills.map(entry => {
+        if (entry.id === skillId) {
+          return {
+            ...entry,
+            unlocked: true,
+            totalUnlockedByStudents: entry.totalUnlockedByStudents + 1,
+            firstUnlockedAt: entry.firstUnlockedAt ?? state.day,
+          };
+        }
+        return entry;
+      });
+      
+      const newCodex = {
+        ...state.codex,
+        skills: updatedSkills,
+      };
+      newCodex.stats = calculateCodexStats(newCodex);
+      
+      const unlockedCount = updatedSkills.filter(s => s.unlocked).length;
+      const { achievements: updatedAchievements, newTitles } = updateAchievementProgress(
+        state.achievement.achievements,
+        'skill_master',
+        unlockedCount
+      );
+      
+      let newTitlesList = state.achievement.titles;
+      for (const titleId of newTitles) {
+        newTitlesList = unlockTitle(newTitlesList, titleId, state.day);
+      }
+      
+      return {
+        ...state,
+        codex: newCodex,
+        achievement: {
+          ...state.achievement,
+          achievements: updatedAchievements,
+          titles: newTitlesList,
+        },
+      };
+    }
+
+    case 'UPDATE_CODEX_BUILDING': {
+      const { buildingId, level } = action;
+      
+      const updatedBuildings = state.codex.buildings.map(entry => {
+        if (entry.id === buildingId) {
+          return {
+            ...entry,
+            unlocked: true,
+            highestLevelReached: Math.max(entry.highestLevelReached, level),
+            firstUnlockedAt: entry.firstUnlockedAt ?? state.day,
+          };
+        }
+        return entry;
+      });
+      
+      const newCodex = {
+        ...state.codex,
+        buildings: updatedBuildings,
+      };
+      newCodex.stats = calculateCodexStats(newCodex);
+      
+      const totalLevels = updatedBuildings.reduce((sum, b) => sum + b.highestLevelReached, 0);
+      const { achievements: updatedAchievements, newTitles } = updateAchievementProgress(
+        state.achievement.achievements,
+        'building_architect',
+        totalLevels
+      );
+      
+      let newTitlesList = state.achievement.titles;
+      for (const titleId of newTitles) {
+        newTitlesList = unlockTitle(newTitlesList, titleId, state.day);
+      }
+      
+      return {
+        ...state,
+        codex: newCodex,
+        achievement: {
+          ...state.achievement,
+          achievements: updatedAchievements,
+          titles: newTitlesList,
+        },
+      };
+    }
+
+    case 'UPDATE_CODEX_DUNGEON': {
+      const { dungeonId, stars, cleared } = action;
+      
+      const updatedDungeons = state.codex.dungeons.map(entry => {
+        if (entry.id === dungeonId) {
+          return {
+            ...entry,
+            unlocked: true,
+            bestStars: stars ? Math.max(entry.bestStars, stars) : entry.bestStars,
+            totalClears: cleared ? entry.totalClears + 1 : entry.totalClears,
+            firstUnlockedAt: entry.firstUnlockedAt ?? state.day,
+            firstClearedAt: cleared && !entry.firstClearedAt ? state.day : entry.firstClearedAt,
+          };
+        }
+        return entry;
+      });
+      
+      const newCodex = {
+        ...state.codex,
+        dungeons: updatedDungeons,
+      };
+      newCodex.stats = calculateCodexStats(newCodex);
+      
+      const totalClears = updatedDungeons.reduce((sum, d) => sum + d.totalClears, 0);
+      const { achievements: updatedAchievements, newTitles } = updateAchievementProgress(
+        state.achievement.achievements,
+        'dungeon_conqueror',
+        totalClears
+      );
+      
+      const threeStarCount = updatedDungeons.filter(d => d.bestStars >= 3).length;
+      const { achievements: updatedAchievements2 } = updateAchievementProgress(
+        updatedAchievements,
+        'dungeon_conqueror',
+        threeStarCount
+      );
+      
+      let newTitlesList = state.achievement.titles;
+      for (const titleId of newTitles) {
+        newTitlesList = unlockTitle(newTitlesList, titleId, state.day);
+      }
+      
+      return {
+        ...state,
+        codex: newCodex,
+        achievement: {
+          ...state.achievement,
+          achievements: updatedAchievements2,
+          titles: newTitlesList,
+        },
+      };
+    }
+
+    case 'UPDATE_CODEX_EVENT': {
+      const { eventId, choiceId } = action;
+      
+      let updatedEvents = [...state.codex.events];
+      let eventIndex = updatedEvents.findIndex(e => e.id === eventId);
+      
+      if (eventIndex === -1) {
+        const eventDef = ACADEMY_EVENTS.find(e => e.id === eventId);
+        if (eventDef) {
+          updatedEvents.push({
+            id: eventDef.id,
+            name: eventDef.name,
+            category: eventDef.category,
+            rarity: eventDef.rarity,
+            description: eventDef.description,
+            icon: eventDef.icon,
+            unlocked: true,
+            firstUnlockedAt: state.day,
+            timesEncountered: 1,
+            choicesMade: choiceId ? { [choiceId]: 1 } : {},
+          });
+        }
+      } else {
+        const event = updatedEvents[eventIndex];
+        updatedEvents[eventIndex] = {
+          ...event,
+          timesEncountered: event.timesEncountered + 1,
+          choicesMade: {
+            ...event.choicesMade,
+            [choiceId || 'unknown']: (event.choicesMade[choiceId || 'unknown'] || 0) + 1,
+          },
+        };
+      }
+      
+      const newCodex = {
+        ...state.codex,
+        events: updatedEvents,
+      };
+      newCodex.stats = calculateCodexStats(newCodex);
+      
+      const totalEvents = updatedEvents.length;
+      const { achievements: updatedAchievements, newTitles } = updateAchievementProgress(
+        state.achievement.achievements,
+        'event_explorer',
+        totalEvents
+      );
+      
+      let newTitlesList = state.achievement.titles;
+      for (const titleId of newTitles) {
+        newTitlesList = unlockTitle(newTitlesList, titleId, state.day);
+      }
+      
+      return {
+        ...state,
+        codex: newCodex,
+        achievement: {
+          ...state.achievement,
+          achievements: updatedAchievements,
+          titles: newTitlesList,
+        },
+      };
+    }
+
+    case 'UPDATE_ACHIEVEMENT_PROGRESS': {
+      const { achievementId, progress } = action;
+      
+      const { achievements: updatedAchievements, newTitles } = updateAchievementProgress(
+        state.achievement.achievements,
+        achievementId,
+        progress
+      );
+      
+      let newTitlesList = state.achievement.titles;
+      for (const titleId of newTitles) {
+        newTitlesList = unlockTitle(newTitlesList, titleId, state.day);
+      }
+      
+      const totalPoints = updatedAchievements.reduce((sum, a) => {
+        return sum + a.stages.filter(s => s.unlocked).length * (a.rarity === 'legendary' ? 100 : a.rarity === 'epic' ? 50 : a.rarity === 'rare' ? 25 : 10);
+      }, 0);
+      
+      return {
+        ...state,
+        achievement: {
+          ...state.achievement,
+          achievements: updatedAchievements,
+          titles: newTitlesList,
+          totalAchievementPoints: totalPoints,
+        },
+      };
+    }
+
+    case 'CLAIM_ACHIEVEMENT_REWARD': {
+      const { achievementId, stageIndex } = action;
+      
+      const result = claimAchievementReward(
+        state.achievement.achievements,
+        achievementId,
+        stageIndex
+      );
+      
+      if (!result) return state;
+      
+      const { achievements: updatedAchievements, reward } = result;
+      
+      return {
+        ...state,
+        resources: {
+          gold: state.resources.gold + (reward.gold || 0),
+          mana: state.resources.mana + (reward.mana || 0),
+          food: state.resources.food + (reward.food || 0),
+          reputation: state.resources.reputation + (reward.reputation || 0),
+        },
+        achievement: {
+          ...state.achievement,
+          achievements: updatedAchievements,
+        },
+      };
+    }
+
+    case 'EQUIP_TITLE': {
+      const { titleId } = action;
+      
+      const { titles: updatedTitles, equippedTitleId } = equipTitle(
+        state.achievement.titles,
+        titleId
+      );
+      
+      return {
+        ...state,
+        achievement: {
+          ...state.achievement,
+          titles: updatedTitles,
+          currentEquippedTitle: equippedTitleId,
+        },
+      };
+    }
+
     default:
       return state;
   }
@@ -5924,6 +6281,23 @@ interface GameContextType {
   DORMITORY_EVENTS: typeof DORMITORY_EVENTS;
   getRestActivityIcon: typeof getRestActivityIcon;
   getRestActivityName: typeof getRestActivityName;
+  SKILL_CODEX: typeof SKILL_CODEX;
+  STUDENT_CODEX_TEMPLATES: typeof STUDENT_CODEX_TEMPLATES;
+  ACHIEVEMENTS: typeof ACHIEVEMENTS;
+  TITLES: typeof TITLES;
+  ACHIEVEMENT_RARITY_COLORS: Record<AchievementRarity, string>;
+  ACHIEVEMENT_RARITY_NAMES: Record<AchievementRarity, string>;
+  ACHIEVEMENT_TYPE_NAMES: Record<AchievementType, string>;
+  ACHIEVEMENT_TYPE_ICONS: Record<AchievementType, string>;
+  CODEX_CATEGORY_NAMES: Record<CodexCategory, string>;
+  CODEX_CATEGORY_ICONS: Record<CodexCategory, string>;
+  claimAchievementRewardAction: (achievementId: string, stageIndex: number) => void;
+  equipTitleAction: (titleId: string | null) => void;
+  updateCodexStudent: (quality: StudentQuality, magicType: MagicType) => void;
+  updateCodexSkill: (skillId: string) => void;
+  updateCodexBuilding: (buildingId: string, level: number) => void;
+  updateCodexDungeon: (dungeonId: string, stars?: number, cleared?: boolean) => void;
+  updateCodexEvent: (eventId: string, choiceId?: string) => void;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -6846,6 +7220,30 @@ export function GameProvider({ children }: { children: ReactNode }) {
       DORMITORY_EVENTS,
       getRestActivityIcon,
       getRestActivityName,
+      SKILL_CODEX,
+      STUDENT_CODEX_TEMPLATES,
+      ACHIEVEMENTS,
+      TITLES,
+      ACHIEVEMENT_RARITY_COLORS,
+      ACHIEVEMENT_RARITY_NAMES,
+      ACHIEVEMENT_TYPE_NAMES,
+      ACHIEVEMENT_TYPE_ICONS,
+      CODEX_CATEGORY_NAMES,
+      CODEX_CATEGORY_ICONS,
+      claimAchievementRewardAction: (achievementId: string, stageIndex: number) => 
+        dispatch({ type: 'CLAIM_ACHIEVEMENT_REWARD', achievementId, stageIndex }),
+      equipTitleAction: (titleId: string | null) => 
+        dispatch({ type: 'EQUIP_TITLE', titleId }),
+      updateCodexStudent: (quality: StudentQuality, magicType: MagicType) => 
+        dispatch({ type: 'UPDATE_CODEX_STUDENT', studentQuality: quality, studentMagicType: magicType }),
+      updateCodexSkill: (skillId: string) => 
+        dispatch({ type: 'UPDATE_CODEX_SKILL', skillId }),
+      updateCodexBuilding: (buildingId: string, level: number) => 
+        dispatch({ type: 'UPDATE_CODEX_BUILDING', buildingId, level }),
+      updateCodexDungeon: (dungeonId: string, stars?: number, cleared?: boolean) => 
+        dispatch({ type: 'UPDATE_CODEX_DUNGEON', dungeonId, stars, cleared }),
+      updateCodexEvent: (eventId: string, choiceId?: string) => 
+        dispatch({ type: 'UPDATE_CODEX_EVENT', eventId, choiceId }),
     }}>
       {children}
     </GameContext.Provider>

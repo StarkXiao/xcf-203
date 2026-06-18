@@ -1,4 +1,4 @@
-import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState, KingdomCommission, CommissionStage, CommissionType, CommissionDifficulty, CommissionStageType, CommissionRankInfo, KingdomCommissionState, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, RestActivity, DormitoryEventDef, DormitoryScheduleSlot, DormitoryEventInstance } from '../types/game';
+import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState, KingdomCommission, CommissionStage, CommissionType, CommissionDifficulty, CommissionStageType, CommissionRankInfo, KingdomCommissionState, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, RestActivity, DormitoryEventDef, DormitoryScheduleSlot, DormitoryEventInstance, StudentCodexEntry, SkillCodexEntry, CodexState, CodexStats, CodexCategory, Achievement, AchievementState, AchievementType, AchievementRarity, Title } from '../types/game';
 import {
   HP_BATTLE_THRESHOLD,
   HP_COURSE_EFFICIENCY_THRESHOLD,
@@ -6540,4 +6540,399 @@ export const getRestActivityIcon = (activity: RestActivity): string => {
 
 export const getRestActivityName = (activity: RestActivity): string => {
   return REST_ACTIVITIES.find(a => a.id === activity)?.name || activity;
+};
+
+export const SKILL_CODEX: Omit<SkillCodexEntry, 'unlocked' | 'firstUnlockedAt' | 'totalUnlockedByStudents'>[] = [
+  { id: 'fireball', name: '火球术', type: 'fire', damage: 25, cost: 15, description: '发射一颗炽热的火球攻击敌人', icon: '🔥', rarity: 'common' },
+  { id: 'flame_burst', name: '烈焰爆发', type: 'fire', damage: 45, cost: 30, description: '引发猛烈的火焰爆炸，造成范围伤害', icon: '💥', rarity: 'rare' },
+  { id: 'inferno', name: '地狱烈焰', type: 'fire', damage: 80, cost: 50, description: '召唤地狱之火焚烧一切', icon: '🌋', rarity: 'epic' },
+  { id: 'phoenix_flame', name: '凤凰之焰', type: 'fire', damage: 120, cost: 80, description: '传说中凤凰的神圣火焰，毁天灭地', icon: '🦅', rarity: 'legendary' },
+  { id: 'ice_shard', name: '冰锥术', type: 'water', damage: 22, cost: 12, description: '召唤锋利的冰锥刺向敌人', icon: '❄️', rarity: 'common' },
+  { id: 'frost_nova', name: '霜冻新星', type: 'water', damage: 40, cost: 28, description: '释放冰霜能量，冻结周围敌人', icon: '💠', rarity: 'rare' },
+  { id: 'blizzard', name: '暴风雪', type: 'water', damage: 75, cost: 45, description: '召唤猛烈的暴风雪席卷战场', icon: '🌨️', rarity: 'epic' },
+  { id: 'absolute_zero', name: '绝对零度', type: 'water', damage: 115, cost: 75, description: '将温度降至绝对零度，冻结一切', icon: '🧊', rarity: 'legendary' },
+  { id: 'rock_throw', name: '落石术', type: 'earth', damage: 28, cost: 18, description: '召唤巨石砸向敌人', icon: '🪨', rarity: 'common' },
+  { id: 'earthquake', name: '地震术', type: 'earth', damage: 50, cost: 35, description: '引发地震，动摇敌人根基', icon: '🌍', rarity: 'rare' },
+  { id: 'stone_spike', name: '岩刺术', type: 'earth', damage: 70, cost: 40, description: '从地面升起尖锐的岩刺', icon: '⛰️', rarity: 'epic' },
+  { id: 'mountain_crush', name: '山崩地裂', type: 'earth', damage: 110, cost: 70, description: '召唤山岳之力，碾压一切敌人', icon: '🏔️', rarity: 'legendary' },
+  { id: 'wind_blade', name: '风刃术', type: 'wind', damage: 20, cost: 10, description: '发射锋利的风刃切割敌人', icon: '💨', rarity: 'common' },
+  { id: 'tornado', name: '龙卷风', type: 'wind', damage: 42, cost: 25, description: '召唤强力龙卷风席卷敌人', icon: '🌪️', rarity: 'rare' },
+  { id: 'storm_fury', name: '风暴之怒', type: 'wind', damage: 72, cost: 42, description: '释放风暴的怒火，造成持续伤害', icon: '⛈️', rarity: 'epic' },
+  { id: 'tempest', name: ' Tempest', type: 'wind', damage: 108, cost: 68, description: '传说中的风暴之神的力量', icon: '🌬️', rarity: 'legendary' },
+  { id: 'holy_light', name: '圣光术', type: 'light', damage: 24, cost: 14, description: '释放神圣的光芒净化邪恶', icon: '✨', rarity: 'common' },
+  { id: 'divine_smite', name: '神圣惩戒', type: 'light', damage: 48, cost: 32, description: '天降神罚，惩戒邪恶', icon: '⚡', rarity: 'rare' },
+  { id: 'sacred_beam', name: '圣光束', type: 'light', damage: 78, cost: 48, description: '聚集神圣能量形成毁灭性光束', icon: '🌟', rarity: 'epic' },
+  { id: 'seraph_wrath', name: '炽天使之怒', type: 'light', damage: 125, cost: 85, description: '召唤炽天使之力，毁灭一切黑暗', icon: '👼', rarity: 'legendary' },
+  { id: 'shadow_bolt', name: '暗影箭', type: 'dark', damage: 26, cost: 16, description: '发射暗影能量攻击敌人', icon: '🌑', rarity: 'common' },
+  { id: 'dark_pulse', name: '黑暗脉冲', type: 'dark', damage: 46, cost: 30, description: '释放黑暗能量脉冲', icon: '💜', rarity: 'rare' },
+  { id: 'void_blast', name: '虚空爆裂', type: 'dark', damage: 76, cost: 46, description: '撕开虚空，造成毁灭性伤害', icon: '🕳️', rarity: 'epic' },
+  { id: 'oblivion', name: '湮灭', type: 'dark', damage: 130, cost: 90, description: '将一切拖入永恒的虚空', icon: '☠️', rarity: 'legendary' },
+];
+
+export const STUDENT_CODEX_TEMPLATES: Omit<StudentCodexEntry, 'unlocked' | 'firstUnlockedAt' | 'totalRecruited'>[] = [
+  { id: 'common_fire', name: '火系学徒', quality: 'common', magicType: 'fire', description: '掌握基础火系魔法的普通学员', icon: '🧙' },
+  { id: 'rare_fire', name: '烈焰术士', quality: 'rare', magicType: 'fire', description: '精通火焰魔法的稀有天才', icon: '🔥' },
+  { id: 'epic_fire', name: '炎狱法师', quality: 'epic', magicType: 'fire', description: '掌控地狱之火的史诗级魔法师', icon: '🌋' },
+  { id: 'legendary_fire', name: '凤凰之子', quality: 'legendary', magicType: 'fire', description: '拥有凤凰血脉的传奇火系法师', icon: '🦅' },
+  { id: 'common_water', name: '水系学徒', quality: 'common', magicType: 'water', description: '掌握基础水系魔法的普通学员', icon: '🧙‍♀️' },
+  { id: 'rare_water', name: '冰霜术士', quality: 'rare', magicType: 'water', description: '精通冰霜魔法的稀有天才', icon: '❄️' },
+  { id: 'epic_water', name: '深海法师', quality: 'epic', magicType: 'water', description: '掌控深海之力的史诗级魔法师', icon: '🌊' },
+  { id: 'legendary_water', name: '海皇之裔', quality: 'legendary', magicType: 'water', description: '拥有海洋王族血脉的传奇法师', icon: '🔱' },
+  { id: 'common_earth', name: '大地学徒', quality: 'common', magicType: 'earth', description: '掌握基础大地魔法的普通学员', icon: '🧑‍🎓' },
+  { id: 'rare_earth', name: '岩石术士', quality: 'rare', magicType: 'earth', description: '精通岩石魔法的稀有天才', icon: '🪨' },
+  { id: 'epic_earth', name: '山岳法师', quality: 'epic', magicType: 'earth', description: '掌控山岳之力的史诗级魔法师', icon: '⛰️' },
+  { id: 'legendary_earth', name: '泰坦血脉', quality: 'legendary', magicType: 'earth', description: '拥有泰坦巨人血脉的传奇法师', icon: '🗿' },
+  { id: 'common_wind', name: '风系学徒', quality: 'common', magicType: 'wind', description: '掌握基础风系魔法的普通学员', icon: '🧑‍🏫' },
+  { id: 'rare_wind', name: '疾风术士', quality: 'rare', magicType: 'wind', description: '精通疾风魔法的稀有天才', icon: '💨' },
+  { id: 'epic_wind', name: '风暴法师', quality: 'epic', magicType: 'wind', description: '掌控风暴之力的史诗级魔法师', icon: '🌪️' },
+  { id: 'legendary_wind', name: '风神使者', quality: 'legendary', magicType: 'wind', description: '被风神眷顾的传奇风系法师', icon: '🌬️' },
+  { id: 'common_light', name: '光明学徒', quality: 'common', magicType: 'light', description: '掌握基础光明魔法的普通学员', icon: '👼' },
+  { id: 'rare_light', name: '圣光术士', quality: 'rare', magicType: 'light', description: '精通圣光魔法的稀有天才', icon: '✨' },
+  { id: 'epic_light', name: '神圣法师', quality: 'epic', magicType: 'light', description: '被圣光眷顾的史诗级魔法师', icon: '🌟' },
+  { id: 'legendary_light', name: '光明神选', quality: 'legendary', magicType: 'light', description: '光明之神选中的传奇圣者', icon: '👑' },
+  { id: 'common_dark', name: '暗影学徒', quality: 'common', magicType: 'dark', description: '掌握基础暗影魔法的普通学员', icon: '🦹' },
+  { id: 'rare_dark', name: '暗影术士', quality: 'rare', magicType: 'dark', description: '精通暗影魔法的稀有天才', icon: '🌑' },
+  { id: 'epic_dark', name: '虚空法师', quality: 'epic', magicType: 'dark', description: '掌控虚空之力的史诗级魔法师', icon: '🕳️' },
+  { id: 'legendary_dark', name: '暗夜主宰', quality: 'legendary', magicType: 'dark', description: '统治黑暗的传奇暗影君主', icon: '👿' },
+];
+
+export const ACHIEVEMENTS: Omit<Achievement, 'currentStage' | 'currentProgress'>[] = [
+  {
+    id: 'student_collector',
+    name: '学员收藏家',
+    description: '招募学员，扩充你的学院阵容',
+    icon: '🎓',
+    type: 'collection',
+    rarity: 'common',
+    totalStages: 5,
+    stages: [
+      { stage: 1, name: '初出茅庐', description: '招募第1名学员', target: 1, reward: { gold: 100 }, claimed: false, unlocked: true },
+      { stage: 2, name: '小有规模', description: '招募5名学员', target: 5, reward: { gold: 300, mana: 100 }, claimed: false, unlocked: false },
+      { stage: 3, name: '人才济济', description: '招募10名学员', target: 10, reward: { gold: 500, mana: 200, titleId: 'title_recruiter' }, claimed: false, unlocked: false },
+      { stage: 4, name: '桃李满园', description: '招募20名学员', target: 20, reward: { gold: 1000, mana: 500, reputation: 50 }, claimed: false, unlocked: false },
+      { stage: 5, name: '天下桃李', description: '招募30名学员', target: 30, reward: { gold: 2000, mana: 1000, reputation: 100, titleId: 'title_grand_mentor' }, claimed: false, unlocked: false },
+    ],
+  },
+  {
+    id: 'rare_student_hunter',
+    name: '精英猎人',
+    description: '招募高品质学员',
+    icon: '⭐',
+    type: 'collection',
+    rarity: 'rare',
+    totalStages: 4,
+    stages: [
+      { stage: 1, name: '初遇英才', description: '获得1名稀有学员', target: 1, reward: { gold: 200, mana: 100 }, claimed: false, unlocked: true },
+      { stage: 2, name: '精英荟萃', description: '获得3名史诗学员', target: 3, reward: { gold: 500, mana: 250, reputation: 30 }, claimed: false, unlocked: false },
+      { stage: 3, name: '传奇初现', description: '获得1名传说学员', target: 1, reward: { gold: 1000, mana: 500, reputation: 50, titleId: 'title_legend_hunter' }, claimed: false, unlocked: false },
+      { stage: 4, name: '传奇收藏家', description: '获得5名传说学员', target: 5, reward: { gold: 3000, mana: 1500, reputation: 150 }, claimed: false, unlocked: false },
+    ],
+  },
+  {
+    id: 'dungeon_conqueror',
+    name: '副本征服者',
+    description: '挑战并征服各个副本',
+    icon: '⚔️',
+    type: 'combat',
+    rarity: 'common',
+    totalStages: 5,
+    stages: [
+      { stage: 1, name: '初入江湖', description: '首次通关任意副本', target: 1, reward: { gold: 150, mana: 80 }, claimed: false, unlocked: true },
+      { stage: 2, name: '探险先锋', description: '通关10次副本', target: 10, reward: { gold: 400, mana: 200, food: 50 }, claimed: false, unlocked: false },
+      { stage: 3, name: '三星达人', description: '在任意副本获得3星评价', target: 1, reward: { gold: 600, mana: 300, reputation: 30 }, claimed: false, unlocked: false },
+      { stage: 4, name: '常胜将军', description: '累计通关50次副本', target: 50, reward: { gold: 1500, mana: 700, reputation: 80, titleId: 'title_dungeon_master' }, claimed: false, unlocked: false },
+      { stage: 5, name: '传说征服者', description: '所有副本达成3星', target: 3, reward: { gold: 3000, mana: 1500, reputation: 200 }, claimed: false, unlocked: false },
+    ],
+  },
+  {
+    id: 'wealth_accumulator',
+    name: '财富积累者',
+    description: '积累学院财富',
+    icon: '💰',
+    type: 'economy',
+    rarity: 'common',
+    totalStages: 5,
+    stages: [
+      { stage: 1, name: '小有积蓄', description: '累计获得1000金币', target: 1000, reward: { mana: 100, food: 20 }, claimed: false, unlocked: true },
+      { stage: 2, name: '富甲一方', description: '累计获得5000金币', target: 5000, reward: { mana: 300, food: 50 }, claimed: false, unlocked: false },
+      { stage: 3, name: '家财万贯', description: '累计获得20000金币', target: 20000, reward: { mana: 800, food: 100, reputation: 50 }, claimed: false, unlocked: false },
+      { stage: 4, name: '富可敌国', description: '累计获得50000金币', target: 50000, reward: { mana: 2000, food: 200, reputation: 100, titleId: 'title_tycoon' }, claimed: false, unlocked: false },
+      { stage: 5, name: '世界首富', description: '累计获得100000金币', target: 100000, reward: { mana: 5000, food: 500, reputation: 300 }, claimed: false, unlocked: false },
+    ],
+  },
+  {
+    id: 'reputation_builder',
+    name: '声望建设者',
+    description: '提升学院声望',
+    icon: '🏆',
+    type: 'progression',
+    rarity: 'common',
+    totalStages: 6,
+    stages: [
+      { stage: 1, name: '初露锋芒', description: '声望达到100', target: 100, reward: { gold: 200, mana: 100 }, claimed: false, unlocked: true },
+      { stage: 2, name: '声名远扬', description: '声望达到300', target: 300, reward: { gold: 500, mana: 250 }, claimed: false, unlocked: false },
+      { stage: 3, name: '闻名遐迩', description: '声望达到600', target: 600, reward: { gold: 1000, mana: 500, reputation: 50 }, claimed: false, unlocked: false },
+      { stage: 4, name: '如日中天', description: '声望达到1000', target: 1000, reward: { gold: 2000, mana: 1000, reputation: 100, titleId: 'title_prestigious' }, claimed: false, unlocked: false },
+      { stage: 5, name: '传奇学院', description: '声望达到1500', target: 1500, reward: { gold: 4000, mana: 2000, reputation: 200 }, claimed: false, unlocked: false },
+      { stage: 6, name: '神话学府', description: '声望达到2500', target: 2500, reward: { gold: 10000, mana: 5000, reputation: 500, titleId: 'title_mythic' }, claimed: false, unlocked: false },
+    ],
+  },
+  {
+    id: 'skill_master',
+    name: '技能大师',
+    description: '解锁各种魔法技能',
+    icon: '📖',
+    type: 'collection',
+    rarity: 'rare',
+    totalStages: 4,
+    stages: [
+      { stage: 1, name: '初窥门径', description: '解锁5个不同技能', target: 5, reward: { gold: 300, mana: 150 }, claimed: false, unlocked: true },
+      { stage: 2, name: '博学多才', description: '解锁10个不同技能', target: 10, reward: { gold: 600, mana: 300, reputation: 30 }, claimed: false, unlocked: false },
+      { stage: 3, name: '技能宗师', description: '解锁18个不同技能', target: 18, reward: { gold: 1200, mana: 600, reputation: 60 }, claimed: false, unlocked: false },
+      { stage: 4, name: '全知全能', description: '解锁所有技能', target: 24, reward: { gold: 3000, mana: 1500, reputation: 150, titleId: 'title_arcane_master' }, claimed: false, unlocked: false },
+    ],
+  },
+  {
+    id: 'building_architect',
+    name: '建筑大师',
+    description: '建造和升级学院建筑',
+    icon: '🏗️',
+    type: 'progression',
+    rarity: 'common',
+    totalStages: 5,
+    stages: [
+      { stage: 1, name: '开工动土', description: '完成5次建筑升级', target: 5, reward: { gold: 200, mana: 100 }, claimed: false, unlocked: true },
+      { stage: 2, name: '初具规模', description: '所有建筑达到3级', target: 18, reward: { gold: 500, mana: 250, food: 50 }, claimed: false, unlocked: false },
+      { stage: 3, name: '富丽堂皇', description: '所有建筑达到5级', target: 30, reward: { gold: 1000, mana: 500, reputation: 50 }, claimed: false, unlocked: false },
+      { stage: 4, name: '美轮美奂', description: '所有建筑达到8级', target: 48, reward: { gold: 2500, mana: 1200, reputation: 100, titleId: 'title_master_builder' }, claimed: false, unlocked: false },
+      { stage: 5, name: '建筑之神', description: '所有建筑达到满级', target: 60, reward: { gold: 5000, mana: 2500, reputation: 250 }, claimed: false, unlocked: false },
+    ],
+  },
+  {
+    id: 'event_explorer',
+    name: '事件探险家',
+    description: '经历各种学院事件',
+    icon: '🎪',
+    type: 'special',
+    rarity: 'rare',
+    totalStages: 4,
+    stages: [
+      { stage: 1, name: '初历风雨', description: '经历5次事件', target: 5, reward: { gold: 200, mana: 100 }, claimed: false, unlocked: true },
+      { stage: 2, name: '见多识广', description: '经历15次不同事件', target: 15, reward: { gold: 500, mana: 250, reputation: 30 }, claimed: false, unlocked: false },
+      { stage: 3, name: '传奇亲历者', description: '经历5次传说级事件', target: 5, reward: { gold: 1500, mana: 750, reputation: 80, titleId: 'title_story_weaver' }, claimed: false, unlocked: false },
+      { stage: 4, name: '历史见证者', description: '经历所有事件', target: 20, reward: { gold: 3000, mana: 1500, reputation: 200 }, claimed: false, unlocked: false },
+    ],
+  },
+];
+
+export const TITLES: Omit<Title, 'unlocked' | 'unlockedAt' | 'equipped'>[] = [
+  { id: 'title_recruiter', name: '招募官', description: '基础招募品质+0.5', icon: '📋', rarity: 'common', effect: { type: 'recruit_quality_bonus', value: 0.5 } },
+  { id: 'title_grand_mentor', name: '大导师', description: '学员经验获取+5%', icon: '👨‍🏫', rarity: 'epic', effect: { type: 'exp_bonus', value: 0.05 } },
+  { id: 'title_legend_hunter', name: '传奇猎人', description: '基础招募品质+1.5', icon: '🎯', rarity: 'rare', effect: { type: 'recruit_quality_bonus', value: 1.5 } },
+  { id: 'title_dungeon_master', name: '地下城主', description: '副本奖励+10%', icon: '🏰', rarity: 'rare', effect: { type: 'gold_bonus', value: 0.1 } },
+  { id: 'title_tycoon', name: '商业大亨', description: '每日金币收入+15%', icon: '💎', rarity: 'epic', effect: { type: 'gold_bonus', value: 0.15 } },
+  { id: 'title_prestigious', name: '德高望重', description: '声望获取+10%', icon: '🎖️', rarity: 'rare', effect: { type: 'reputation_bonus', value: 0.1 } },
+  { id: 'title_mythic', name: '神话缔造者', description: '全属性+5%', icon: '👑', rarity: 'legendary', effect: { type: 'all_stats_bonus', value: 0.05 } },
+  { id: 'title_arcane_master', name: '奥术大师', description: '魔法伤害+10%', icon: '🔮', rarity: 'epic', effect: { type: 'mana_bonus', value: 0.1 } },
+  { id: 'title_master_builder', name: '建筑大师', description: '建造成本-10%', icon: '🏗️', rarity: 'rare', effect: { type: 'gold_bonus', value: 0.1 } },
+  { id: 'title_story_weaver', name: '织梦者', description: '事件奖励+20%', icon: '📜', rarity: 'epic', effect: { type: 'reputation_bonus', value: 0.2 } },
+];
+
+export const ACHIEVEMENT_RARITY_COLORS: Record<AchievementRarity, string> = {
+  common: '#9E9E9E',
+  rare: '#2196F3',
+  epic: '#9C27B0',
+  legendary: '#FF9800',
+};
+
+export const ACHIEVEMENT_RARITY_NAMES: Record<AchievementRarity, string> = {
+  common: '普通',
+  rare: '稀有',
+  epic: '史诗',
+  legendary: '传说',
+};
+
+export const ACHIEVEMENT_TYPE_NAMES: Record<AchievementType, string> = {
+  collection: '收集',
+  progression: '成长',
+  combat: '战斗',
+  economy: '经济',
+  social: '社交',
+  special: '特殊',
+};
+
+export const ACHIEVEMENT_TYPE_ICONS: Record<AchievementType, string> = {
+  collection: '📚',
+  progression: '📈',
+  combat: '⚔️',
+  economy: '💰',
+  social: '👥',
+  special: '✨',
+};
+
+export const CODEX_CATEGORY_NAMES: Record<CodexCategory, string> = {
+  student: '学员',
+  skill: '技能',
+  building: '建筑',
+  dungeon: '副本',
+  event: '事件',
+};
+
+export const CODEX_CATEGORY_ICONS: Record<CodexCategory, string> = {
+  student: '👤',
+  skill: '✨',
+  building: '🏛️',
+  dungeon: '⚔️',
+  event: '📜',
+};
+
+export const calculateCodexStats = (codex: CodexState): CodexStats => {
+  const byCategory = {
+    student: { total: codex.students.length, unlocked: codex.students.filter(s => s.unlocked).length },
+    skill: { total: codex.skills.length, unlocked: codex.skills.filter(s => s.unlocked).length },
+    building: { total: codex.buildings.length, unlocked: codex.buildings.filter(b => b.unlocked).length },
+    dungeon: { total: codex.dungeons.length, unlocked: codex.dungeons.filter(d => d.unlocked).length },
+    event: { total: codex.events.length, unlocked: codex.events.filter(e => e.unlocked).length },
+  };
+  
+  const totalEntries = Object.values(byCategory).reduce((sum, cat) => sum + cat.total, 0);
+  const unlockedEntries = Object.values(byCategory).reduce((sum, cat) => sum + cat.unlocked, 0);
+  
+  return {
+    totalEntries,
+    unlockedEntries,
+    completionPercent: totalEntries > 0 ? Math.round((unlockedEntries / totalEntries) * 100) : 0,
+    byCategory,
+  };
+};
+
+export const INITIAL_CODEX_STATE: CodexState = {
+  unlocked: true,
+  students: STUDENT_CODEX_TEMPLATES.map(t => ({ ...t, unlocked: false, totalRecruited: 0 })),
+  skills: SKILL_CODEX.map(s => ({ ...s, unlocked: false, totalUnlockedByStudents: 0 })),
+  buildings: INITIAL_BUILDINGS.map(b => ({
+    id: b.id,
+    name: b.name,
+    description: b.description,
+    icon: '🏛️',
+    maxLevel: b.maxLevel,
+    unlocked: true,
+    highestLevelReached: b.level,
+  })),
+  dungeons: INITIAL_DUNGEONS.map(d => ({
+    id: d.id,
+    name: d.name,
+    level: d.level,
+    description: `等级 ${d.level} 的挑战副本`,
+    icon: '⚔️',
+    unlocked: false,
+    bestStars: 0,
+    totalClears: 0,
+  })),
+  events: [],
+  stats: {
+    totalEntries: 0,
+    unlockedEntries: 0,
+    completionPercent: 0,
+    byCategory: {
+      student: { total: 0, unlocked: 0 },
+      skill: { total: 0, unlocked: 0 },
+      building: { total: 0, unlocked: 0 },
+      dungeon: { total: 0, unlocked: 0 },
+      event: { total: 0, unlocked: 0 },
+    },
+  },
+};
+
+export const INITIAL_ACHIEVEMENT_STATE: AchievementState = {
+  unlocked: true,
+  achievements: ACHIEVEMENTS.map(a => ({
+    ...a,
+    currentStage: 0,
+    currentProgress: 0,
+  })),
+  titles: TITLES.map(t => ({ ...t, unlocked: false, equipped: false })),
+  totalAchievementPoints: 0,
+  currentEquippedTitle: null,
+};
+
+export const updateAchievementProgress = (
+  achievements: Achievement[],
+  achievementId: string,
+  progress: number
+): { achievements: Achievement[]; newUnlocks: string[]; newTitles: string[] } => {
+  const newUnlocks: string[] = [];
+  const newTitles: string[] = [];
+  
+  const updatedAchievements = achievements.map(achievement => {
+    if (achievement.id !== achievementId) return achievement;
+    
+    const newProgress = progress;
+    let currentStage = achievement.currentStage;
+    const updatedStages = [...achievement.stages];
+    
+    for (let i = currentStage; i < updatedStages.length; i++) {
+      if (newProgress >= updatedStages[i].target) {
+        if (!updatedStages[i].unlocked) {
+          updatedStages[i] = { ...updatedStages[i], unlocked: true };
+          newUnlocks.push(achievement.id);
+          const titleId = updatedStages[i].reward.titleId;
+          if (titleId) {
+            newTitles.push(titleId);
+          }
+        }
+        currentStage = i + 1;
+      } else {
+        break;
+      }
+    }
+    
+    return {
+      ...achievement,
+      currentProgress: newProgress,
+      currentStage,
+      stages: updatedStages,
+    };
+  });
+  
+  return { achievements: updatedAchievements, newUnlocks, newTitles };
+};
+
+export const claimAchievementReward = (
+  achievements: Achievement[],
+  achievementId: string,
+  stageIndex: number
+): { achievements: Achievement[]; reward: Partial<Resource>; titleId?: string } | null => {
+  const achievement = achievements.find(a => a.id === achievementId);
+  if (!achievement || stageIndex >= achievement.stages.length) return null;
+  
+  const stage = achievement.stages[stageIndex];
+  if (!stage.unlocked || stage.claimed) return null;
+  
+  const updatedAchievements = achievements.map(a => {
+    if (a.id !== achievementId) return a;
+    const updatedStages = [...a.stages];
+    updatedStages[stageIndex] = { ...updatedStages[stageIndex], claimed: true };
+    return { ...a, stages: updatedStages };
+  });
+  
+  return {
+    achievements: updatedAchievements,
+    reward: stage.reward,
+    titleId: stage.reward.titleId,
+  };
+};
+
+export const unlockTitle = (titles: Title[], titleId: string, day: number): Title[] => {
+  return titles.map(t => {
+    if (t.id === titleId && !t.unlocked) {
+      return { ...t, unlocked: true, unlockedAt: day };
+    }
+    return t;
+  });
+};
+
+export const equipTitle = (titles: Title[], titleId: string | null): { titles: Title[]; equippedTitleId: string | null } => {
+  const updatedTitles = titles.map(t => ({ ...t, equipped: t.id === titleId }));
+  return { titles: updatedTitles, equippedTitleId: titleId };
 };

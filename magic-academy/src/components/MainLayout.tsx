@@ -18,6 +18,8 @@ import KingdomCommissionPanel from './KingdomCommissionPanel';
 import './KingdomCommissionPanel.css';
 import DormitoryPanel from './DormitoryPanel';
 import './DormitoryPanel.css';
+import CodexAchievementPanel from './CodexAchievementPanel';
+import './CodexAchievementPanel.css';
 
 interface TabConfig {
   id: TabType;
@@ -35,6 +37,7 @@ const tabs: TabConfig[] = [
   { id: 'alchemy', label: '炼金工坊', icon: '⚗️' },
   { id: 'kingdomCommission', label: '王国委托', icon: '🏰' },
   { id: 'goals', label: '目标任务', icon: '🎯' },
+  { id: 'codex', label: '图鉴成就', icon: '📖' },
   { id: 'club', label: '魔法社团', icon: '🎭' },
   { id: 'season', label: '赛季系统', icon: '🏆' },
   { id: 'eventCenter', label: '事件中心', icon: '🎪' },
@@ -149,6 +152,7 @@ export default function MainLayout() {
         {activeTab === 'trade' && <TradeHarborPanel />}
         {activeTab === 'alchemy' && <AlchemyPanel />}
         {activeTab === 'goals' && <GoalsModule />}
+        {activeTab === 'codex' && <CodexAchievementPanel />}
         {activeTab === 'club' && <ClubPanel />}
         {activeTab === 'season' && <SeasonPanel />}
         {activeTab === 'eventCenter' && <EventCenterPanel />}

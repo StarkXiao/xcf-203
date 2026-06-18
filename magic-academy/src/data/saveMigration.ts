@@ -20,6 +20,8 @@ import {
   INITIAL_EVENT_CENTER_STATE,
   INITIAL_KINGDOM_COMMISSION_STATE,
   INITIAL_DORMITORY_STATE,
+  INITIAL_CODEX_STATE,
+  INITIAL_ACHIEVEMENT_STATE,
 } from './gameData';
 
 type SaveData = Record<string, unknown>;
@@ -839,6 +841,14 @@ function normalizeToGameState(data: SaveData): GameState {
     ? { ...INITIAL_DORMITORY_STATE, ...(data.dormitory as Record<string, unknown>) }
     : INITIAL_DORMITORY_STATE;
 
+  const codex = data.codex && typeof data.codex === 'object'
+    ? { ...INITIAL_CODEX_STATE, ...(data.codex as Record<string, unknown>) }
+    : INITIAL_CODEX_STATE;
+
+  const achievement = data.achievement && typeof data.achievement === 'object'
+    ? { ...INITIAL_ACHIEVEMENT_STATE, ...(data.achievement as Record<string, unknown>) }
+    : INITIAL_ACHIEVEMENT_STATE;
+
   return {
     saveVersion: CURRENT_SAVE_VERSION,
     resources,
@@ -870,6 +880,8 @@ function normalizeToGameState(data: SaveData): GameState {
     eventCenter,
     kingdomCommission,
     dormitory,
+    codex,
+    achievement,
   };
 }
 
