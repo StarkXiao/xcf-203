@@ -1,4 +1,4 @@
-import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState } from '../types/game';
+import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff } from '../types/game';
 import {
   HP_BATTLE_THRESHOLD,
   HP_COURSE_EFFICIENCY_THRESHOLD,
@@ -1104,11 +1104,12 @@ export const calculateDungeonRewards = (
   dungeon: Dungeon,
   stars: number,
   isFirstClear: boolean,
-  mentorBonus?: MentorDungeonBonus
+  mentorBonus?: MentorDungeonBonus,
+  potionBonus: { damageBoost: number; defenseBoost: number } = { damageBoost: 0, defenseBoost: 0 }
 ): Resource => {
   const baseRewards = dungeon.rewards;
   const starMultiplier = stars === 3 ? 1.5 : stars === 2 ? 1.2 : 1.0;
-  const rewardMultiplier = mentorBonus?.rewardMultiplier ?? 1;
+  const rewardMultiplier = (mentorBonus?.rewardMultiplier ?? 1) * (1 + potionBonus.damageBoost + potionBonus.defenseBoost);
 
   const rewards: Resource = {
     gold: Math.floor(baseRewards.gold * starMultiplier * rewardMultiplier),
@@ -1133,8 +1134,8 @@ export const getSweepRewardMultiplier = (bestStars: number): number => {
   return 0.4;
 };
 
-export const calculateSweepRewards = (dungeon: Dungeon): Resource => {
-  const multiplier = getSweepRewardMultiplier(dungeon.bestStars);
+export const calculateSweepRewards = (dungeon: Dungeon, sweepBonus: number = 0): Resource => {
+  const multiplier = getSweepRewardMultiplier(dungeon.bestStars) * (1 + sweepBonus);
   return {
     gold: Math.floor(dungeon.rewards.gold * multiplier),
     mana: Math.floor(dungeon.rewards.mana * multiplier),
@@ -1526,7 +1527,8 @@ export const calculateCourseBenefit = (
   buildings: Building[],
   teachers: Teacher[],
   mentors?: Mentor[],
-  academies?: MentorAcademy[]
+  academies?: MentorAcademy[],
+  potionBuffs: { expBoost: number; speedBoost: number } = { expBoost: 0, speedBoost: 0 }
 ): CourseBenefitBreakdown => {
   const magicTypeResult = calculateMagicTypeMatchBonus(student.magicType, course.magicType);
   const teacherResult = calculateTeacherBonus(course, teachers, course.magicType);
@@ -1568,7 +1570,9 @@ export const calculateCourseBenefit = (
     totalTraitBonus +
     mentorBonus +
     mentorSpecializationBonus +
-    academyBonus;
+    academyBonus +
+    potionBuffs.expBoost +
+    potionBuffs.speedBoost;
   
   const totalMultiplier = student.potential * (1 + additiveMultiplier);
   const totalExp = Math.floor(baseExp * totalMultiplier);
@@ -1588,6 +1592,8 @@ export const calculateCourseBenefit = (
     mentorSpecializationBonus,
     academyBonus,
     contributingMentors,
+    potionExpBoost: potionBuffs.expBoost,
+    potionSpeedBoost: potionBuffs.speedBoost,
   };
 };
 
@@ -1651,6 +1657,16 @@ export const formatBenefitBreakdown = (breakdown: CourseBenefitBreakdown): strin
   }
   if (breakdown.traitBonus > 0) {
     parts.push(`💪 特质 +${Math.round(breakdown.traitBonus * 100)}%`);
+  }
+  if (breakdown.potionExpBoost > 0) {
+    parts.push(`📚 经验药剂 +${Math.round(breakdown.potionExpBoost * 100)}%`);
+  }
+  if (breakdown.potionSpeedBoost > 0) {
+    parts.push(`⏩ 加速药剂 +${Math.round(breakdown.potionSpeedBoost * 100)}%`);
+  }
+  if (breakdown.mentorBonus > 0 || breakdown.academyBonus > 0 || breakdown.mentorSpecializationBonus > 0) {
+    const total = breakdown.mentorBonus + breakdown.mentorSpecializationBonus + breakdown.academyBonus;
+    if (total > 0) parts.push(`👨‍🏫 导师 +${Math.round(total * 100)}%`);
   }
   parts.push(`⭐ 潜力 ×${breakdown.potentialMultiplier.toFixed(2)}`);
   
@@ -4757,6 +4773,42 @@ export const getCraftingSlotsForLevel = (level: number): number => {
 };
 
 export const getWorkshopRequiredReputation = (): number => 60;
+
+export const getPotionCourseBuffs = (buffs: ActivePotionBuff[], studentId?: string): { expBoost: number; speedBoost: number; usedBuffIds: string[] } => {
+  let expBoost = 0;
+  let speedBoost = 0;
+  const usedBuffIds: string[] = [];
+  for (const b of buffs) {
+    if (b.studentId && studentId && b.studentId !== studentId) continue;
+    let used = false;
+    for (const e of b.effects) {
+      if (e.type === 'exp_boost') { expBoost += e.value; used = true; }
+      if (e.type === 'course_speed_boost') { speedBoost += e.value; used = true; }
+    }
+    if (used) usedBuffIds.push(b.id);
+  }
+  return { expBoost, speedBoost, usedBuffIds };
+};
+
+export const getPotionDungeonBuffs = (buffs: ActivePotionBuff[], dungeonId?: string, teamIds: string[] = []): { damageBoost: number; defenseBoost: number; sweepBonus: number; usedBuffIds: string[] } => {
+  let damageBoost = 0;
+  let defenseBoost = 0;
+  let sweepBonus = 0;
+  const usedBuffIds: string[] = [];
+  for (const b of buffs) {
+    const matchesDungeon = !dungeonId || !b.dungeonId || b.dungeonId === dungeonId;
+    const matchesStudent = !b.studentId || teamIds.includes(b.studentId);
+    if (!matchesDungeon || !matchesStudent) continue;
+    let used = false;
+    for (const e of b.effects) {
+      if (e.type === 'damage_boost') { damageBoost += e.value; used = true; }
+      if (e.type === 'defense_boost') { defenseBoost += e.value; used = true; }
+      if (e.type === 'sweep_bonus') { sweepBonus += e.value; used = true; }
+    }
+    if (used) usedBuffIds.push(b.id);
+  }
+  return { damageBoost, defenseBoost, sweepBonus, usedBuffIds };
+};
 
 export const INITIAL_ALCHEMY_STATE: AlchemyState = {
   unlocked: false,

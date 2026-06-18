@@ -136,6 +136,8 @@ import {
   rollDungeonMaterialDrops,
   ALCHEMY_RARITY_COLORS,
   ALCHEMY_RARITY_NAMES,
+  getPotionCourseBuffs,
+  getPotionDungeonBuffs,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -537,6 +539,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       
       const student = state.students.find(s => s.id === action.studentId);
       const todayEvents: DailyEvent[] = [];
+      const potionBuffs = getPotionCourseBuffs(state.alchemy.activeBuffs, action.studentId);
       
       if (student && course.effect.type === 'exp_gain') {
         const breakdown = calculateCourseBenefit(
@@ -546,7 +549,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           state.buildings,
           state.teachers,
           state.mentorState.mentors,
-          state.mentorState.academies
+          state.mentorState.academies,
+          potionBuffs
         );
         
         const benefitText = formatBenefitBreakdown(breakdown);
@@ -590,7 +594,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
                 state.buildings,
                 state.teachers,
                 state.mentorState.mentors,
-                state.mentorState.academies
+                state.mentorState.academies,
+                potionBuffs
               );
               expGained = breakdown.totalExp;
               
@@ -846,6 +851,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...state.mentorState,
           mentors: updatedMentorsForCourse,
         },
+        alchemy: {
+          ...state.alchemy,
+          activeBuffs: state.alchemy.activeBuffs.filter(b => !potionBuffs.usedBuffIds.includes(b.id)),
+        },
       };
     }
 
@@ -1075,9 +1084,25 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         );
         mentorDungeonBonus = leadResult;
       }
-      const rewards = action.stars > 0 ? calculateDungeonRewards(dungeon, action.stars, isFirstClear, mentorDungeonBonus) : { gold: 0, mana: 0, food: 0, reputation: 0 };
+      const potionDungeonBuffs = getPotionDungeonBuffs(state.alchemy.activeBuffs, action.dungeonId, action.team);
+      const rewards = action.stars > 0 ? calculateDungeonRewards(dungeon, action.stars, isFirstClear, mentorDungeonBonus, { damageBoost: potionDungeonBuffs.damageBoost, defenseBoost: potionDungeonBuffs.defenseBoost }) : { gold: 0, mana: 0, food: 0, reputation: 0 };
       const victory = action.stars > 0;
       const battleEvents: DailyEvent[] = [];
+
+      if (potionDungeonBuffs.damageBoost > 0) {
+        battleEvents.push({
+          type: 'alchemy_potion_used',
+          message: `⚔️ 战斗强化药剂生效，伤害+${Math.round(potionDungeonBuffs.damageBoost * 100)}%`,
+          value: Math.round(potionDungeonBuffs.damageBoost * 100),
+        });
+      }
+      if (potionDungeonBuffs.defenseBoost > 0) {
+        battleEvents.push({
+          type: 'alchemy_potion_used',
+          message: `🛡️ 防御强化药剂生效，减伤+${Math.round(potionDungeonBuffs.defenseBoost * 100)}%`,
+          value: Math.round(potionDungeonBuffs.defenseBoost * 100),
+        });
+      }
 
       const updatedStudents = state.students.map(s => {
         if (!action.team.includes(s.id)) return s;
@@ -1285,6 +1310,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             ...state.mentorState,
             mentors: updatedMentors,
           },
+          alchemy: {
+            ...state.alchemy,
+            activeBuffs: state.alchemy.activeBuffs.filter(b => !potionDungeonBuffs.usedBuffIds.includes(b.id)),
+          },
         };
       }
       
@@ -1383,6 +1412,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...state.mentorState,
           mentors: updatedMentors,
         },
+        alchemy: {
+          ...state.alchemy,
+          activeBuffs: state.alchemy.activeBuffs.filter(b => !potionDungeonBuffs.usedBuffIds.includes(b.id)),
+        },
       };
     }
 
@@ -1390,8 +1423,18 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const dungeon = state.dungeons.find(d => d.id === action.dungeonId);
       if (!dungeon || !canSweep(dungeon)) return state;
       
-      const rewards = calculateSweepRewards(dungeon);
       const teamIds = dungeon.bestTeam;
+      const potionDungeonBuffs = getPotionDungeonBuffs(state.alchemy.activeBuffs, action.dungeonId, teamIds);
+      const rewards = calculateSweepRewards(dungeon, potionDungeonBuffs.sweepBonus);
+
+      const sweepEvents: DailyEvent[] = [];
+      if (potionDungeonBuffs.sweepBonus > 0) {
+        sweepEvents.push({
+          type: 'alchemy_potion_used',
+          message: `🏆 扫荡增幅药剂生效，奖励+${Math.round(potionDungeonBuffs.sweepBonus * 100)}%`,
+          value: Math.round(potionDungeonBuffs.sweepBonus * 100),
+        });
+      }
 
       const updatedStudents = state.students.map(s => {
         if (!teamIds.includes(s.id)) return s;
@@ -1440,9 +1483,15 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       );
       const newSeasonCurrentStage = getCurrentSeasonStage(newSeasonStageRewards, newSeasonTotalPoints);
       
+      const sweepLogs = state.dailyLogs.slice(-29);
+      if (sweepEvents.length > 0) {
+        sweepLogs.push({ day: state.day, events: sweepEvents });
+      }
+
       return {
         ...state,
         students: updatedStudents,
+        dailyLogs: sweepLogs,
         resources: {
           gold: state.resources.gold + rewards.gold,
           mana: state.resources.mana + rewards.mana,
@@ -1468,6 +1517,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           seasonPoints: newSeasonTotalPoints,
           stageRewards: newSeasonStageRewards,
           currentStage: newSeasonCurrentStage,
+        },
+        alchemy: {
+          ...state.alchemy,
+          activeBuffs: state.alchemy.activeBuffs.filter(b => !potionDungeonBuffs.usedBuffIds.includes(b.id)),
         },
       };
     }
@@ -3644,6 +3697,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
       const completedCourses: { studentId: string; studentName: string; courseId: string; courseName: string }[] = [];
       const leftStudents: { id: string; name: string }[] = [];
+      const dailyUsedPotionBuffIds = new Set<string>();
 
       const workingResources = {
         gold: state.resources.gold + dailyIncome.gold,
@@ -3765,6 +3819,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           const daysRemaining = student.courseDaysRemaining - courseSpeed;
 
           const dailyBaseExp = 10 * baseExpMultiplier * efficiencyMult;
+          const studentPotionBuffs = getPotionCourseBuffs(state.alchemy.activeBuffs, student.id);
           const dailyBreakdown = calculateCourseBenefit(
             dailyBaseExp,
             student,
@@ -3772,7 +3827,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             state.buildings,
             state.teachers,
             state.mentorState.mentors,
-            state.mentorState.academies
+            state.mentorState.academies,
+            studentPotionBuffs
           );
           const dailyExp = dailyBreakdown.totalExp;
           let newExp = student.exp + dailyExp;
@@ -3796,7 +3852,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
                 state.buildings,
                 state.teachers,
                 state.mentorState.mentors,
-                state.mentorState.academies
+                state.mentorState.academies,
+                studentPotionBuffs
               );
               finalBreakdown = breakdown;
               finalExpGain = breakdown.totalExp;
@@ -3878,6 +3935,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             };
 
             completedCourses.push({ studentId: student.id, studentName: student.name, courseId: course.id, courseName: course.name });
+            for (const id of studentPotionBuffs.usedBuffIds) dailyUsedPotionBuffIds.add(id);
             
             if (finalBreakdown && finalBreakdown.totalExp > 0) {
               const benefitText = formatBenefitBreakdown(finalBreakdown);
@@ -4520,7 +4578,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...state.mentorState,
           mentors: updatedDailyMentors,
         },
-        alchemy: alchemyBuffExpireState.alchemy,
+        alchemy: {
+          ...alchemyBuffExpireState.alchemy,
+          activeBuffs: alchemyBuffExpireState.alchemy.activeBuffs.filter(b => !dailyUsedPotionBuffIds.has(b.id)),
+        },
       };
     }
 

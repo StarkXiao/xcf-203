@@ -834,6 +834,8 @@ export interface CourseBenefitBreakdown {
   mentorSpecializationBonus: number;
   academyBonus: number;
   contributingMentors: string[];
+  potionExpBoost: number;
+  potionSpeedBoost: number;
 }
 
 export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade' | 'alchemy';
