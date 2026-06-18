@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff, AcademyEventDefinition, KingdomCommission, CommissionStageType, RestActivity, DormitoryState, StudentRelationship, CodexCategory, AchievementType, AchievementRarity, MagicType } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff, AcademyEventDefinition, KingdomCommission, CommissionStageType, RestActivity, DormitoryState, StudentRelationship, CodexCategory, AchievementType, AchievementRarity, MagicType, MapAreaId } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -196,6 +196,15 @@ import {
   claimAchievementReward,
   unlockTitle,
   equipTitle,
+  INITIAL_MAP_EXPLORE_STATE,
+  canUnlockMapArea,
+  canExploreArea,
+  canGatherNode,
+  canTravelRoute,
+  rollMapExploreEvent,
+  resolveMapExploreEvent,
+  discoverRoutesForArea,
+  checkMapAreaMastery,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -312,7 +321,14 @@ type GameAction =
   | { type: 'UPDATE_CODEX_EVENT'; eventId: string; choiceId?: string }
   | { type: 'UPDATE_ACHIEVEMENT_PROGRESS'; achievementId: string; progress: number }
   | { type: 'CLAIM_ACHIEVEMENT_REWARD'; achievementId: string; stageIndex: number }
-  | { type: 'EQUIP_TITLE'; titleId: string | null };
+  | { type: 'EQUIP_TITLE'; titleId: string | null }
+  | { type: 'UNLOCK_MAP_EXPLORE' }
+  | { type: 'UNLOCK_MAP_AREA'; areaId: MapAreaId }
+  | { type: 'EXPLORE_MAP_AREA'; areaId: MapAreaId }
+  | { type: 'GATHER_MAP_NODE'; nodeId: string }
+  | { type: 'RESOLVE_MAP_EXPLORE_EVENT'; eventId: string; choiceId: string }
+  | { type: 'DISMISS_MAP_EXPLORE_EVENT' }
+  | { type: 'TRAVEL_MAP_ROUTE'; routeId: string };
 
 const MAX_STUDENT_CAPACITY = 20;
 
@@ -377,6 +393,7 @@ const initialState: GameState = {
   dormitory: INITIAL_DORMITORY_STATE,
   codex: INITIAL_CODEX_STATE,
   achievement: INITIAL_ACHIEVEMENT_STATE,
+  mapExplore: INITIAL_MAP_EXPLORE_STATE,
 };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -6171,6 +6188,314 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
+    case 'UNLOCK_MAP_EXPLORE': {
+      if (state.mapExplore.unlocked) return state;
+      const unlockEvent: DailyEvent = {
+        type: 'map_area_unlocked',
+        message: '🗺️ 学院地图探索系统解锁！开始探索学院周边的未知区域吧',
+      };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push({ day: state.day, events: [unlockEvent] });
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        mapExplore: { ...state.mapExplore, unlocked: true },
+      };
+    }
+
+    case 'UNLOCK_MAP_AREA': {
+      const area = state.mapExplore.areas.find(a => a.id === action.areaId);
+      if (!area || area.status !== 'locked') return state;
+      if (!canUnlockMapArea(area, state.resources.reputation, state.day, state.students.length, state.mapExplore.areas, state.buildings)) return state;
+
+      const cost = area.unlockCondition.cost;
+      if (state.resources.gold < (cost.gold || 0) || state.resources.mana < (cost.mana || 0) ||
+          state.resources.food < (cost.food || 0) || state.resources.reputation < (cost.reputation || 0)) return state;
+
+      const updatedRoutes = discoverRoutesForArea(action.areaId, state.mapExplore.routes);
+      const unlockedArea = { ...area, status: 'unlocked' as const };
+      const unlockEvent: DailyEvent = {
+        type: 'map_area_unlocked',
+        message: `🗺️ 解锁新区域「${area.name}」！${area.features.map(f => f.name).join('、')}`,
+      };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push({ day: state.day, events: [unlockEvent] });
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        resources: {
+          gold: state.resources.gold - (cost.gold || 0),
+          mana: state.resources.mana - (cost.mana || 0),
+          food: state.resources.food - (cost.food || 0),
+          reputation: state.resources.reputation - (cost.reputation || 0),
+        },
+        mapExplore: {
+          ...state.mapExplore,
+          areas: state.mapExplore.areas.map(a => a.id === action.areaId ? unlockedArea : a),
+          routes: updatedRoutes,
+          stats: {
+            ...state.mapExplore.stats,
+            areasUnlocked: state.mapExplore.stats.areasUnlocked + 1,
+          },
+        },
+      };
+    }
+
+    case 'EXPLORE_MAP_AREA': {
+      const area = state.mapExplore.areas.find(a => a.id === action.areaId);
+      if (!area) return state;
+      let dailyExploresUsed = state.mapExplore.dailyExploresUsed;
+      if (state.mapExplore.lastDailyResetDay !== state.day) {
+        dailyExploresUsed = 0;
+      }
+      if (!canExploreArea(area, 100, dailyExploresUsed, state.mapExplore.maxDailyExplores, state.day)) return state;
+
+      const exploreEvent = rollMapExploreEvent(action.areaId, state.mapExplore.events, area.exploreEventChance, state.day);
+      let updatedAreas = state.mapExplore.areas.map(a => {
+        if (a.id !== action.areaId) return a;
+        const newExploreCount = a.exploreCount + 1;
+        const newMastery = a.masteryProgress + 1;
+        let newStatus = a.status;
+        if (a.status === 'unlocked') newStatus = 'explored';
+        if (checkMapAreaMastery({ ...a, masteryProgress: newMastery }) && newStatus !== 'mastered') {
+          newStatus = 'mastered';
+        }
+        return { ...a, exploreCount: newExploreCount, masteryProgress: newMastery, lastExploreDay: state.day, status: newStatus };
+      });
+      const masteredArea = updatedAreas.find(a => a.id === action.areaId);
+      const masteryEvents: DailyEvent[] = [];
+      if (masteredArea && masteredArea.status === 'mastered' && area.status !== 'mastered') {
+        masteryEvents.push({
+          type: 'map_mastery_achieved',
+          message: `🌟 区域「${area.name}」探索精通！`,
+        });
+      }
+
+      const resourceGain = area.explorationYield;
+      const exploreEvents: DailyEvent[] = [
+        { type: 'map_explore_event' as const, message: `🗺️ 探索了「${area.name}」${exploreEvent ? `，遭遇「${exploreEvent.name}」` : ''}`, value: dailyExploresUsed + 1 },
+        ...masteryEvents,
+      ];
+
+      let updatedEvents = state.mapExplore.events.map(e => {
+        if (exploreEvent && e.id === exploreEvent.id) {
+          return { ...e, lastTriggeredDay: state.day };
+        }
+        return e;
+      });
+
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push({ day: state.day, events: exploreEvents });
+
+      const newStats = {
+        ...state.mapExplore.stats,
+        totalExplores: state.mapExplore.stats.totalExplores + 1,
+        totalResourceGained: {
+          gold: state.mapExplore.stats.totalResourceGained.gold + (resourceGain.gold || 0),
+          mana: state.mapExplore.stats.totalResourceGained.mana + (resourceGain.mana || 0),
+          food: state.mapExplore.stats.totalResourceGained.food + (resourceGain.food || 0),
+          reputation: state.mapExplore.stats.totalResourceGained.reputation + (resourceGain.reputation || 0),
+        },
+        areasMastered: updatedAreas.filter(a => a.status === 'mastered').length,
+      };
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        resources: {
+          gold: state.resources.gold + (resourceGain.gold || 0),
+          mana: state.resources.mana + (resourceGain.mana || 0),
+          food: state.resources.food + (resourceGain.food || 0),
+          reputation: state.resources.reputation + (resourceGain.reputation || 0),
+        },
+        mapExplore: {
+          ...state.mapExplore,
+          areas: updatedAreas,
+          events: updatedEvents,
+          currentAreaId: action.areaId,
+          currentEvent: exploreEvent,
+          dailyExploresUsed: dailyExploresUsed + 1,
+          lastDailyResetDay: state.day,
+          stats: newStats,
+        },
+      };
+    }
+
+    case 'GATHER_MAP_NODE': {
+      const node = state.mapExplore.gatheringNodes.find(n => n.id === action.nodeId);
+      if (!node) return state;
+      if (!canGatherNode(node, 100, state.day)) return state;
+
+      const area = state.mapExplore.areas.find(a => a.id === node.areaId);
+      if (!area || area.status === 'locked') return state;
+
+      const resourceGain = node.rewards;
+      const gatherEvent: DailyEvent = {
+        type: 'map_gathering',
+        message: `⛏️ 在「${area.name}」采集了「${node.name}」`,
+      };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push({ day: state.day, events: [gatherEvent] });
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        resources: {
+          gold: state.resources.gold + (resourceGain.gold || 0),
+          mana: state.resources.mana + (resourceGain.mana || 0),
+          food: state.resources.food + (resourceGain.food || 0),
+          reputation: state.resources.reputation + (resourceGain.reputation || 0),
+        },
+        mapExplore: {
+          ...state.mapExplore,
+          gatheringNodes: state.mapExplore.gatheringNodes.map(n =>
+            n.id === action.nodeId ? { ...n, lastGatheredDay: state.day, currentCooldown: n.cooldown } : n
+          ),
+          stats: {
+            ...state.mapExplore.stats,
+            totalGatheringActions: state.mapExplore.stats.totalGatheringActions + 1,
+            gatheringByType: {
+              ...state.mapExplore.stats.gatheringByType,
+              [node.type]: state.mapExplore.stats.gatheringByType[node.type] + 1,
+            },
+            totalResourceGained: {
+              gold: state.mapExplore.stats.totalResourceGained.gold + (resourceGain.gold || 0),
+              mana: state.mapExplore.stats.totalResourceGained.mana + (resourceGain.mana || 0),
+              food: state.mapExplore.stats.totalResourceGained.food + (resourceGain.food || 0),
+              reputation: state.mapExplore.stats.totalResourceGained.reputation + (resourceGain.reputation || 0),
+            },
+          },
+        },
+      };
+    }
+
+    case 'RESOLVE_MAP_EXPLORE_EVENT': {
+      const event = state.mapExplore.currentEvent;
+      if (!event) return state;
+
+      const { instance, wasRiskTriggered } = resolveMapExploreEvent(event, action.choiceId, state.day);
+      const resChange = instance.resourceChange;
+      const isGain = !wasRiskTriggered;
+      const resolveEvent: DailyEvent = {
+        type: 'map_explore_event',
+        message: `${wasRiskTriggered ? '⚠️' : '✅'} ${instance.outcomeText}`,
+      };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push({ day: state.day, events: [resolveEvent] });
+
+      const goldChange = (resChange.gold || 0) * (isGain ? 1 : -1);
+      const manaChange = (resChange.mana || 0) * (isGain ? 1 : -1);
+      const foodChange = (resChange.food || 0) * (isGain ? 1 : -1);
+      const repChange = (resChange.reputation || 0) * (isGain ? 1 : -1);
+
+      let newResources = { ...state.resources };
+      if (isGain) {
+        newResources.gold += Math.abs(goldChange);
+        newResources.mana += Math.abs(manaChange);
+        newResources.food += Math.abs(foodChange);
+        newResources.reputation += Math.abs(repChange);
+      } else {
+        newResources.gold = Math.max(0, newResources.gold - Math.abs(goldChange));
+        newResources.mana = Math.max(0, newResources.mana - Math.abs(manaChange));
+        newResources.food = Math.max(0, newResources.food - Math.abs(foodChange));
+        newResources.reputation = Math.max(0, newResources.reputation - Math.abs(repChange));
+      }
+
+      const categoryKey = event.category;
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        resources: newResources,
+        mapExplore: {
+          ...state.mapExplore,
+          currentEvent: null,
+          eventHistory: [...state.mapExplore.eventHistory, instance],
+          stats: {
+            ...state.mapExplore.stats,
+            totalEventsTriggered: state.mapExplore.stats.totalEventsTriggered + 1,
+            eventsByCategory: {
+              ...state.mapExplore.stats.eventsByCategory,
+              [categoryKey]: (state.mapExplore.stats.eventsByCategory[categoryKey] || 0) + 1,
+            },
+            risksTriggered: wasRiskTriggered ? state.mapExplore.stats.risksTriggered + 1 : state.mapExplore.stats.risksTriggered,
+            risksAvoided: !wasRiskTriggered ? state.mapExplore.stats.risksAvoided + 1 : state.mapExplore.stats.risksAvoided,
+            totalResourceGained: isGain ? {
+              gold: state.mapExplore.stats.totalResourceGained.gold + Math.abs(goldChange),
+              mana: state.mapExplore.stats.totalResourceGained.mana + Math.abs(manaChange),
+              food: state.mapExplore.stats.totalResourceGained.food + Math.abs(foodChange),
+              reputation: state.mapExplore.stats.totalResourceGained.reputation + Math.abs(repChange),
+            } : state.mapExplore.stats.totalResourceGained,
+            totalResourceLost: !isGain ? {
+              gold: state.mapExplore.stats.totalResourceLost.gold + Math.abs(goldChange),
+              mana: state.mapExplore.stats.totalResourceLost.mana + Math.abs(manaChange),
+              food: state.mapExplore.stats.totalResourceLost.food + Math.abs(foodChange),
+              reputation: state.mapExplore.stats.totalResourceLost.reputation + Math.abs(repChange),
+            } : state.mapExplore.stats.totalResourceLost,
+          },
+        },
+      };
+    }
+
+    case 'DISMISS_MAP_EXPLORE_EVENT': {
+      return {
+        ...state,
+        mapExplore: {
+          ...state.mapExplore,
+          currentEvent: null,
+        },
+      };
+    }
+
+    case 'TRAVEL_MAP_ROUTE': {
+      const route = state.mapExplore.routes.find(r => r.id === action.routeId);
+      if (!route || !canTravelRoute(route, 100)) return state;
+
+      const fromArea = state.mapExplore.areas.find(a => a.id === route.fromAreaId);
+      const toArea = state.mapExplore.areas.find(a => a.id === route.toAreaId);
+      if (!fromArea || !toArea) return state;
+
+      const isBonusTriggered = Math.random() < route.bonusTriggerChance;
+      const rewards = isBonusTriggered && route.bonusRewards
+        ? { gold: (route.rewards.gold || 0) + (route.bonusRewards.gold || 0), mana: (route.rewards.mana || 0) + (route.bonusRewards.mana || 0), food: (route.rewards.food || 0) + (route.bonusRewards.food || 0), reputation: (route.rewards.reputation || 0) + (route.bonusRewards.reputation || 0) }
+        : route.rewards;
+
+      const travelEvent: DailyEvent = {
+        type: 'map_route_traveled',
+        message: `🛤️ 经由「${route.name}」从「${fromArea.name}」前往「${toArea.name}」${isBonusTriggered ? '，发现额外奖励！' : ''}`,
+      };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push({ day: state.day, events: [travelEvent] });
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        resources: {
+          gold: state.resources.gold + (rewards.gold || 0),
+          mana: state.resources.mana + (rewards.mana || 0),
+          food: state.resources.food + (rewards.food || 0),
+          reputation: state.resources.reputation + (rewards.reputation || 0),
+        },
+        mapExplore: {
+          ...state.mapExplore,
+          currentAreaId: route.toAreaId,
+          routes: state.mapExplore.routes.map(r =>
+            r.id === action.routeId ? { ...r, travelCount: r.travelCount + 1, lastTravelDay: state.day } : r
+          ),
+          stats: {
+            ...state.mapExplore.stats,
+            totalRoutesTraveled: state.mapExplore.stats.totalRoutesTraveled + 1,
+            totalResourceGained: {
+              gold: state.mapExplore.stats.totalResourceGained.gold + (rewards.gold || 0),
+              mana: state.mapExplore.stats.totalResourceGained.mana + (rewards.mana || 0),
+              food: state.mapExplore.stats.totalResourceGained.food + (rewards.food || 0),
+              reputation: state.mapExplore.stats.totalResourceGained.reputation + (rewards.reputation || 0),
+            },
+          },
+        },
+      };
+    }
+
     default:
       return state;
   }
@@ -6376,6 +6701,17 @@ interface GameContextType {
   ACHIEVEMENT_RARITY_NAMES: Record<AchievementRarity, string>;
   ACHIEVEMENT_TYPE_NAMES: Record<AchievementType, string>;
   ACHIEVEMENT_TYPE_ICONS: Record<AchievementType, string>;
+  unlockMapExplore: () => void;
+  unlockMapArea: (areaId: MapAreaId) => boolean;
+  exploreMapArea: (areaId: MapAreaId) => void;
+  gatherMapNode: (nodeId: string) => void;
+  resolveMapExploreEventAction: (eventId: string, choiceId: string) => void;
+  dismissMapExploreEvent: () => void;
+  travelMapRoute: (routeId: string) => void;
+  canUnlockMapAreaCtx: typeof canUnlockMapArea;
+  canExploreAreaCtx: typeof canExploreArea;
+  canGatherNodeCtx: typeof canGatherNode;
+  canTravelRouteCtx: typeof canTravelRoute;
   CODEX_CATEGORY_NAMES: Record<CodexCategory, string>;
   CODEX_CATEGORY_ICONS: Record<CodexCategory, string>;
   claimAchievementRewardAction: (achievementId: string, stageIndex: number) => void;
@@ -7331,6 +7667,26 @@ export function GameProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'UPDATE_CODEX_DUNGEON', dungeonId, stars, cleared }),
       updateCodexEvent: (eventId: string, choiceId?: string) => 
         dispatch({ type: 'UPDATE_CODEX_EVENT', eventId, choiceId }),
+      unlockMapExplore: () => dispatch({ type: 'UNLOCK_MAP_EXPLORE' }),
+      unlockMapArea: (areaId: MapAreaId) => {
+        const area = state.mapExplore.areas.find(a => a.id === areaId);
+        if (!area || area.status !== 'locked') return false;
+        if (!canUnlockMapArea(area, state.resources.reputation, state.day, state.students.length, state.mapExplore.areas, state.buildings)) return false;
+        const cost = area.unlockCondition.cost;
+        if (state.resources.gold < (cost.gold || 0) || state.resources.mana < (cost.mana || 0) ||
+            state.resources.food < (cost.food || 0) || state.resources.reputation < (cost.reputation || 0)) return false;
+        dispatch({ type: 'UNLOCK_MAP_AREA', areaId });
+        return true;
+      },
+      exploreMapArea: (areaId: MapAreaId) => dispatch({ type: 'EXPLORE_MAP_AREA', areaId }),
+      gatherMapNode: (nodeId: string) => dispatch({ type: 'GATHER_MAP_NODE', nodeId }),
+      resolveMapExploreEventAction: (eventId: string, choiceId: string) => dispatch({ type: 'RESOLVE_MAP_EXPLORE_EVENT', eventId, choiceId }),
+      dismissMapExploreEvent: () => dispatch({ type: 'DISMISS_MAP_EXPLORE_EVENT' }),
+      travelMapRoute: (routeId: string) => dispatch({ type: 'TRAVEL_MAP_ROUTE', routeId }),
+      canUnlockMapAreaCtx: canUnlockMapArea,
+      canExploreAreaCtx: canExploreArea,
+      canGatherNodeCtx: canGatherNode,
+      canTravelRouteCtx: canTravelRoute,
     }}>
       {children}
     </GameContext.Provider>

@@ -22,6 +22,8 @@ import CodexAchievementPanel from './CodexAchievementPanel';
 import './CodexAchievementPanel.css';
 import DungeonPanel from './DungeonPanel';
 import './DungeonPanel.css';
+import MapExplorePanel from './MapExplorePanel';
+import './MapExplorePanel.css';
 
 interface TabConfig {
   id: TabType;
@@ -44,6 +46,7 @@ const tabs: TabConfig[] = [
   { id: 'season', label: '赛季系统', icon: '🏆' },
   { id: 'eventCenter', label: '事件中心', icon: '🎪' },
   { id: 'dormitory', label: '宿舍生活', icon: '🏠' },
+  { id: 'mapExplore', label: '地图探索', icon: '🗺️' },
   { id: 'settlement', label: '资源结算', icon: '💰' },
   { id: 'records', label: '经营记录', icon: '📊' },
   { id: 'settings', label: '设置存档', icon: '⚙️' },
@@ -160,6 +163,7 @@ export default function MainLayout() {
         {activeTab === 'eventCenter' && <EventCenterPanel />}
         {activeTab === 'kingdomCommission' && <KingdomCommissionPanel />}
         {activeTab === 'dormitory' && <DormitoryPanel />}
+        {activeTab === 'mapExplore' && <MapExplorePanel />}
         {activeTab === 'settlement' && <SettlementModule setConfirmDialog={setConfirmDialog} />}
         {activeTab === 'records' && <RecordsModule />}
         {activeTab === 'settings' && <SettingsModule />}

@@ -314,7 +314,7 @@ export interface DormitoryState {
   avgStamina: number;
 }
 
-export const CURRENT_SAVE_VERSION = 15;
+export const CURRENT_SAVE_VERSION = 16;
 
 export type MentorQuality = 'common' | 'rare' | 'epic' | 'legendary';
 export type MentorRank = 'novice' | 'apprentice' | 'journeyman' | 'expert' | 'master' | 'grandmaster';
@@ -887,6 +887,169 @@ export interface AlchemyState {
   craftingSlots: number;
 }
 
+export type MapAreaId =
+  | 'central_plaza' | 'magic_forest' | 'crystal_cave' | 'ancient_ruins'
+  | 'flame_peak' | 'tide_shore' | 'wind_highland' | 'shadow_valley'
+  | 'light_sanctum' | 'abyss_gate' | 'star_tower' | 'dragon_ridge';
+
+export type MapAreaRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+export type MapAreaStatus = 'locked' | 'unlocked' | 'explored' | 'mastered';
+export type MapEventCategory = 'encounter' | 'discovery' | 'danger' | 'treasure' | 'npc' | 'course_material';
+export type GatheringNodeType = 'herb' | 'crystal' | 'essence' | 'ore' | 'artifact';
+export type RouteType = 'safe' | 'normal' | 'dangerous' | 'hidden';
+
+export interface MapAreaUnlockCondition {
+  minReputation: number;
+  minDay: number;
+  minStudentCount: number;
+  requiredAreaId?: MapAreaId;
+  requiredBuildingId?: string;
+  requiredBuildingLevel?: number;
+  cost: Partial<Resource>;
+}
+
+export interface MapAreaFeature {
+  type: 'gathering' | 'event' | 'course_material' | 'dungeon_entrance' | 'npc';
+  name: string;
+  icon: string;
+  description: string;
+  relatedId?: string;
+}
+
+export interface MapGatheringNode {
+  id: string;
+  areaId: MapAreaId;
+  name: string;
+  icon: string;
+  type: GatheringNodeType;
+  rarity: MapAreaRarity;
+  staminaCost: number;
+  rewards: Partial<Resource>;
+  materialDrops: { materialId: string; quantity: number; probability: number }[];
+  cooldown: number;
+  currentCooldown: number;
+  lastGatheredDay: number;
+}
+
+export interface MapExploreEventDef {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  category: MapEventCategory;
+  rarity: MapAreaRarity;
+  areaId: MapAreaId;
+  choices: MapExploreEventChoice[];
+  minDay: number;
+  weight: number;
+  cooldown: number;
+  lastTriggeredDay: number;
+  requiresMagicType?: MagicType;
+  courseMaterialId?: string;
+  dungeonEntranceId?: string;
+}
+
+export interface MapExploreEventChoice {
+  id: string;
+  text: string;
+  description: string;
+  resourceChange: Partial<Resource>;
+  moraleChange?: number;
+  staminaChange?: number;
+  expReward?: number;
+  materialReward?: { materialId: string; quantity: number };
+  courseMaterialUnlock?: string;
+  dungeonUnlock?: string;
+  riskProbability?: number;
+  riskResourceLoss?: Partial<Resource>;
+  riskMoraleLoss?: number;
+  riskStaminaLoss?: number;
+  outcomeText: string;
+  riskOutcomeText?: string;
+}
+
+export interface MapExploreEventInstance {
+  id: string;
+  eventId: string;
+  areaId: MapAreaId;
+  day: number;
+  choiceId: string | null;
+  resolved: boolean;
+  wasRiskTriggered: boolean;
+  resourceChange: Partial<Resource>;
+  moraleChange: number;
+  staminaChange: number;
+  outcomeText: string;
+}
+
+export interface MapRoute {
+  id: string;
+  fromAreaId: MapAreaId;
+  toAreaId: MapAreaId;
+  name: string;
+  type: RouteType;
+  staminaCost: number;
+  travelTime: number;
+  rewards: Partial<Resource>;
+  dangerLevel: number;
+  discovered: boolean;
+  travelCount: number;
+  lastTravelDay: number;
+  bonusRewards?: Partial<Resource>;
+  bonusTriggerChance: number;
+}
+
+export interface MapArea {
+  id: MapAreaId;
+  name: string;
+  icon: string;
+  description: string;
+  rarity: MapAreaRarity;
+  status: MapAreaStatus;
+  unlockCondition: MapAreaUnlockCondition;
+  features: MapAreaFeature[];
+  exploreStaminaCost: number;
+  exploreEventChance: number;
+  exploreCount: number;
+  lastExploreDay: number;
+  masteryProgress: number;
+  masteryThreshold: number;
+  explorationYield: Partial<Resource>;
+  discoveredRoutes: string[];
+  courseMaterialBonus: number;
+  dungeonEntrances: string[];
+}
+
+export interface MapExploreStats {
+  totalExplores: number;
+  totalEventsTriggered: number;
+  totalGatheringActions: number;
+  totalRoutesTraveled: number;
+  totalResourceGained: Resource;
+  totalResourceLost: Resource;
+  areasUnlocked: number;
+  areasMastered: number;
+  eventsByCategory: Record<MapEventCategory, number>;
+  risksTriggered: number;
+  risksAvoided: number;
+  gatheringByType: Record<GatheringNodeType, number>;
+}
+
+export interface MapExploreState {
+  unlocked: boolean;
+  areas: MapArea[];
+  gatheringNodes: MapGatheringNode[];
+  events: MapExploreEventDef[];
+  routes: MapRoute[];
+  eventHistory: MapExploreEventInstance[];
+  currentAreaId: MapAreaId | null;
+  currentEvent: MapExploreEventDef | null;
+  stats: MapExploreStats;
+  dailyExploresUsed: number;
+  maxDailyExplores: number;
+  lastDailyResetDay: number;
+}
+
 export interface GameState {
   saveVersion: number;
   resources: Resource;
@@ -920,6 +1083,7 @@ export interface GameState {
   dormitory: DormitoryState;
   codex: CodexState;
   achievement: AchievementState;
+  mapExplore: MapExploreState;
 }
 
 export interface CourseBenefitBreakdown {
@@ -941,7 +1105,7 @@ export interface CourseBenefitBreakdown {
   potionSpeedBoost: number;
 }
 
-export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade' | 'alchemy' | 'eventCenter' | 'kingdomCommission' | 'dormitory' | 'codex';
+export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade' | 'alchemy' | 'eventCenter' | 'kingdomCommission' | 'dormitory' | 'codex' | 'mapExplore';
 
 export type CommissionType = 'course_training' | 'dungeon_dispatch' | 'resource_delivery' | 'comprehensive';
 export type CommissionDifficulty = 'easy' | 'normal' | 'hard' | 'epic' | 'legendary';
@@ -1111,7 +1275,8 @@ export interface EventCenterState {
 
 export interface DailyEvent {
   type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning' | 'course_queued' | 'course_started' | 'queue_empty' | 'course_conflict' | 'hp_heal' | 'hp_natural_recovery' | 'battle_injury' | 'cannot_battle_injured' | 'club_task_complete' | 'club_joined' | 'club_shop_purchase' | 'club_level_up' | 'club_reputation_gain' | 'trade_order_placed' | 'trade_order_completed' | 'trade_shipment_arrived' | 'trade_price_changed' | 'trade_shipment_risk' | 'trade_harbor_upgrade' | 'mentor_recruited' | 'mentor_level_up' | 'mentor_rank_up' | 'mentor_assigned' | 'mentor_specialization_up' | 'academy_level_up' | 'mentor_salary_paid' | 'student_promoted' | 'alchemy_craft_complete' | 'alchemy_material_synthesized' | 'alchemy_potion_used' | 'alchemy_potion_sold' | 'alchemy_workshop_upgraded' | 'alchemy_recipe_unlocked' | 'event_center_triggered' | 'event_center_resolved' | 'event_center_risk'
-  | 'dormitory_event' | 'dormitory_relationship_up' | 'dormitory_room_assigned' | 'dormitory_rest_activity' | 'dormitory_bonus_applied';
+  | 'dormitory_event' | 'dormitory_relationship_up' | 'dormitory_room_assigned' | 'dormitory_rest_activity' | 'dormitory_bonus_applied'
+  | 'map_area_unlocked' | 'map_explore_event' | 'map_gathering' | 'map_route_traveled' | 'map_mastery_achieved';
   message: string;
   value?: number;
   studentId?: string;

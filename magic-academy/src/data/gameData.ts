@@ -1,4 +1,4 @@
-import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState, KingdomCommission, CommissionStage, CommissionType, CommissionDifficulty, CommissionStageType, CommissionRankInfo, KingdomCommissionState, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, RestActivity, DormitoryEventDef, DormitoryEventInstance, StudentCodexEntry, SkillCodexEntry, CodexState, CodexStats, CodexCategory, Achievement, AchievementState, AchievementType, AchievementRarity, Title } from '../types/game';
+import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState, ActivePotionBuff, AcademyEventDefinition, AcademyEventRarity, AcademyEventCategory, EventCenterState, KingdomCommission, CommissionStage, CommissionType, CommissionDifficulty, CommissionStageType, CommissionRankInfo, KingdomCommissionState, DormitoryState, DormitoryRoom, StudentRelationship, RelationshipLevel, RestActivity, DormitoryEventDef, DormitoryEventInstance, StudentCodexEntry, SkillCodexEntry, CodexState, CodexStats, CodexCategory, Achievement, AchievementState, AchievementType, AchievementRarity, Title, MapAreaId, MapAreaRarity, MapAreaStatus, MapArea, MapGatheringNode, MapExploreEventDef, MapExploreEventChoice, MapRoute, MapAreaFeature, MapExploreState, MapEventCategory, GatheringNodeType, RouteType } from '../types/game';
 import {
   HP_BATTLE_THRESHOLD,
   HP_COURSE_EFFICIENCY_THRESHOLD,
@@ -6938,4 +6938,716 @@ export const unlockTitle = (titles: Title[], titleId: string, day: number): Titl
 export const equipTitle = (titles: Title[], titleId: string | null): { titles: Title[]; equippedTitleId: string | null } => {
   const updatedTitles = titles.map(t => ({ ...t, equipped: t.id === titleId }));
   return { titles: updatedTitles, equippedTitleId: titleId };
+};
+
+export const MAP_AREA_RARITY_COLORS: Record<MapAreaRarity, string> = {
+  common: '#9e9e9e',
+  uncommon: '#4CAF50',
+  rare: '#2196F3',
+  epic: '#9C27B0',
+  legendary: '#FF9800',
+};
+
+export const MAP_AREA_RARITY_NAMES: Record<MapAreaRarity, string> = {
+  common: '普通',
+  uncommon: '优良',
+  rare: '稀有',
+  epic: '史诗',
+  legendary: '传说',
+};
+
+export const MAP_AREA_STATUS_NAMES: Record<MapAreaStatus, string> = {
+  locked: '未解锁',
+  unlocked: '已解锁',
+  explored: '已探索',
+  mastered: '已精通',
+};
+
+export const MAP_EVENT_CATEGORY_ICONS: Record<MapEventCategory, string> = {
+  encounter: '👥',
+  discovery: '🔍',
+  danger: '⚠️',
+  treasure: '💎',
+  npc: '🧙',
+  course_material: '📜',
+};
+
+export const MAP_EVENT_CATEGORY_NAMES: Record<MapEventCategory, string> = {
+  encounter: '遭遇',
+  discovery: '发现',
+  danger: '危险',
+  treasure: '宝藏',
+  npc: 'NPC',
+  course_material: '课程素材',
+};
+
+export const GATHERING_NODE_TYPE_ICONS: Record<GatheringNodeType, string> = {
+  herb: '🌿',
+  crystal: '💎',
+  essence: '✨',
+  ore: '⛏️',
+  artifact: '🏺',
+};
+
+export const GATHERING_NODE_TYPE_NAMES: Record<GatheringNodeType, string> = {
+  herb: '草药',
+  crystal: '水晶',
+  essence: '精华',
+  ore: '矿石',
+  artifact: '遗物',
+};
+
+export const ROUTE_TYPE_NAMES: Record<RouteType, string> = {
+  safe: '安全路线',
+  normal: '常规路线',
+  dangerous: '危险路线',
+  hidden: '隐藏路线',
+};
+
+export const ROUTE_TYPE_COLORS: Record<RouteType, string> = {
+  safe: '#4CAF50',
+  normal: '#2196F3',
+  dangerous: '#f44336',
+  hidden: '#9C27B0',
+};
+
+const INITIAL_MAP_AREAS: MapArea[] = [
+  {
+    id: 'central_plaza',
+    name: '中央广场',
+    icon: '🏛️',
+    description: '学院的心脏地带，一切冒险的起点。这里人来人往，消息灵通。',
+    rarity: 'common',
+    status: 'unlocked',
+    unlockCondition: { minReputation: 0, minDay: 1, minStudentCount: 0, cost: {} },
+    features: [
+      { type: 'npc', name: '情报商', icon: '🧙', description: '提供各区域情报和探索线索' },
+      { type: 'gathering', name: '广场花园', icon: '🌿', description: '可采集基础草药' },
+    ],
+    exploreStaminaCost: 10,
+    exploreEventChance: 0.3,
+    exploreCount: 0,
+    lastExploreDay: 0,
+    masteryProgress: 0,
+    masteryThreshold: 10,
+    explorationYield: { gold: 20, mana: 10 },
+    discoveredRoutes: [],
+    courseMaterialBonus: 0,
+    dungeonEntrances: [],
+  },
+  {
+    id: 'magic_forest',
+    name: '魔法森林',
+    icon: '🌲',
+    description: '学院外围的神秘森林，蕴含丰富的魔法草药和精灵踪迹。',
+    rarity: 'common',
+    status: 'locked',
+    unlockCondition: { minReputation: 30, minDay: 3, minStudentCount: 2, cost: { gold: 200, mana: 100 } },
+    features: [
+      { type: 'gathering', name: '灵草药圃', icon: '🌿', description: '采集各类魔法草药' },
+      { type: 'event', name: '精灵驻地', icon: '🧝', description: '偶遇森林精灵，获得特殊指引' },
+      { type: 'course_material', name: '自然之书', icon: '📜', description: '获取自然系课程素材' },
+    ],
+    exploreStaminaCost: 15,
+    exploreEventChance: 0.4,
+    exploreCount: 0,
+    lastExploreDay: 0,
+    masteryProgress: 0,
+    masteryThreshold: 15,
+    explorationYield: { gold: 30, mana: 25, food: 10 },
+    discoveredRoutes: [],
+    courseMaterialBonus: 0.1,
+    dungeonEntrances: [],
+  },
+  {
+    id: 'crystal_cave',
+    name: '水晶洞窟',
+    icon: '💎',
+    description: '闪烁着各色光芒的地下洞窟，魔力水晶的天然产地。',
+    rarity: 'uncommon',
+    status: 'locked',
+    unlockCondition: { minReputation: 80, minDay: 5, minStudentCount: 3, cost: { gold: 400, mana: 250, food: 30 }, requiredAreaId: 'magic_forest' },
+    features: [
+      { type: 'gathering', name: '水晶矿脉', icon: '💎', description: '采集魔力水晶和稀有矿石' },
+      { type: 'event', name: '洞窟回声', icon: '🔊', description: '聆听古老的魔力回响' },
+      { type: 'course_material', name: '元素晶典', icon: '📜', description: '获取元素系课程素材' },
+    ],
+    exploreStaminaCost: 20,
+    exploreEventChance: 0.45,
+    exploreCount: 0,
+    lastExploreDay: 0,
+    masteryProgress: 0,
+    masteryThreshold: 20,
+    explorationYield: { gold: 50, mana: 60 },
+    discoveredRoutes: [],
+    courseMaterialBonus: 0.15,
+    dungeonEntrances: [],
+  },
+  {
+    id: 'ancient_ruins',
+    name: '古代遗迹',
+    icon: '🏚️',
+    description: '远古魔法文明的遗存，隐藏着被遗忘的知识和宝藏。',
+    rarity: 'rare',
+    status: 'locked',
+    unlockCondition: { minReputation: 150, minDay: 10, minStudentCount: 5, cost: { gold: 800, mana: 400, reputation: 20 }, requiredAreaId: 'crystal_cave', requiredBuildingId: 'library', requiredBuildingLevel: 3 },
+    features: [
+      { type: 'gathering', name: '遗物发掘', icon: '🏺', description: '发掘古代魔法遗物' },
+      { type: 'event', name: '遗迹守护者', icon: '👻', description: '与古代守卫对话或战斗' },
+      { type: 'course_material', name: '远古典籍', icon: '📜', description: '获取高级课程素材' },
+      { type: 'dungeon_entrance', name: '遗迹深处', icon: '⚔️', description: '通往古代遗迹副本', relatedId: 'ancient_ruins' },
+    ],
+    exploreStaminaCost: 25,
+    exploreEventChance: 0.5,
+    exploreCount: 0,
+    lastExploreDay: 0,
+    masteryProgress: 0,
+    masteryThreshold: 25,
+    explorationYield: { gold: 80, mana: 100, reputation: 5 },
+    discoveredRoutes: [],
+    courseMaterialBonus: 0.2,
+    dungeonEntrances: ['ancient_ruins'],
+  },
+  {
+    id: 'flame_peak',
+    name: '烈焰峰',
+    icon: '🌋',
+    description: '活火山地带，火元素浓度极高，适合火系修炼。',
+    rarity: 'uncommon',
+    status: 'locked',
+    unlockCondition: { minReputation: 100, minDay: 7, minStudentCount: 3, cost: { gold: 500, mana: 300 }, requiredAreaId: 'magic_forest' },
+    features: [
+      { type: 'gathering', name: '火焰精华', icon: '🔥', description: '采集火元素精华' },
+      { type: 'event', name: '火焰试炼', icon: '⚡', description: '接受火焰的考验' },
+      { type: 'course_material', name: '炎之秘卷', icon: '📜', description: '获取火系课程素材' },
+    ],
+    exploreStaminaCost: 20,
+    exploreEventChance: 0.4,
+    exploreCount: 0,
+    lastExploreDay: 0,
+    masteryProgress: 0,
+    masteryThreshold: 20,
+    explorationYield: { gold: 40, mana: 50 },
+    discoveredRoutes: [],
+    courseMaterialBonus: 0.2,
+    dungeonEntrances: [],
+  },
+  {
+    id: 'tide_shore',
+    name: '潮汐海岸',
+    icon: '🌊',
+    description: '被潮汐魔法笼罩的海岸，水元素汇聚之地。',
+    rarity: 'uncommon',
+    status: 'locked',
+    unlockCondition: { minReputation: 100, minDay: 7, minStudentCount: 3, cost: { gold: 500, mana: 300 }, requiredAreaId: 'magic_forest' },
+    features: [
+      { type: 'gathering', name: '海灵珍珠', icon: '🫧', description: '采集水元素珍珠' },
+      { type: 'event', name: '深海来客', icon: '🐙', description: '与深海住民交流' },
+      { type: 'course_material', name: '潮汐典录', icon: '📜', description: '获取水系课程素材' },
+    ],
+    exploreStaminaCost: 20,
+    exploreEventChance: 0.4,
+    exploreCount: 0,
+    lastExploreDay: 0,
+    masteryProgress: 0,
+    masteryThreshold: 20,
+    explorationYield: { gold: 40, mana: 50, food: 20 },
+    discoveredRoutes: [],
+    courseMaterialBonus: 0.2,
+    dungeonEntrances: [],
+  },
+  {
+    id: 'wind_highland',
+    name: '疾风高地',
+    icon: '🏔️',
+    description: '狂风呼啸的高地，风系修行的绝佳场所。',
+    rarity: 'rare',
+    status: 'locked',
+    unlockCondition: { minReputation: 200, minDay: 12, minStudentCount: 5, cost: { gold: 700, mana: 400, reputation: 15 }, requiredAreaId: 'flame_peak' },
+    features: [
+      { type: 'gathering', name: '风灵羽毛', icon: '🪶', description: '采集风元素结晶' },
+      { type: 'event', name: '风暴之眼', icon: '🌪️', description: '在风暴中心获得启示' },
+      { type: 'course_material', name: '风行手札', icon: '📜', description: '获取风系课程素材' },
+    ],
+    exploreStaminaCost: 22,
+    exploreEventChance: 0.45,
+    exploreCount: 0,
+    lastExploreDay: 0,
+    masteryProgress: 0,
+    masteryThreshold: 22,
+    explorationYield: { gold: 60, mana: 70 },
+    discoveredRoutes: [],
+    courseMaterialBonus: 0.2,
+    dungeonEntrances: [],
+  },
+  {
+    id: 'shadow_valley',
+    name: '暗影谷',
+    icon: '🌑',
+    description: '永夜笼罩的幽暗峡谷，暗影力量的源头。',
+    rarity: 'rare',
+    status: 'locked',
+    unlockCondition: { minReputation: 250, minDay: 15, minStudentCount: 6, cost: { gold: 900, mana: 500, reputation: 25 }, requiredAreaId: 'crystal_cave' },
+    features: [
+      { type: 'gathering', name: '暗影之花', icon: '🌑', description: '采集暗元素凝聚体' },
+      { type: 'event', name: '暗影低语', icon: '👁️', description: '倾听暗影的秘密' },
+      { type: 'course_material', name: '暗之密典', icon: '📜', description: '获取暗系课程素材' },
+      { type: 'dungeon_entrance', name: '暗影裂缝', icon: '⚔️', description: '通往黑暗森林副本', relatedId: 'dark_forest' },
+    ],
+    exploreStaminaCost: 25,
+    exploreEventChance: 0.5,
+    exploreCount: 0,
+    lastExploreDay: 0,
+    masteryProgress: 0,
+    masteryThreshold: 25,
+    explorationYield: { gold: 70, mana: 90, reputation: 3 },
+    discoveredRoutes: [],
+    courseMaterialBonus: 0.25,
+    dungeonEntrances: ['dark_forest'],
+  },
+  {
+    id: 'light_sanctum',
+    name: '光明圣域',
+    icon: '☀️',
+    description: '神圣光辉笼罩的圣地，光明魔法的源泉。',
+    rarity: 'epic',
+    status: 'locked',
+    unlockCondition: { minReputation: 400, minDay: 20, minStudentCount: 8, cost: { gold: 1500, mana: 800, reputation: 50 }, requiredAreaId: 'wind_highland', requiredBuildingId: 'light_temple', requiredBuildingLevel: 3 },
+    features: [
+      { type: 'gathering', name: '圣光碎片', icon: '✨', description: '采集光元素结晶' },
+      { type: 'event', name: '圣域审判', icon: '⚖️', description: '接受光明的审判与赐福' },
+      { type: 'course_material', name: '光之圣典', icon: '📜', description: '获取光系课程素材' },
+    ],
+    exploreStaminaCost: 30,
+    exploreEventChance: 0.55,
+    exploreCount: 0,
+    lastExploreDay: 0,
+    masteryProgress: 0,
+    masteryThreshold: 30,
+    explorationYield: { gold: 100, mana: 120, reputation: 8 },
+    discoveredRoutes: [],
+    courseMaterialBonus: 0.3,
+    dungeonEntrances: [],
+  },
+  {
+    id: 'abyss_gate',
+    name: '深渊之门',
+    icon: '🕳️',
+    description: '连接异界的裂缝，极度危险但蕴藏无上力量。',
+    rarity: 'epic',
+    status: 'locked',
+    unlockCondition: { minReputation: 500, minDay: 25, minStudentCount: 10, cost: { gold: 2000, mana: 1200, reputation: 80 }, requiredAreaId: 'shadow_valley' },
+    features: [
+      { type: 'gathering', name: '虚空碎片', icon: '🌀', description: '采集虚空能量碎片' },
+      { type: 'event', name: '异界入侵', icon: '👾', description: '抵御异界生物的入侵' },
+      { type: 'dungeon_entrance', name: '深渊裂隙', icon: '⚔️', description: '通往巨龙巢穴副本', relatedId: 'dragon_lair' },
+    ],
+    exploreStaminaCost: 35,
+    exploreEventChance: 0.6,
+    exploreCount: 0,
+    lastExploreDay: 0,
+    masteryProgress: 0,
+    masteryThreshold: 35,
+    explorationYield: { gold: 150, mana: 180, reputation: 10 },
+    discoveredRoutes: [],
+    courseMaterialBonus: 0.3,
+    dungeonEntrances: ['dragon_lair'],
+  },
+  {
+    id: 'star_tower',
+    name: '星辰塔',
+    icon: '🗼',
+    description: '传说中观星者建造的高塔，可窥探命运与时间。',
+    rarity: 'legendary',
+    status: 'locked',
+    unlockCondition: { minReputation: 800, minDay: 35, minStudentCount: 12, cost: { gold: 3000, mana: 2000, reputation: 150 }, requiredAreaId: 'light_sanctum', requiredBuildingId: 'library', requiredBuildingLevel: 5 },
+    features: [
+      { type: 'gathering', name: '星辰碎片', icon: '⭐', description: '采集蕴含命运力量的星辰碎片' },
+      { type: 'event', name: '命运交汇', icon: '🔮', description: '见证命运的交汇点' },
+      { type: 'course_material', name: '星辉全书', icon: '📜', description: '获取全系课程素材' },
+    ],
+    exploreStaminaCost: 40,
+    exploreEventChance: 0.65,
+    exploreCount: 0,
+    lastExploreDay: 0,
+    masteryProgress: 0,
+    masteryThreshold: 40,
+    explorationYield: { gold: 200, mana: 250, reputation: 15 },
+    discoveredRoutes: [],
+    courseMaterialBonus: 0.5,
+    dungeonEntrances: [],
+  },
+  {
+    id: 'dragon_ridge',
+    name: '龙脊山脉',
+    icon: '🐉',
+    description: '远古巨龙的栖息之地，最危险的探索区域。',
+    rarity: 'legendary',
+    status: 'locked',
+    unlockCondition: { minReputation: 1000, minDay: 40, minStudentCount: 15, cost: { gold: 5000, mana: 3000, food: 200, reputation: 200 }, requiredAreaId: 'abyss_gate' },
+    features: [
+      { type: 'gathering', name: '龙鳞碎片', icon: '🦎', description: '采集龙鳞与龙血结晶' },
+      { type: 'event', name: '龙之试炼', icon: '🐉', description: '面对巨龙的最终考验' },
+      { type: 'dungeon_entrance', name: '龙巢深处', icon: '⚔️', description: '通往终极副本', relatedId: 'dragon_lair' },
+    ],
+    exploreStaminaCost: 50,
+    exploreEventChance: 0.7,
+    exploreCount: 0,
+    lastExploreDay: 0,
+    masteryProgress: 0,
+    masteryThreshold: 50,
+    explorationYield: { gold: 300, mana: 350, reputation: 20 },
+    discoveredRoutes: [],
+    courseMaterialBonus: 0.5,
+    dungeonEntrances: ['dragon_lair'],
+  },
+];
+
+const INITIAL_MAP_GATHERING_NODES: MapGatheringNode[] = [
+  { id: 'gather_plaza_herb', areaId: 'central_plaza', name: '广场花园草药', icon: '🌿', type: 'herb', rarity: 'common', staminaCost: 5, rewards: { gold: 10, mana: 5 }, materialDrops: [{ materialId: 'herb_grass', quantity: 2, probability: 0.8 }], cooldown: 1, currentCooldown: 0, lastGatheredDay: 0 },
+  { id: 'gather_forest_herb', areaId: 'magic_forest', name: '灵草药圃', icon: '🌿', type: 'herb', rarity: 'uncommon', staminaCost: 10, rewards: { gold: 20, mana: 15 }, materialDrops: [{ materialId: 'herb_grass', quantity: 3, probability: 0.7 }, { materialId: 'moon_dew', quantity: 1, probability: 0.4 }], cooldown: 2, currentCooldown: 0, lastGatheredDay: 0 },
+  { id: 'gather_forest_essence', areaId: 'magic_forest', name: '森林精华', icon: '✨', type: 'essence', rarity: 'uncommon', staminaCost: 12, rewards: { mana: 25 }, materialDrops: [{ materialId: 'essence_gale', quantity: 1, probability: 0.5 }], cooldown: 2, currentCooldown: 0, lastGatheredDay: 0 },
+  { id: 'gather_cave_crystal', areaId: 'crystal_cave', name: '水晶矿脉', icon: '💎', type: 'crystal', rarity: 'rare', staminaCost: 15, rewards: { gold: 40, mana: 30 }, materialDrops: [{ materialId: 'crystal_pure', quantity: 1, probability: 0.6 }, { materialId: 'crystal_fused', quantity: 1, probability: 0.3 }], cooldown: 3, currentCooldown: 0, lastGatheredDay: 0 },
+  { id: 'gather_flame_ore', areaId: 'flame_peak', name: '火焰精华', icon: '🔥', type: 'ore', rarity: 'uncommon', staminaCost: 12, rewards: { gold: 30, mana: 20 }, materialDrops: [{ materialId: 'fire_ash', quantity: 2, probability: 0.7 }, { materialId: 'essence_flame', quantity: 1, probability: 0.35 }], cooldown: 2, currentCooldown: 0, lastGatheredDay: 0 },
+  { id: 'gather_tide_essence', areaId: 'tide_shore', name: '海灵精华', icon: '🫧', type: 'essence', rarity: 'uncommon', staminaCost: 12, rewards: { mana: 30, food: 10 }, materialDrops: [{ materialId: 'essence_tide', quantity: 1, probability: 0.4 }], cooldown: 2, currentCooldown: 0, lastGatheredDay: 0 },
+  { id: 'gather_wind_crystal', areaId: 'wind_highland', name: '风灵结晶', icon: '🪶', type: 'crystal', rarity: 'rare', staminaCost: 18, rewards: { gold: 50, mana: 40 }, materialDrops: [{ materialId: 'wind_leaf', quantity: 2, probability: 0.6 }, { materialId: 'essence_gale', quantity: 1, probability: 0.5 }], cooldown: 3, currentCooldown: 0, lastGatheredDay: 0 },
+  { id: 'gather_shadow_artifact', areaId: 'shadow_valley', name: '暗影遗物', icon: '🏺', type: 'artifact', rarity: 'rare', staminaCost: 20, rewards: { gold: 60, mana: 50, reputation: 3 }, materialDrops: [{ materialId: 'dark_spore', quantity: 2, probability: 0.5 }, { materialId: 'star_dust', quantity: 1, probability: 0.2 }], cooldown: 4, currentCooldown: 0, lastGatheredDay: 0 },
+  { id: 'gather_light_crystal', areaId: 'light_sanctum', name: '圣光结晶', icon: '✨', type: 'crystal', rarity: 'epic', staminaCost: 25, rewards: { gold: 80, mana: 70, reputation: 5 }, materialDrops: [{ materialId: 'light_petal', quantity: 2, probability: 0.5 }, { materialId: 'essence_radiance', quantity: 1, probability: 0.35 }], cooldown: 4, currentCooldown: 0, lastGatheredDay: 0 },
+  { id: 'gather_abyss_artifact', areaId: 'abyss_gate', name: '虚空遗物', icon: '🌀', type: 'artifact', rarity: 'epic', staminaCost: 30, rewards: { gold: 120, mana: 100, reputation: 8 }, materialDrops: [{ materialId: 'essence_void', quantity: 1, probability: 0.4 }, { materialId: 'dragon_blood', quantity: 1, probability: 0.2 }], cooldown: 5, currentCooldown: 0, lastGatheredDay: 0 },
+  { id: 'gather_star_shard', areaId: 'star_tower', name: '星辰碎片', icon: '⭐', type: 'crystal', rarity: 'legendary', staminaCost: 35, rewards: { gold: 180, mana: 150, reputation: 12 }, materialDrops: [{ materialId: 'star_dust', quantity: 2, probability: 0.5 }, { materialId: 'phoenix_feather_dust', quantity: 1, probability: 0.25 }], cooldown: 5, currentCooldown: 0, lastGatheredDay: 0 },
+  { id: 'gather_dragon_scale', areaId: 'dragon_ridge', name: '龙鳞结晶', icon: '🦎', type: 'ore', rarity: 'legendary', staminaCost: 40, rewards: { gold: 250, mana: 200, reputation: 15 }, materialDrops: [{ materialId: 'dragon_blood', quantity: 1, probability: 0.4 }, { materialId: 'star_dust', quantity: 1, probability: 0.3 }, { materialId: 'phoenix_feather_dust', quantity: 1, probability: 0.15 }], cooldown: 7, currentCooldown: 0, lastGatheredDay: 0 },
+];
+
+const INITIAL_MAP_EVENTS: MapExploreEventDef[] = [
+  {
+    id: 'map_evt_wandering_merchant',
+    name: '流浪商人',
+    icon: '🧳',
+    description: '一位神秘的流浪商人出现在你面前，兜售着稀奇古怪的物品。',
+    category: 'npc',
+    rarity: 'common',
+    areaId: 'central_plaza',
+    choices: [
+      { id: 'buy', text: '购买商品', description: '花费金币购买神秘商品', resourceChange: { gold: -50 }, materialReward: { materialId: 'herb_grass', quantity: 3 }, outcomeText: '商人满意地离开了，你获得了一些稀有草药。' },
+      { id: 'trade', text: '以物易物', description: '用魔力水晶交换商品', resourceChange: { mana: -30 }, materialReward: { materialId: 'moon_dew', quantity: 1 }, outcomeText: '交换完成，你得到了月露。' },
+      { id: 'refuse', text: '礼貌拒绝', description: '不购买任何东西', resourceChange: {}, outcomeText: '商人微笑着离开了。' },
+    ],
+    minDay: 1,
+    weight: 30,
+    cooldown: 3,
+    lastTriggeredDay: 0,
+  },
+  {
+    id: 'map_evt_forest_spirit',
+    name: '森林精灵',
+    icon: '🧝',
+    description: '一只森林精灵向你招手，似乎想带你去看什么。',
+    category: 'encounter',
+    rarity: 'uncommon',
+    areaId: 'magic_forest',
+    choices: [
+      { id: 'follow', text: '跟随精灵', description: '跟着精灵深入森林', resourceChange: { mana: 30 }, moraleChange: 5, expReward: 20, courseMaterialUnlock: 'fire_magic', riskProbability: 0.2, riskResourceLoss: { stamina: 15 }, riskStaminaLoss: 10, outcomeText: '精灵带你发现了一处隐藏的魔力泉眼！', riskOutcomeText: '精灵的恶作剧让你在森林中迷路了！' },
+      { id: 'watch', text: '远远观察', description: '保持距离观察精灵', resourceChange: { mana: 10 }, outcomeText: '你观察到精灵在施展一种古老的自然魔法。' },
+    ],
+    minDay: 3,
+    weight: 20,
+    cooldown: 5,
+    lastTriggeredDay: 0,
+  },
+  {
+    id: 'map_evt_cave_echo',
+    name: '洞窟回声',
+    icon: '🔊',
+    description: '洞窟深处传来奇异的回声，似乎在低语着古老的咒文。',
+    category: 'discovery',
+    rarity: 'rare',
+    areaId: 'crystal_cave',
+    choices: [
+      { id: 'listen', text: '聆听咒文', description: '全神贯注地聆听回声', resourceChange: { mana: 50 }, expReward: 50, courseMaterialUnlock: 'earth_magic', riskProbability: 0.3, riskResourceLoss: { mana: -20 }, riskMoraleLoss: -10, outcomeText: '你领悟了远古魔法的碎片！', riskOutcomeText: '强大的回声震得你头晕目眩！' },
+      { id: 'record', text: '记录回声', description: '用魔法笔记记录下来', resourceChange: { mana: 20 }, outcomeText: '你记录下了回声的片段，也许日后有用。' },
+    ],
+    minDay: 7,
+    weight: 15,
+    cooldown: 7,
+    lastTriggeredDay: 0,
+    requiresMagicType: 'earth',
+  },
+  {
+    id: 'map_evt_flame_trial',
+    name: '火焰试炼',
+    icon: '🔥',
+    description: '一堵火焰墙挡住了去路，只有通过试炼才能继续前进。',
+    category: 'danger',
+    rarity: 'uncommon',
+    areaId: 'flame_peak',
+    choices: [
+      { id: 'challenge', text: '接受试炼', description: '直面火焰的考验', resourceChange: { gold: 40, mana: 30 }, expReward: 30, courseMaterialUnlock: 'fire_magic', riskProbability: 0.35, riskResourceLoss: {}, riskStaminaLoss: 20, outcomeText: '你成功穿越了火焰墙，获得了火元素的认可！', riskOutcomeText: '火焰灼伤了你，体力大量消耗！' },
+      { id: 'detour', text: '绕道而行', description: '寻找其他路径', resourceChange: { gold: 10 }, outcomeText: '你找到了一条绕行路线，虽然远了些但安全。' },
+    ],
+    minDay: 5,
+    weight: 20,
+    cooldown: 5,
+    lastTriggeredDay: 0,
+    requiresMagicType: 'fire',
+  },
+  {
+    id: 'map_evt_treasure_chest',
+    name: '隐秘宝箱',
+    icon: '💎',
+    description: '你在角落发现了一个被魔法封印的宝箱。',
+    category: 'treasure',
+    rarity: 'rare',
+    areaId: 'ancient_ruins',
+    choices: [
+      { id: 'open', text: '尝试开锁', description: '用魔力解除封印', resourceChange: { gold: 100, mana: 80, reputation: 5 }, expReward: 40, riskProbability: 0.25, riskResourceLoss: { mana: -30 }, riskMoraleLoss: -5, outcomeText: '宝箱中藏有丰厚的宝藏！', riskOutcomeText: '封印反噬，你损失了一些魔力！' },
+      { id: 'examine', text: '仔细研究', description: '先研究封印再决定', resourceChange: { gold: 30, mana: 20 }, outcomeText: '你小心地取出了部分财宝。' },
+    ],
+    minDay: 10,
+    weight: 15,
+    cooldown: 7,
+    lastTriggeredDay: 0,
+  },
+  {
+    id: 'map_evt_dark_whisper',
+    name: '暗影低语',
+    icon: '👁️',
+    description: '黑暗中传来低沉的呢喃，似乎在引诱你走向更深处。',
+    category: 'danger',
+    rarity: 'rare',
+    areaId: 'shadow_valley',
+    choices: [
+      { id: 'embrace', text: '接受暗影', description: '让暗影力量流入体内', resourceChange: { mana: 80, reputation: 10 }, expReward: 60, courseMaterialUnlock: 'dark_magic', riskProbability: 0.4, riskResourceLoss: {}, riskMoraleLoss: -15, riskStaminaLoss: 15, outcomeText: '暗影赐予你强大的力量！', riskOutcomeText: '暗影侵蚀了你的意志！' },
+      { id: 'resist', text: '抵抗诱惑', description: '用意志力抵抗暗影', resourceChange: { reputation: 5 }, outcomeText: '你成功抵御了暗影的诱惑，获得了内心的平静。' },
+    ],
+    minDay: 15,
+    weight: 12,
+    cooldown: 8,
+    lastTriggeredDay: 0,
+    requiresMagicType: 'dark',
+  },
+  {
+    id: 'map_evt_light_blessing',
+    name: '圣光赐福',
+    icon: '☀️',
+    description: '一束圣光从天而降，光明之神似乎在注视着你。',
+    category: 'discovery',
+    rarity: 'epic',
+    areaId: 'light_sanctum',
+    choices: [
+      { id: 'pray', text: '虔诚祈祷', description: '向光明之神祈求赐福', resourceChange: { gold: 120, mana: 100, reputation: 15 }, moraleChange: 20, expReward: 80, courseMaterialUnlock: 'light_magic', outcomeText: '光明之神降下赐福，你感到力量涌动！' },
+      { id: 'meditate', text: '冥想感受', description: '静心感受圣光的力量', resourceChange: { mana: 50 }, moraleChange: 10, outcomeText: '你在圣光中冥想，获得了内心的宁静。' },
+    ],
+    minDay: 20,
+    weight: 8,
+    cooldown: 10,
+    lastTriggeredDay: 0,
+    requiresMagicType: 'light',
+  },
+  {
+    id: 'map_evt_abyss_rift',
+    name: '异界裂缝',
+    icon: '🌀',
+    description: '空间出现了裂缝，异界的气息从中涌出。',
+    category: 'danger',
+    rarity: 'epic',
+    areaId: 'abyss_gate',
+    choices: [
+      { id: 'seal', text: '尝试封印', description: '用魔力封印裂缝', resourceChange: { gold: 200, mana: 150, reputation: 20 }, expReward: 100, dungeonUnlock: 'dragon_lair', riskProbability: 0.35, riskResourceLoss: { mana: -80 }, riskStaminaLoss: 25, outcomeText: '你成功封印了裂缝，获得了通往深渊的钥匙！', riskOutcomeText: '封印失败，裂缝爆发出强大的能量！' },
+      { id: 'observe', text: '远距离观察', description: '安全距离下研究裂缝', resourceChange: { mana: 30 }, outcomeText: '你记录了裂缝的特征，也许日后能找到封印之法。' },
+    ],
+    minDay: 25,
+    weight: 6,
+    cooldown: 12,
+    lastTriggeredDay: 0,
+  },
+];
+
+const INITIAL_MAP_ROUTES: MapRoute[] = [
+  { id: 'route_plaza_forest', fromAreaId: 'central_plaza', toAreaId: 'magic_forest', name: '林间小径', type: 'safe', staminaCost: 5, travelTime: 0, rewards: { gold: 5, mana: 5 }, dangerLevel: 0.05, discovered: true, travelCount: 0, lastTravelDay: 0, bonusTriggerChance: 0.1, bonusRewards: { mana: 10 } },
+  { id: 'route_forest_cave', fromAreaId: 'magic_forest', toAreaId: 'crystal_cave', name: '矿工古道', type: 'normal', staminaCost: 10, travelTime: 0, rewards: { gold: 15, mana: 10 }, dangerLevel: 0.15, discovered: false, travelCount: 0, lastTravelDay: 0, bonusTriggerChance: 0.15, bonusRewards: { gold: 20 } },
+  { id: 'route_forest_flame', fromAreaId: 'magic_forest', toAreaId: 'flame_peak', name: '烈焰之路', type: 'normal', staminaCost: 10, travelTime: 0, rewards: { gold: 10, mana: 15 }, dangerLevel: 0.15, discovered: false, travelCount: 0, lastTravelDay: 0, bonusTriggerChance: 0.12, bonusRewards: { mana: 20 } },
+  { id: 'route_forest_tide', fromAreaId: 'magic_forest', toAreaId: 'tide_shore', name: '潮汐步道', type: 'normal', staminaCost: 10, travelTime: 0, rewards: { gold: 10, mana: 10, food: 5 }, dangerLevel: 0.1, discovered: false, travelCount: 0, lastTravelDay: 0, bonusTriggerChance: 0.12, bonusRewards: { food: 15 } },
+  { id: 'route_cave_ruins', fromAreaId: 'crystal_cave', toAreaId: 'ancient_ruins', name: '遗迹密道', type: 'dangerous', staminaCost: 15, travelTime: 0, rewards: { gold: 30, mana: 25, reputation: 3 }, dangerLevel: 0.3, discovered: false, travelCount: 0, lastTravelDay: 0, bonusTriggerChance: 0.2, bonusRewards: { reputation: 5 } },
+  { id: 'route_flame_wind', fromAreaId: 'flame_peak', toAreaId: 'wind_highland', name: '天空之桥', type: 'dangerous', staminaCost: 15, travelTime: 0, rewards: { gold: 25, mana: 30 }, dangerLevel: 0.25, discovered: false, travelCount: 0, lastTravelDay: 0, bonusTriggerChance: 0.18, bonusRewards: { mana: 30 } },
+  { id: 'route_cave_shadow', fromAreaId: 'crystal_cave', toAreaId: 'shadow_valley', name: '暗影小径', type: 'dangerous', staminaCost: 18, travelTime: 0, rewards: { gold: 35, mana: 30, reputation: 5 }, dangerLevel: 0.35, discovered: false, travelCount: 0, lastTravelDay: 0, bonusTriggerChance: 0.2, bonusRewards: { reputation: 8 } },
+  { id: 'route_wind_light', fromAreaId: 'wind_highland', toAreaId: 'light_sanctum', name: '升天之路', type: 'dangerous', staminaCost: 20, travelTime: 0, rewards: { gold: 50, mana: 50, reputation: 8 }, dangerLevel: 0.35, discovered: false, travelCount: 0, lastTravelDay: 0, bonusTriggerChance: 0.22, bonusRewards: { reputation: 10 } },
+  { id: 'route_shadow_abyss', fromAreaId: 'shadow_valley', toAreaId: 'abyss_gate', name: '虚空裂隙', type: 'dangerous', staminaCost: 25, travelTime: 0, rewards: { gold: 80, mana: 70, reputation: 10 }, dangerLevel: 0.45, discovered: false, travelCount: 0, lastTravelDay: 0, bonusTriggerChance: 0.25, bonusRewards: { gold: 50, reputation: 5 } },
+  { id: 'route_light_star', fromAreaId: 'light_sanctum', toAreaId: 'star_tower', name: '星光阶梯', type: 'hidden', staminaCost: 30, travelTime: 0, rewards: { gold: 100, mana: 100, reputation: 15 }, dangerLevel: 0.4, discovered: false, travelCount: 0, lastTravelDay: 0, bonusTriggerChance: 0.3, bonusRewards: { mana: 80, reputation: 10 } },
+  { id: 'route_abyss_dragon', fromAreaId: 'abyss_gate', toAreaId: 'dragon_ridge', name: '龙道', type: 'hidden', staminaCost: 40, travelTime: 0, rewards: { gold: 150, mana: 120, reputation: 20 }, dangerLevel: 0.55, discovered: false, travelCount: 0, lastTravelDay: 0, bonusTriggerChance: 0.35, bonusRewards: { gold: 100, reputation: 15 } },
+];
+
+export const INITIAL_MAP_EXPLORE_STATE: MapExploreState = {
+  unlocked: false,
+  areas: INITIAL_MAP_AREAS.map(a => ({ ...a })),
+  gatheringNodes: INITIAL_MAP_GATHERING_NODES.map(n => ({ ...n })),
+  events: INITIAL_MAP_EVENTS.map(e => ({ ...e })),
+  routes: INITIAL_MAP_ROUTES.map(r => ({ ...r })),
+  eventHistory: [],
+  currentAreaId: null,
+  currentEvent: null,
+  stats: {
+    totalExplores: 0,
+    totalEventsTriggered: 0,
+    totalGatheringActions: 0,
+    totalRoutesTraveled: 0,
+    totalResourceGained: { gold: 0, mana: 0, food: 0, reputation: 0 },
+    totalResourceLost: { gold: 0, mana: 0, food: 0, reputation: 0 },
+    areasUnlocked: 1,
+    areasMastered: 0,
+    eventsByCategory: { encounter: 0, discovery: 0, danger: 0, treasure: 0, npc: 0, course_material: 0 },
+    risksTriggered: 0,
+    risksAvoided: 0,
+    gatheringByType: { herb: 0, crystal: 0, essence: 0, ore: 0, artifact: 0 },
+  },
+  dailyExploresUsed: 0,
+  maxDailyExplores: 3,
+  lastDailyResetDay: 1,
+};
+
+export const canUnlockMapArea = (
+  area: MapArea,
+  reputation: number,
+  day: number,
+  studentCount: number,
+  areas: MapArea[],
+  buildings: { id: string; level: number }[]
+): boolean => {
+  if (area.status !== 'locked') return false;
+  const cond = area.unlockCondition;
+  if (reputation < cond.minReputation) return false;
+  if (day < cond.minDay) return false;
+  if (studentCount < cond.minStudentCount) return false;
+  if (cond.requiredAreaId) {
+    const reqArea = areas.find(a => a.id === cond.requiredAreaId);
+    if (!reqArea || reqArea.status === 'locked') return false;
+  }
+  if (cond.requiredBuildingId && cond.requiredBuildingLevel) {
+    const b = buildings.find(bl => bl.id === cond.requiredBuildingId);
+    if (!b || b.level < cond.requiredBuildingLevel) return false;
+  }
+  return true;
+};
+
+export const canExploreArea = (area: MapArea, stamina: number, dailyExploresUsed: number, maxDailyExplores: number, day: number): boolean => {
+  if (area.status === 'locked') return false;
+  if (stamina < area.exploreStaminaCost) return false;
+  if (dailyExploresUsed >= maxDailyExplores) return false;
+  return true;
+};
+
+export const canGatherNode = (node: MapGatheringNode, stamina: number, day: number): boolean => {
+  if (stamina < node.staminaCost) return false;
+  if (node.currentCooldown > 0 && day <= node.lastGatheredDay + node.currentCooldown) return false;
+  return true;
+};
+
+export const canTravelRoute = (route: MapRoute, stamina: number): boolean => {
+  if (!route.discovered) return false;
+  if (stamina < route.staminaCost) return false;
+  return true;
+};
+
+export const getAvailableMapEvents = (
+  areaId: MapAreaId,
+  events: MapExploreEventDef[],
+  day: number
+): MapExploreEventDef[] => {
+  return events.filter(e => {
+    if (e.areaId !== areaId) return false;
+    if (day < e.minDay) return false;
+    if (day <= e.lastTriggeredDay + e.cooldown) return false;
+    return true;
+  });
+};
+
+export const rollMapExploreEvent = (
+  areaId: MapAreaId,
+  events: MapExploreEventDef[],
+  eventChance: number,
+  day: number
+): MapExploreEventDef | null => {
+  if (Math.random() > eventChance) return null;
+  const available = getAvailableMapEvents(areaId, events, day);
+  if (available.length === 0) return null;
+  const totalWeight = available.reduce((sum, e) => sum + e.weight, 0);
+  let roll = Math.random() * totalWeight;
+  for (const event of available) {
+    roll -= event.weight;
+    if (roll <= 0) return event;
+  }
+  return available[available.length - 1];
+};
+
+export const resolveMapExploreEvent = (
+  event: MapExploreEventDef,
+  choiceId: string,
+  day: number
+): { instance: MapExploreEventInstance; wasRiskTriggered: boolean } => {
+  const choice = event.choices.find(c => c.id === choiceId);
+  if (!choice) {
+    return {
+      instance: {
+        id: `map_evt_inst_${Date.now()}`,
+        eventId: event.id,
+        areaId: event.areaId,
+        day,
+        choiceId: null,
+        resolved: true,
+        wasRiskTriggered: false,
+        resourceChange: {},
+        moraleChange: 0,
+        staminaChange: 0,
+        outcomeText: '什么也没发生。',
+      },
+      wasRiskTriggered: false,
+    };
+  }
+
+  let wasRiskTriggered = false;
+  let finalResourceChange = { ...choice.resourceChange };
+  let finalMoraleChange = choice.moraleChange || 0;
+  let finalStaminaChange = choice.staminaChange || 0;
+  let outcomeText = choice.outcomeText;
+
+  if (choice.riskProbability != null && choice.riskProbability > 0) {
+    if (Math.random() < choice.riskProbability) {
+      wasRiskTriggered = true;
+      if (choice.riskResourceLoss) {
+        finalResourceChange = { ...choice.riskResourceLoss };
+      }
+      if (choice.riskMoraleLoss) finalMoraleChange = choice.riskMoraleLoss;
+      if (choice.riskStaminaLoss) finalStaminaChange = choice.riskStaminaLoss;
+      outcomeText = choice.riskOutcomeText || outcomeText;
+    }
+  }
+
+  return {
+    instance: {
+      id: `map_evt_inst_${Date.now()}`,
+      eventId: event.id,
+      areaId: event.areaId,
+      day,
+      choiceId,
+      resolved: true,
+      wasRiskTriggered,
+      resourceChange: finalResourceChange,
+      moraleChange: finalMoraleChange,
+      staminaChange: finalStaminaChange,
+      outcomeText,
+    },
+    wasRiskTriggered,
+  };
+};
+
+export const discoverRoutesForArea = (areaId: MapAreaId, routes: MapRoute[]): MapRoute[] => {
+  return routes.map(r => {
+    if ((r.fromAreaId === areaId || r.toAreaId === areaId) && !r.discovered) {
+      return { ...r, discovered: true };
+    }
+    return r;
+  });
+};
+
+export const checkMapAreaMastery = (area: MapArea): boolean => {
+  return area.masteryProgress >= area.masteryThreshold && area.status !== 'mastered';
 };
