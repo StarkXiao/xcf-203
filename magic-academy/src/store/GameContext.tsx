@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord } from '../types/game';
+import type { GameState, Resource, TabType, Student as StudentType, GachaResult, StudentQuality, CourseBenefitBreakdown, DailySnapshot, AutoSaveConfig, GoalType, SeasonGoalType, ClubContributionLog, ClubBuff, ClubBuffEffect, TradeMaterialType, TradeOrderType, Mentor, MentorSpecialization, SpecializationType, MentorDungeonBonus, GrowthRecord, AlchemyMaterialId, PotionId, ActiveCrafting, ActivePotionBuff } from '../types/game';
 import { CURRENT_SAVE_VERSION } from '../types/game';
 import { 
   INITIAL_RESOURCES, 
@@ -125,6 +125,17 @@ import {
   MENTOR_QUALITY_COLORS,
   MENTOR_RANK_NAMES,
   getMentorQualityMultiplier,
+  INITIAL_ALCHEMY_STATE,
+  ALCHEMY_MATERIALS,
+  getAlchemyMaterial,
+  canCraftPotion,
+  canSynthesizeMaterial,
+  getWorkshopUpgradeCost,
+  getCraftingSlotsForLevel,
+  getWorkshopRequiredReputation,
+  rollDungeonMaterialDrops,
+  ALCHEMY_RARITY_COLORS,
+  ALCHEMY_RARITY_NAMES,
 } from '../data/gameData';
 import type { DailyLog, DailyEvent } from '../types/game';
 import { migrateSave, loadAndMigrateSave, exportSaveData, importSaveData, hasBackup, restoreBackup, getBackupTime, createBackup } from '../data/saveMigration';
@@ -202,7 +213,18 @@ type GameAction =
   | { type: 'ASSIGN_MENTOR_TO_ACADEMY'; mentorId: string; academyId: string | null }
   | { type: 'UPGRADE_ACADEMY'; academyId: string }
   | { type: 'UNLOCK_ACADEMY'; academyId: string }
-  | { type: 'UPDATE_MENTOR'; mentor: Mentor };
+  | { type: 'UPDATE_MENTOR'; mentor: Mentor }
+  | { type: 'UNLOCK_ALCHEMY' }
+  | { type: 'UPGRADE_ALCHEMY_WORKSHOP' }
+  | { type: 'CRAFT_POTION'; potionId: PotionId; quantity: number }
+  | { type: 'COMPLETE_CRAFTING'; craftingId: string }
+  | { type: 'SYNTHESIZE_MATERIAL'; recipeId: string }
+  | { type: 'USE_POTION'; potionId: PotionId; studentId?: string; dungeonId?: string }
+  | { type: 'SELL_POTION'; potionId: PotionId; quantity: number }
+  | { type: 'SELL_MATERIAL'; materialId: AlchemyMaterialId; quantity: number }
+  | { type: 'ADD_DUNGEON_MATERIAL_DROPS'; dungeonId: string; stars: number }
+  | { type: 'TICK_ALCHEMY_CRAFTINGS' }
+  | { type: 'EXPIRE_ALCHEMY_BUFFS' };
 
 const MAX_STUDENT_CAPACITY = 20;
 
@@ -261,6 +283,7 @@ const initialState: GameState = {
   clubs: INITIAL_CLUBS_STATE,
   tradeHarbor: INITIAL_TRADE_HARBOR_STATE,
   mentorState: INITIAL_MENTOR_STATE,
+  alchemy: INITIAL_ALCHEMY_STATE,
 };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -3097,6 +3120,487 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
+    case 'UNLOCK_ALCHEMY': {
+      if (state.alchemy.unlocked) return state;
+      const alchemyBuilding = state.buildings.find(b => b.id === 'alchemy_workshop');
+      if (!alchemyBuilding || alchemyBuilding.level === 0) return state;
+      if (state.resources.reputation < getWorkshopRequiredReputation()) return state;
+
+      const unlockEvent: DailyEvent = {
+        type: 'alchemy_workshop_upgraded',
+        message: '⚗️ 炼金工坊正式启用！开始你的炼金之旅吧',
+      };
+      const dailyLog: DailyLog = { day: state.day, events: [unlockEvent] };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        alchemy: { ...state.alchemy, unlocked: true },
+      };
+    }
+
+    case 'UPGRADE_ALCHEMY_WORKSHOP': {
+      if (!state.alchemy.unlocked) return state;
+      if (state.alchemy.workshopLevel >= state.alchemy.maxWorkshopLevel) return state;
+      const cost = getWorkshopUpgradeCost(state.alchemy.workshopLevel);
+      if (state.resources.gold < cost.gold || state.resources.mana < cost.mana ||
+          state.resources.food < cost.food || state.resources.reputation < cost.reputation) return state;
+
+      const newLevel = state.alchemy.workshopLevel + 1;
+      const newSlots = getCraftingSlotsForLevel(newLevel);
+      const upgradeEvent: DailyEvent = {
+        type: 'alchemy_workshop_upgraded',
+        message: `⚗️ 炼金工坊升级到 Lv.${newLevel}！制作位: ${newSlots}`,
+        value: newLevel,
+      };
+      const dailyLog: DailyLog = { day: state.day, events: [upgradeEvent] };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        resources: {
+          gold: state.resources.gold - cost.gold,
+          mana: state.resources.mana - cost.mana,
+          food: state.resources.food - cost.food,
+          reputation: state.resources.reputation - cost.reputation,
+        },
+        alchemy: {
+          ...state.alchemy,
+          workshopLevel: newLevel,
+          craftingSlots: newSlots,
+        },
+      };
+    }
+
+    case 'CRAFT_POTION': {
+      const recipe = state.alchemy.recipes.find(r => r.id === action.potionId);
+      if (!recipe) return state;
+      const check = canCraftPotion(
+        recipe, state.alchemy.materials, state.resources.gold, state.resources.mana,
+        state.alchemy.workshopLevel, state.alchemy.activeCraftings.length,
+        state.alchemy.craftingSlots, state.resources.reputation
+      );
+      if (!check.ok) return state;
+
+      const newMaterials = { ...state.alchemy.materials };
+      for (const [matId, qty] of Object.entries(recipe.materials)) {
+        newMaterials[matId as AlchemyMaterialId] -= qty;
+      }
+
+      const craftingId = `craft_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const alchemyBuildingLevel = state.buildings.find(b => b.id === 'alchemy_workshop')?.level || 1;
+      const craftTimeReduction = 1 - Math.min(0.5, alchemyBuildingLevel * 0.05);
+      const craftingTime = Math.max(1, Math.ceil(recipe.craftingTime * craftTimeReduction)) * action.quantity;
+      const newCrafting: ActiveCrafting = {
+        id: craftingId,
+        potionId: action.potionId,
+        startedAt: state.day,
+        completesAt: state.day + craftingTime,
+        quantity: action.quantity,
+      };
+
+      return {
+        ...state,
+        resources: {
+          gold: state.resources.gold - recipe.goldCost * action.quantity,
+          mana: state.resources.mana - recipe.manaCost * action.quantity,
+          food: state.resources.food,
+          reputation: state.resources.reputation,
+        },
+        alchemy: {
+          ...state.alchemy,
+          materials: newMaterials,
+          activeCraftings: [...state.alchemy.activeCraftings, newCrafting],
+        },
+      };
+    }
+
+    case 'COMPLETE_CRAFTING': {
+      const crafting = state.alchemy.activeCraftings.find(c => c.id === action.craftingId);
+      if (!crafting) return state;
+      if (state.day < crafting.completesAt) return state;
+
+      const recipe = state.alchemy.recipes.find(r => r.id === crafting.potionId);
+      const potionName = recipe?.name || crafting.potionId;
+      const newPotions = { ...state.alchemy.potions };
+      newPotions[crafting.potionId] = (newPotions[crafting.potionId] || 0) + crafting.quantity;
+
+      const newPotionsCrafted = { ...state.alchemy.stats.potionsCrafted };
+      newPotionsCrafted[crafting.potionId] = (newPotionsCrafted[crafting.potionId] || 0) + crafting.quantity;
+
+      const completeEvent: DailyEvent = {
+        type: 'alchemy_craft_complete',
+        message: `⚗️ ${potionName} ×${crafting.quantity} 制作完成！`,
+        value: crafting.quantity,
+      };
+      const dailyLog: DailyLog = { day: state.day, events: [completeEvent] };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        alchemy: {
+          ...state.alchemy,
+          potions: newPotions,
+          activeCraftings: state.alchemy.activeCraftings.filter(c => c.id !== action.craftingId),
+          stats: {
+            ...state.alchemy.stats,
+            totalCrafted: state.alchemy.stats.totalCrafted + crafting.quantity,
+            potionsCrafted: newPotionsCrafted,
+          },
+        },
+      };
+    }
+
+    case 'SYNTHESIZE_MATERIAL': {
+      const recipe = state.alchemy.synthesisRecipes.find(r => r.id === action.recipeId);
+      if (!recipe) return state;
+      const check = canSynthesizeMaterial(recipe, state.alchemy.materials, state.resources.gold, state.alchemy.workshopLevel);
+      if (!check.ok) return state;
+
+      const newMaterials = { ...state.alchemy.materials };
+      for (const [matId, qty] of Object.entries(recipe.inputs)) {
+        newMaterials[matId as AlchemyMaterialId] -= qty;
+      }
+      newMaterials[recipe.output.materialId] = (newMaterials[recipe.output.materialId] || 0) + recipe.output.quantity;
+
+      const outputMat = getAlchemyMaterial(recipe.output.materialId);
+      const synthEvent: DailyEvent = {
+        type: 'alchemy_material_synthesized',
+        message: `⚗️ 合成 ${outputMat.icon}${outputMat.name} ×${recipe.output.quantity}`,
+        value: recipe.output.quantity,
+      };
+      const dailyLog: DailyLog = { day: state.day, events: [synthEvent] };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        resources: {
+          ...state.resources,
+          gold: state.resources.gold - recipe.goldCost,
+        },
+        alchemy: {
+          ...state.alchemy,
+          materials: newMaterials,
+          stats: {
+            ...state.alchemy.stats,
+            totalMaterialsSynthesized: state.alchemy.stats.totalMaterialsSynthesized + 1,
+          },
+        },
+      };
+    }
+
+    case 'USE_POTION': {
+      const potionCount = state.alchemy.potions[action.potionId] || 0;
+      if (potionCount <= 0) return state;
+      const recipe = state.alchemy.recipes.find(r => r.id === action.potionId);
+      if (!recipe) return state;
+
+      const newPotions = { ...state.alchemy.potions };
+      newPotions[action.potionId] -= 1;
+
+      let newResources = { ...state.resources };
+      const newStudents = [...state.students];
+      const newBuffs = [...state.alchemy.activeBuffs];
+      const useEvents: DailyEvent[] = [];
+
+      for (const effect of recipe.effects) {
+        switch (effect.type) {
+          case 'heal_hp': {
+            if (action.studentId) {
+              const idx = newStudents.findIndex(s => s.id === action.studentId);
+              if (idx >= 0) {
+                const healed = Math.min(effect.value, newStudents[idx].maxHp - newStudents[idx].currentHp);
+                newStudents[idx] = { ...newStudents[idx], currentHp: newStudents[idx].currentHp + healed };
+                useEvents.push({
+                  type: 'hp_heal',
+                  message: `💚 ${newStudents[idx].name} 使用${recipe.name}，恢复${healed} HP`,
+                  studentId: action.studentId,
+                  value: healed,
+                });
+              }
+            }
+            break;
+          }
+          case 'restore_mana': {
+            newResources.mana += effect.value;
+            useEvents.push({
+              type: 'alchemy_potion_used',
+              message: `🔮 使用${recipe.name}，恢复${effect.value}魔力`,
+              value: effect.value,
+            });
+            break;
+          }
+          case 'restore_stamina': {
+            if (action.studentId) {
+              const idx = newStudents.findIndex(s => s.id === action.studentId);
+              if (idx >= 0) {
+                newStudents[idx] = { ...newStudents[idx], stamina: clamp(newStudents[idx].stamina + effect.value, 0, 100) };
+                useEvents.push({
+                  type: 'alchemy_potion_used',
+                  message: `⚡ ${newStudents[idx].name} 使用${recipe.name}，恢复${effect.value}体力`,
+                  studentId: action.studentId,
+                  value: effect.value,
+                });
+              }
+            }
+            break;
+          }
+          case 'morale_boost': {
+            if (action.studentId) {
+              const idx = newStudents.findIndex(s => s.id === action.studentId);
+              if (idx >= 0) {
+                newStudents[idx] = { ...newStudents[idx], morale: clamp(newStudents[idx].morale + effect.value, 0, 100) };
+              }
+            }
+            useEvents.push({
+              type: 'alchemy_potion_used',
+              message: `😊 使用${recipe.name}，士气+${effect.value}`,
+              value: effect.value,
+            });
+            break;
+          }
+          case 'reputation_gain': {
+            newResources.reputation += effect.value;
+            useEvents.push({
+              type: 'alchemy_potion_used',
+              message: `⭐ 使用${recipe.name}，获得${effect.value}声望`,
+              value: effect.value,
+            });
+            break;
+          }
+          case 'gold_gain': {
+            newResources.gold += effect.value;
+            useEvents.push({
+              type: 'alchemy_potion_used',
+              message: `💰 使用${recipe.name}，获得${effect.value}金币`,
+              value: effect.value,
+            });
+            break;
+          }
+          case 'exp_boost':
+          case 'course_speed_boost':
+          case 'damage_boost':
+          case 'defense_boost':
+          case 'sweep_bonus': {
+            const buff: ActivePotionBuff = {
+              id: `buff_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              potionId: action.potionId,
+              potionName: recipe.name,
+              effects: [effect],
+              appliedAt: state.day,
+              expiresAt: state.day + (effect.duration || 1),
+              studentId: action.studentId,
+              dungeonId: action.dungeonId,
+            };
+            newBuffs.push(buff);
+            useEvents.push({
+              type: 'alchemy_potion_used',
+              message: `✨ 使用${recipe.name}，获得增益效果`,
+              value: effect.value,
+            });
+            break;
+          }
+        }
+      }
+
+      const dailyLog: DailyLog = { day: state.day, events: useEvents };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        resources: newResources,
+        students: newStudents,
+        alchemy: {
+          ...state.alchemy,
+          potions: newPotions,
+          activeBuffs: newBuffs,
+          stats: {
+            ...state.alchemy.stats,
+            totalUsed: state.alchemy.stats.totalUsed + 1,
+          },
+        },
+      };
+    }
+
+    case 'SELL_POTION': {
+      const potionCount = state.alchemy.potions[action.potionId] || 0;
+      if (potionCount < action.quantity) return state;
+      const recipe = state.alchemy.recipes.find(r => r.id === action.potionId);
+      if (!recipe) return state;
+
+      const sellGold = recipe.sellPrice * action.quantity;
+      const newPotions = { ...state.alchemy.potions };
+      newPotions[action.potionId] -= action.quantity;
+
+      const sellEvent: DailyEvent = {
+        type: 'alchemy_potion_sold',
+        message: `💰 出售${recipe.name} ×${action.quantity}，获得${sellGold}金币`,
+        value: sellGold,
+      };
+      const dailyLog: DailyLog = { day: state.day, events: [sellEvent] };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        resources: { ...state.resources, gold: state.resources.gold + sellGold },
+        alchemy: {
+          ...state.alchemy,
+          potions: newPotions,
+          stats: {
+            ...state.alchemy.stats,
+            totalSold: state.alchemy.stats.totalSold + action.quantity,
+            totalGoldEarned: state.alchemy.stats.totalGoldEarned + sellGold,
+          },
+        },
+      };
+    }
+
+    case 'SELL_MATERIAL': {
+      const matCount = state.alchemy.materials[action.materialId] || 0;
+      if (matCount < action.quantity) return state;
+      const matDef = getAlchemyMaterial(action.materialId);
+      const sellGold = matDef.sellPrice * action.quantity;
+
+      const newMaterials = { ...state.alchemy.materials };
+      newMaterials[action.materialId] -= action.quantity;
+
+      const sellEvent: DailyEvent = {
+        type: 'alchemy_potion_sold',
+        message: `💰 出售${matDef.icon}${matDef.name} ×${action.quantity}，获得${sellGold}金币`,
+        value: sellGold,
+      };
+      const dailyLog: DailyLog = { day: state.day, events: [sellEvent] };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        resources: { ...state.resources, gold: state.resources.gold + sellGold },
+        alchemy: {
+          ...state.alchemy,
+          materials: newMaterials,
+          stats: {
+            ...state.alchemy.stats,
+            totalSold: state.alchemy.stats.totalSold + action.quantity,
+            totalGoldEarned: state.alchemy.stats.totalGoldEarned + sellGold,
+          },
+        },
+      };
+    }
+
+    case 'ADD_DUNGEON_MATERIAL_DROPS': {
+      const drops = rollDungeonMaterialDrops(action.dungeonId, action.stars);
+      if (Object.keys(drops).length === 0) return state;
+
+      const newMaterials = { ...state.alchemy.materials };
+      const dropMessages: string[] = [];
+      for (const [matId, qty] of Object.entries(drops)) {
+        newMaterials[matId as AlchemyMaterialId] = (newMaterials[matId as AlchemyMaterialId] || 0) + qty;
+        const matDef = getAlchemyMaterial(matId as AlchemyMaterialId);
+        dropMessages.push(`${matDef.icon}${matDef.name}×${qty}`);
+      }
+
+      const dropEvent: DailyEvent = {
+        type: 'alchemy_material_synthesized',
+        message: `⚗️ 副本材料掉落: ${dropMessages.join(' ')}`,
+        value: Object.values(drops).reduce((a, b) => a + b, 0),
+      };
+      const dailyLog: DailyLog = { day: state.day, events: [dropEvent] };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        alchemy: {
+          ...state.alchemy,
+          materials: newMaterials,
+        },
+      };
+    }
+
+    case 'TICK_ALCHEMY_CRAFTINGS': {
+      const completed: ActiveCrafting[] = [];
+      const stillActive: ActiveCrafting[] = [];
+      for (const c of state.alchemy.activeCraftings) {
+        if (state.day >= c.completesAt) {
+          completed.push(c);
+        } else {
+          stillActive.push(c);
+        }
+      }
+      if (completed.length === 0) return state;
+
+      const newPotions = { ...state.alchemy.potions };
+      const newPotionsCrafted = { ...state.alchemy.stats.potionsCrafted };
+      let totalCrafted = state.alchemy.stats.totalCrafted;
+      const completeEvents: DailyEvent[] = [];
+
+      for (const c of completed) {
+        newPotions[c.potionId] = (newPotions[c.potionId] || 0) + c.quantity;
+        newPotionsCrafted[c.potionId] = (newPotionsCrafted[c.potionId] || 0) + c.quantity;
+        totalCrafted += c.quantity;
+        const recipe = state.alchemy.recipes.find(r => r.id === c.potionId);
+        completeEvents.push({
+          type: 'alchemy_craft_complete',
+          message: `⚗️ ${recipe?.name || c.potionId} ×${c.quantity} 制作完成！`,
+          value: c.quantity,
+        });
+      }
+
+      const dailyLog: DailyLog = { day: state.day, events: completeEvents };
+      const recentLogs = state.dailyLogs.slice(-29);
+      recentLogs.push(dailyLog);
+
+      return {
+        ...state,
+        dailyLogs: recentLogs,
+        alchemy: {
+          ...state.alchemy,
+          potions: newPotions,
+          activeCraftings: stillActive,
+          stats: {
+            ...state.alchemy.stats,
+            totalCrafted,
+            potionsCrafted: newPotionsCrafted,
+          },
+        },
+      };
+    }
+
+    case 'EXPIRE_ALCHEMY_BUFFS': {
+      const active: ActivePotionBuff[] = [];
+      const expired: ActivePotionBuff[] = [];
+      for (const b of state.alchemy.activeBuffs) {
+        if (state.day >= b.expiresAt) {
+          expired.push(b);
+        } else {
+          active.push(b);
+        }
+      }
+      if (expired.length === 0) return state;
+      return {
+        ...state,
+        alchemy: {
+          ...state.alchemy,
+          activeBuffs: active,
+        },
+      };
+    }
+
     case 'NEXT_DAY': {
       const todayEvents: DailyEvent[] = [];
       const libraryLevel = state.buildings.find(b => b.id === 'library')?.level || 0;
@@ -3992,11 +4496,16 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         };
       });
 
+      const alchemyCraftTickState = gameReducer(state, { type: 'TICK_ALCHEMY_CRAFTINGS' });
+      const alchemyBuffExpireState = gameReducer(alchemyCraftTickState, { type: 'EXPIRE_ALCHEMY_BUFFS' });
+
       return {
         ...state,
         day: newDay,
         students: updatedStudents,
-        dailyLogs: recentLogs,
+        dailyLogs: [...recentLogs, ...(alchemyCraftTickState.dailyLogs.slice(-1).filter(l => l.day === newDay)), ...(alchemyBuffExpireState.dailyLogs.slice(-1).filter(l => l.day === newDay))].length > recentLogs.length
+          ? [...recentLogs, ...alchemyCraftTickState.dailyLogs.slice(-1).filter(l => l.day === newDay && !recentLogs.some(rl => rl.day === l.day && rl.events.some(e => e.type === 'alchemy_craft_complete'))), ...alchemyBuffExpireState.dailyLogs.slice(-1).filter(l => l.day === newDay)]
+          : recentLogs,
         resources: finalResources,
         dailySnapshots: newDailySnapshots,
         weeklyGoals: finalWeeklyGoals,
@@ -4011,6 +4520,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...state.mentorState,
           mentors: updatedDailyMentors,
         },
+        alchemy: alchemyBuffExpireState.alchemy,
       };
     }
 
@@ -4201,6 +4711,22 @@ interface GameContextType {
   MENTOR_QUALITY_COLORS: typeof MENTOR_QUALITY_COLORS;
   MENTOR_RANK_NAMES: typeof MENTOR_RANK_NAMES;
   getMentorQualityMultiplier: typeof getMentorQualityMultiplier;
+  unlockAlchemy: () => void;
+  upgradeAlchemyWorkshop: () => boolean;
+  craftPotion: (potionId: PotionId, quantity: number) => boolean;
+  synthesizeMaterial: (recipeId: string) => boolean;
+  usePotion: (potionId: PotionId, studentId?: string, dungeonId?: string) => boolean;
+  sellPotion: (potionId: PotionId, quantity: number) => boolean;
+  sellMaterial: (materialId: AlchemyMaterialId, quantity: number) => boolean;
+  canCraftPotion: typeof canCraftPotion;
+  canSynthesizeMaterial: typeof canSynthesizeMaterial;
+  getWorkshopUpgradeCost: typeof getWorkshopUpgradeCost;
+  getCraftingSlotsForLevel: typeof getCraftingSlotsForLevel;
+  getWorkshopRequiredReputation: typeof getWorkshopRequiredReputation;
+  ALCHEMY_MATERIALS: typeof ALCHEMY_MATERIALS;
+  getAlchemyMaterial: typeof getAlchemyMaterial;
+  ALCHEMY_RARITY_COLORS: typeof ALCHEMY_RARITY_COLORS;
+  ALCHEMY_RARITY_NAMES: typeof ALCHEMY_RARITY_NAMES;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -4991,6 +5517,60 @@ export function GameProvider({ children }: { children: ReactNode }) {
       MENTOR_QUALITY_COLORS,
       MENTOR_RANK_NAMES,
       getMentorQualityMultiplier,
+
+      unlockAlchemy: () => { dispatch({ type: 'UNLOCK_ALCHEMY' }); },
+      upgradeAlchemyWorkshop: () => {
+        if (state.alchemy.workshopLevel >= state.alchemy.maxWorkshopLevel) return false;
+        const cost = getWorkshopUpgradeCost(state.alchemy.workshopLevel);
+        if (state.resources.gold < cost.gold || state.resources.mana < cost.mana ||
+            state.resources.food < cost.food || state.resources.reputation < cost.reputation) return false;
+        dispatch({ type: 'UPGRADE_ALCHEMY_WORKSHOP' });
+        return true;
+      },
+      craftPotion: (potionId, quantity) => {
+        const recipe = state.alchemy.recipes.find(r => r.id === potionId);
+        if (!recipe) return false;
+        const check = canCraftPotion(
+          recipe, state.alchemy.materials, state.resources.gold, state.resources.mana,
+          state.alchemy.workshopLevel, state.alchemy.activeCraftings.length,
+          state.alchemy.craftingSlots, state.resources.reputation
+        );
+        if (!check.ok) return false;
+        dispatch({ type: 'CRAFT_POTION', potionId, quantity });
+        return true;
+      },
+      synthesizeMaterial: (recipeId) => {
+        const recipe = state.alchemy.synthesisRecipes.find(r => r.id === recipeId);
+        if (!recipe) return false;
+        const check = canSynthesizeMaterial(recipe, state.alchemy.materials, state.resources.gold, state.alchemy.workshopLevel);
+        if (!check.ok) return false;
+        dispatch({ type: 'SYNTHESIZE_MATERIAL', recipeId });
+        return true;
+      },
+      usePotion: (potionId, studentId, dungeonId) => {
+        if ((state.alchemy.potions[potionId] || 0) <= 0) return false;
+        dispatch({ type: 'USE_POTION', potionId, studentId, dungeonId });
+        return true;
+      },
+      sellPotion: (potionId, quantity) => {
+        if ((state.alchemy.potions[potionId] || 0) < quantity) return false;
+        dispatch({ type: 'SELL_POTION', potionId, quantity });
+        return true;
+      },
+      sellMaterial: (materialId, quantity) => {
+        if ((state.alchemy.materials[materialId] || 0) < quantity) return false;
+        dispatch({ type: 'SELL_MATERIAL', materialId, quantity });
+        return true;
+      },
+      canCraftPotion,
+      canSynthesizeMaterial,
+      getWorkshopUpgradeCost,
+      getCraftingSlotsForLevel,
+      getWorkshopRequiredReputation,
+      ALCHEMY_MATERIALS,
+      getAlchemyMaterial,
+      ALCHEMY_RARITY_COLORS,
+      ALCHEMY_RARITY_NAMES,
     }}>
       {children}
     </GameContext.Provider>

@@ -16,6 +16,7 @@ import {
   INITIAL_CLUBS_STATE,
   INITIAL_TRADE_HARBOR_STATE,
   INITIAL_MENTOR_STATE,
+  INITIAL_ALCHEMY_STATE,
 } from './gameData';
 
 type SaveData = Record<string, unknown>;
@@ -460,6 +461,25 @@ function migrateV10ToV11(ctx: MigrationContext): SaveData {
   return data;
 }
 
+function migrateV11ToV12(ctx: MigrationContext): SaveData {
+  const data = { ...ctx.data };
+
+  data.alchemy = { ...INITIAL_ALCHEMY_STATE };
+
+  const buildings = ensureArray<Record<string, unknown>>(data.buildings, []);
+  const hasAlchemyWorkshop = buildings.some(b => b.id === 'alchemy_workshop');
+  if (!hasAlchemyWorkshop) {
+    const alchemyBuilding = INITIAL_BUILDINGS.find(b => b.id === 'alchemy_workshop');
+    if (alchemyBuilding) {
+      buildings.push({ ...alchemyBuilding } as Record<string, unknown>);
+      data.buildings = buildings;
+    }
+  }
+
+  data.saveVersion = 12;
+  return data;
+}
+
 const MIGRATION_CHAIN: Record<number, MigrationStep> = {
   0: migrateV0ToV1,
   1: migrateV1ToV2,
@@ -472,6 +492,7 @@ const MIGRATION_CHAIN: Record<number, MigrationStep> = {
   8: migrateV8ToV9,
   9: migrateV9ToV10,
   10: migrateV10ToV11,
+  11: migrateV11ToV12,
 };
 
 export function migrateSave(rawData: SaveData): GameState {
@@ -769,6 +790,10 @@ function normalizeToGameState(data: SaveData): GameState {
     ? { ...INITIAL_MENTOR_STATE, ...(data.mentorState as Record<string, unknown>) }
     : INITIAL_MENTOR_STATE;
 
+  const alchemy = data.alchemy && typeof data.alchemy === 'object'
+    ? { ...INITIAL_ALCHEMY_STATE, ...(data.alchemy as Record<string, unknown>) }
+    : INITIAL_ALCHEMY_STATE;
+
   return {
     saveVersion: CURRENT_SAVE_VERSION,
     resources,
@@ -796,6 +821,7 @@ function normalizeToGameState(data: SaveData): GameState {
     clubs,
     tradeHarbor,
     mentorState,
+    alchemy,
   };
 }
 

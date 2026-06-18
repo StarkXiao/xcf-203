@@ -216,7 +216,7 @@ export interface Enemy {
   isBoss: boolean;
 }
 
-export const CURRENT_SAVE_VERSION = 11;
+export const CURRENT_SAVE_VERSION = 12;
 
 export type MentorQuality = 'common' | 'rare' | 'epic' | 'legendary';
 export type MentorRank = 'novice' | 'apprentice' | 'journeyman' | 'expert' | 'master' | 'grandmaster';
@@ -682,6 +682,113 @@ export interface GachaHistory {
 
 export type RecruitTickets = Record<StudentQuality, number>;
 
+export type AlchemyMaterialRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+
+export type AlchemyMaterialId =
+  | 'herb_grass' | 'moon_dew' | 'fire_ash' | 'earth_shard' | 'wind_leaf' | 'light_petal' | 'dark_spore'
+  | 'essence_flame' | 'essence_tide' | 'essence_stone' | 'essence_gale' | 'essence_radiance' | 'essence_void'
+  | 'crystal_pure' | 'crystal_fused' | 'dragon_blood' | 'star_dust' | 'phoenix_feather_dust';
+
+export interface AlchemyMaterialDef {
+  id: AlchemyMaterialId;
+  name: string;
+  icon: string;
+  description: string;
+  rarity: AlchemyMaterialRarity;
+  category: 'herb' | 'essence' | 'crystal' | 'special';
+  sellPrice: number;
+}
+
+export type PotionId =
+  | 'potion_hp_minor' | 'potion_hp_major' | 'potion_hp_supreme'
+  | 'potion_mana_minor' | 'potion_mana_major'
+  | 'potion_stamina_minor' | 'potion_stamina_major'
+  | 'potion_exp_boost' | 'potion_course_speed' | 'potion_morale_boost'
+  | 'potion_damage_boost' | 'potion_defense_boost' | 'potion_dungeon_sweep'
+  | 'potion_reputation_elixir' | 'potion_gold_dust';
+
+export type PotionEffectType =
+  | 'heal_hp' | 'restore_mana' | 'restore_stamina' | 'exp_boost' | 'course_speed_boost'
+  | 'morale_boost' | 'damage_boost' | 'defense_boost' | 'sweep_bonus' | 'reputation_gain' | 'gold_gain';
+
+export type PotionUsageContext = 'course' | 'dungeon' | 'any';
+
+export interface PotionEffect {
+  type: PotionEffectType;
+  value: number;
+  duration?: number;
+  target?: MagicType;
+}
+
+export interface PotionRecipe {
+  id: PotionId;
+  name: string;
+  icon: string;
+  description: string;
+  rarity: AlchemyMaterialRarity;
+  effects: PotionEffect[];
+  usageContext: PotionUsageContext;
+  materials: Partial<Record<AlchemyMaterialId, number>>;
+  goldCost: number;
+  manaCost: number;
+  sellPrice: number;
+  craftingTime: number;
+  requiredWorkshopLevel: number;
+  unlocked: boolean;
+  requiredReputation: number;
+}
+
+export interface MaterialSynthesisRecipe {
+  id: string;
+  name: string;
+  inputs: Partial<Record<AlchemyMaterialId, number>>;
+  output: { materialId: AlchemyMaterialId; quantity: number };
+  goldCost: number;
+  requiredWorkshopLevel: number;
+}
+
+export interface ActiveCrafting {
+  id: string;
+  potionId: PotionId;
+  startedAt: number;
+  completesAt: number;
+  quantity: number;
+}
+
+export interface ActivePotionBuff {
+  id: string;
+  potionId: PotionId;
+  potionName: string;
+  effects: PotionEffect[];
+  appliedAt: number;
+  expiresAt: number;
+  studentId?: string;
+  dungeonId?: string;
+}
+
+export interface AlchemyStats {
+  totalCrafted: number;
+  totalSold: number;
+  totalUsed: number;
+  totalGoldEarned: number;
+  totalMaterialsSynthesized: number;
+  potionsCrafted: Record<PotionId, number>;
+}
+
+export interface AlchemyState {
+  unlocked: boolean;
+  workshopLevel: number;
+  maxWorkshopLevel: number;
+  materials: Record<AlchemyMaterialId, number>;
+  potions: Record<PotionId, number>;
+  recipes: PotionRecipe[];
+  synthesisRecipes: MaterialSynthesisRecipe[];
+  activeCraftings: ActiveCrafting[];
+  activeBuffs: ActivePotionBuff[];
+  stats: AlchemyStats;
+  craftingSlots: number;
+}
+
 export interface GameState {
   saveVersion: number;
   resources: Resource;
@@ -709,6 +816,7 @@ export interface GameState {
   clubs: ClubsState;
   tradeHarbor: TradeHarborState;
   mentorState: MentorState;
+  alchemy: AlchemyState;
 }
 
 export interface CourseBenefitBreakdown {
@@ -728,10 +836,10 @@ export interface CourseBenefitBreakdown {
   contributingMentors: string[];
 }
 
-export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade';
+export type TabType = 'academy' | 'recruit' | 'course' | 'dungeon' | 'mentor' | 'goals' | 'settlement' | 'records' | 'settings' | 'season' | 'club' | 'trade' | 'alchemy';
 
 export interface DailyEvent {
-  type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning' | 'course_queued' | 'course_started' | 'queue_empty' | 'course_conflict' | 'hp_heal' | 'hp_natural_recovery' | 'battle_injury' | 'cannot_battle_injured' | 'club_task_complete' | 'club_joined' | 'club_shop_purchase' | 'club_level_up' | 'club_reputation_gain' | 'trade_order_placed' | 'trade_order_completed' | 'trade_shipment_arrived' | 'trade_price_changed' | 'trade_shipment_risk' | 'trade_harbor_upgrade' | 'mentor_recruited' | 'mentor_level_up' | 'mentor_rank_up' | 'mentor_assigned' | 'mentor_specialization_up' | 'academy_level_up' | 'mentor_salary_paid' | 'student_promoted';
+  type: 'food_consumed' | 'food_shortage' | 'morale_change' | 'student_left' | 'rest' | 'study' | 'course_complete' | 'income' | 'warning' | 'course_queued' | 'course_started' | 'queue_empty' | 'course_conflict' | 'hp_heal' | 'hp_natural_recovery' | 'battle_injury' | 'cannot_battle_injured' | 'club_task_complete' | 'club_joined' | 'club_shop_purchase' | 'club_level_up' | 'club_reputation_gain' | 'trade_order_placed' | 'trade_order_completed' | 'trade_shipment_arrived' | 'trade_price_changed' | 'trade_shipment_risk' | 'trade_harbor_upgrade' | 'mentor_recruited' | 'mentor_level_up' | 'mentor_rank_up' | 'mentor_assigned' | 'mentor_specialization_up' | 'academy_level_up' | 'mentor_salary_paid' | 'student_promoted' | 'alchemy_craft_complete' | 'alchemy_material_synthesized' | 'alchemy_potion_used' | 'alchemy_potion_sold' | 'alchemy_workshop_upgraded' | 'alchemy_recipe_unlocked';
   message: string;
   value?: number;
   studentId?: string;

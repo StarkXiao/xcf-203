@@ -10,6 +10,8 @@ import TradeHarborPanel from './TradeHarborPanel';
 import './TradeHarborPanel.css';
 import MentorPanel from './MentorPanel';
 import './MentorPanel.css';
+import AlchemyPanel from './AlchemyPanel';
+import './AlchemyPanel.css';
 
 interface TabConfig {
   id: TabType;
@@ -24,6 +26,7 @@ const tabs: TabConfig[] = [
   { id: 'dungeon', label: '试炼副本', icon: '⚔️' },
   { id: 'mentor', label: '导师养成', icon: '👨‍🏫' },
   { id: 'trade', label: '贸易港', icon: '🏛️' },
+  { id: 'alchemy', label: '炼金工坊', icon: '⚗️' },
   { id: 'goals', label: '目标任务', icon: '🎯' },
   { id: 'club', label: '魔法社团', icon: '🎭' },
   { id: 'season', label: '赛季系统', icon: '🏆' },
@@ -126,6 +129,7 @@ export default function MainLayout() {
         {activeTab === 'dungeon' && <DungeonModule onStudentClick={setSelectedStudentId} setConfirmDialog={setConfirmDialog} />}
         {activeTab === 'mentor' && <MentorPanel />}
         {activeTab === 'trade' && <TradeHarborPanel />}
+        {activeTab === 'alchemy' && <AlchemyPanel />}
         {activeTab === 'goals' && <GoalsModule />}
         {activeTab === 'club' && <ClubPanel />}
         {activeTab === 'season' && <SeasonPanel />}
@@ -1386,6 +1390,9 @@ function DungeonModule({ onStudentClick, setConfirmDialog }: ModuleProps) {
     if (!sweepCheck.ok) return;
     
     dispatch({ type: 'SWEEP_DUNGEON', dungeonId });
+    if (state.alchemy.unlocked) {
+      dispatch({ type: 'ADD_DUNGEON_MATERIAL_DROPS', dungeonId, stars: 3 });
+    }
     if (state.autoSaveConfig.saveOnCriticalAction) {
       autoSaveIfEnabled();
     }
@@ -1585,6 +1592,9 @@ function DungeonModule({ onStudentClick, setConfirmDialog }: ModuleProps) {
               team: result.team,
               studentHpMap: result.studentHpMap,
             });
+            if (result.stars > 0 && state.alchemy.unlocked) {
+              dispatch({ type: 'ADD_DUNGEON_MATERIAL_DROPS', dungeonId: selectedDungeon, stars: result.stars });
+            }
             setSelectedDungeon(null);
           }}
         />

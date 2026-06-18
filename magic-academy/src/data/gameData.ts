@@ -1,4 +1,4 @@
-import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult } from '../types/game';
+import type { Building, Course, Dungeon, Resource, RecruitmentTicket, MagicType, Trait, StudentQuality, TraitRarity, BuildingSynergy, Teacher, CourseBenefitBreakdown, Student, ReputationLevel, WeeklyGoal, StageTask, GoalProgress, WeeklyGoalsState, StageTasksState, GoalType, Club, ClubTask, ClubShopItem, ClubReputationLevel, ClubsState, Mentor, MentorAcademy, MentorSpecialization, SpecializationType, MentorQuality, MentorRank, MentorRecruitmentOption, MentorRecruitmentPool, MentorState, MentorCourseBonus, MentorDungeonBonus, MentorPromotionCheck, MentorDungeonLeadResult, AlchemyMaterialId, AlchemyMaterialDef, AlchemyMaterialRarity, PotionId, PotionRecipe, MaterialSynthesisRecipe, AlchemyState } from '../types/game';
 import {
   HP_BATTLE_THRESHOLD,
   HP_COURSE_EFFICIENCY_THRESHOLD,
@@ -366,6 +366,19 @@ export const INITIAL_BUILDINGS: Building[] = [
     requiredReputation: 120,
     prerequisites: [
       { buildingId: 'trade_harbor', requiredLevel: 1 },
+    ],
+  },
+  {
+    id: 'alchemy_workshop',
+    name: '炼金工坊',
+    level: 0,
+    maxLevel: 10,
+    cost: { gold: 500, mana: 300, food: 30, reputation: 20 },
+    effect: { type: 'course_speed', value: 5 },
+    description: '炼金工坊核心建筑，解锁炼金系统，每级增加炼金效率',
+    requiredReputation: 60,
+    prerequisites: [
+      { buildingId: 'library', requiredLevel: 2 },
     ],
   },
 ];
@@ -4441,4 +4454,343 @@ export const getAcademyBonusDescription = (academy: MentorAcademy): string => {
 export const getMentorMentorExpGain = (action: 'teach_course' | 'lead_dungeon', quality: MentorQuality): number => {
   const base = action === 'teach_course' ? 10 : 15;
   return Math.floor(base * getMentorQualityMultiplier(quality));
+};
+
+export const ALCHEMY_MATERIALS: AlchemyMaterialDef[] = [
+  { id: 'herb_grass', name: '魔法草', icon: '🌿', description: '随处可见的魔法植物', rarity: 'common', category: 'herb', sellPrice: 5 },
+  { id: 'moon_dew', name: '月光露', icon: '🌙', description: '月夜凝结的魔力露水', rarity: 'common', category: 'herb', sellPrice: 8 },
+  { id: 'fire_ash', name: '火焰灰', icon: '🔥', description: '火系魔力灼烧后的残灰', rarity: 'common', category: 'herb', sellPrice: 6 },
+  { id: 'earth_shard', name: '大地碎片', icon: '🪨', description: '蕴含土系力量的矿石碎片', rarity: 'common', category: 'herb', sellPrice: 6 },
+  { id: 'wind_leaf', name: '风之叶', icon: '🍃', description: '永不停歇的风系叶片', rarity: 'common', category: 'herb', sellPrice: 6 },
+  { id: 'light_petal', name: '光之花瓣', icon: '✨', description: '散发微光的圣洁花瓣', rarity: 'uncommon', category: 'herb', sellPrice: 12 },
+  { id: 'dark_spore', name: '暗影孢子', icon: '🌑', description: '黑暗中生长的魔性孢子', rarity: 'uncommon', category: 'herb', sellPrice: 12 },
+  { id: 'essence_flame', name: '火焰精华', icon: '🔥', description: '浓缩的火系魔力精华', rarity: 'uncommon', category: 'essence', sellPrice: 20 },
+  { id: 'essence_tide', name: '潮汐精华', icon: '💧', description: '浓缩的水系魔力精华', rarity: 'uncommon', category: 'essence', sellPrice: 20 },
+  { id: 'essence_stone', name: '磐石精华', icon: '🪨', description: '浓缩的土系魔力精华', rarity: 'uncommon', category: 'essence', sellPrice: 20 },
+  { id: 'essence_gale', name: '疾风精华', icon: '💨', description: '浓缩的风系魔力精华', rarity: 'uncommon', category: 'essence', sellPrice: 20 },
+  { id: 'essence_radiance', name: '光辉精华', icon: '☀️', description: '浓缩的光系魔力精华', rarity: 'rare', category: 'essence', sellPrice: 35 },
+  { id: 'essence_void', name: '虚空精华', icon: '🌑', description: '浓缩的暗系魔力精华', rarity: 'rare', category: 'essence', sellPrice: 35 },
+  { id: 'crystal_pure', name: '纯净水晶', icon: '💎', description: '纯净的魔力水晶', rarity: 'rare', category: 'crystal', sellPrice: 40 },
+  { id: 'crystal_fused', name: '融合水晶', icon: '💠', description: '多系魔力融合的水晶', rarity: 'epic', category: 'crystal', sellPrice: 80 },
+  { id: 'dragon_blood', name: '龙血', icon: '🩸', description: '远古巨龙的血液', rarity: 'epic', category: 'special', sellPrice: 100 },
+  { id: 'star_dust', name: '星尘', icon: '⭐', description: '来自星辰的微尘', rarity: 'epic', category: 'special', sellPrice: 90 },
+  { id: 'phoenix_feather_dust', name: '凤羽粉', icon: '🪶', description: '凤凰羽毛研磨的粉末', rarity: 'legendary', category: 'special', sellPrice: 200 },
+];
+
+export const getAlchemyMaterial = (id: AlchemyMaterialId): AlchemyMaterialDef => {
+  return ALCHEMY_MATERIALS.find(m => m.id === id) || ALCHEMY_MATERIALS[0];
+};
+
+const ALL_MATERIAL_IDS: AlchemyMaterialId[] = [
+  'herb_grass', 'moon_dew', 'fire_ash', 'earth_shard', 'wind_leaf', 'light_petal', 'dark_spore',
+  'essence_flame', 'essence_tide', 'essence_stone', 'essence_gale', 'essence_radiance', 'essence_void',
+  'crystal_pure', 'crystal_fused', 'dragon_blood', 'star_dust', 'phoenix_feather_dust',
+];
+
+const ALL_POTION_IDS: PotionId[] = [
+  'potion_hp_minor', 'potion_hp_major', 'potion_hp_supreme',
+  'potion_mana_minor', 'potion_mana_major',
+  'potion_stamina_minor', 'potion_stamina_major',
+  'potion_exp_boost', 'potion_course_speed', 'potion_morale_boost',
+  'potion_damage_boost', 'potion_defense_boost', 'potion_dungeon_sweep',
+  'potion_reputation_elixir', 'potion_gold_dust',
+];
+
+export const INITIAL_POTION_RECIPES: PotionRecipe[] = [
+  {
+    id: 'potion_hp_minor', name: '小型生命药水', icon: '❤️', description: '恢复30点HP',
+    rarity: 'common', effects: [{ type: 'heal_hp', value: 30 }], usageContext: 'dungeon',
+    materials: { herb_grass: 3, moon_dew: 1 }, goldCost: 10, manaCost: 5, sellPrice: 15,
+    craftingTime: 1, requiredWorkshopLevel: 1, unlocked: true, requiredReputation: 0,
+  },
+  {
+    id: 'potion_hp_major', name: '大型生命药水', icon: '❤️', description: '恢复80点HP',
+    rarity: 'uncommon', effects: [{ type: 'heal_hp', value: 80 }], usageContext: 'dungeon',
+    materials: { herb_grass: 5, moon_dew: 3, crystal_pure: 1 }, goldCost: 30, manaCost: 15, sellPrice: 40,
+    craftingTime: 2, requiredWorkshopLevel: 2, unlocked: true, requiredReputation: 50,
+  },
+  {
+    id: 'potion_hp_supreme', name: '至尊生命药水', icon: '❤️', description: '恢复200点HP',
+    rarity: 'rare', effects: [{ type: 'heal_hp', value: 200 }], usageContext: 'dungeon',
+    materials: { herb_grass: 8, moon_dew: 5, crystal_fused: 1, dragon_blood: 1 }, goldCost: 80, manaCost: 40, sellPrice: 120,
+    craftingTime: 3, requiredWorkshopLevel: 4, unlocked: true, requiredReputation: 200,
+  },
+  {
+    id: 'potion_mana_minor', name: '小型魔力药水', icon: '🔮', description: '恢复20点魔力',
+    rarity: 'common', effects: [{ type: 'restore_mana', value: 20 }], usageContext: 'any',
+    materials: { moon_dew: 3, fire_ash: 1 }, goldCost: 15, manaCost: 0, sellPrice: 20,
+    craftingTime: 1, requiredWorkshopLevel: 1, unlocked: true, requiredReputation: 0,
+  },
+  {
+    id: 'potion_mana_major', name: '大型魔力药水', icon: '🔮', description: '恢复60点魔力',
+    rarity: 'uncommon', effects: [{ type: 'restore_mana', value: 60 }], usageContext: 'any',
+    materials: { moon_dew: 5, essence_flame: 1, crystal_pure: 1 }, goldCost: 40, manaCost: 0, sellPrice: 55,
+    craftingTime: 2, requiredWorkshopLevel: 3, unlocked: true, requiredReputation: 100,
+  },
+  {
+    id: 'potion_stamina_minor', name: '小型体力药水', icon: '⚡', description: '恢复15点体力',
+    rarity: 'common', effects: [{ type: 'restore_stamina', value: 15 }], usageContext: 'dungeon',
+    materials: { herb_grass: 2, wind_leaf: 2 }, goldCost: 10, manaCost: 5, sellPrice: 15,
+    craftingTime: 1, requiredWorkshopLevel: 1, unlocked: true, requiredReputation: 0,
+  },
+  {
+    id: 'potion_stamina_major', name: '大型体力药水', icon: '⚡', description: '恢复40点体力',
+    rarity: 'uncommon', effects: [{ type: 'restore_stamina', value: 40 }], usageContext: 'dungeon',
+    materials: { herb_grass: 4, wind_leaf: 4, essence_gale: 1 }, goldCost: 30, manaCost: 15, sellPrice: 45,
+    craftingTime: 2, requiredWorkshopLevel: 2, unlocked: true, requiredReputation: 80,
+  },
+  {
+    id: 'potion_exp_boost', name: '经验增幅药剂', icon: '📚', description: '课程经验+30%，持续3天',
+    rarity: 'uncommon', effects: [{ type: 'exp_boost', value: 0.3, duration: 3 }], usageContext: 'course',
+    materials: { moon_dew: 3, earth_shard: 2, essence_stone: 1 }, goldCost: 50, manaCost: 25, sellPrice: 70,
+    craftingTime: 2, requiredWorkshopLevel: 2, unlocked: true, requiredReputation: 80,
+  },
+  {
+    id: 'potion_course_speed', name: '学习加速药剂', icon: '⏩', description: '课程速度+25%，持续3天',
+    rarity: 'uncommon', effects: [{ type: 'course_speed_boost', value: 0.25, duration: 3 }], usageContext: 'course',
+    materials: { wind_leaf: 3, moon_dew: 2, essence_gale: 1 }, goldCost: 45, manaCost: 20, sellPrice: 65,
+    craftingTime: 2, requiredWorkshopLevel: 2, unlocked: true, requiredReputation: 80,
+  },
+  {
+    id: 'potion_morale_boost', name: '士气鼓舞药剂', icon: '😊', description: '士气+25',
+    rarity: 'common', effects: [{ type: 'morale_boost', value: 25 }], usageContext: 'any',
+    materials: { herb_grass: 2, light_petal: 1 }, goldCost: 15, manaCost: 10, sellPrice: 25,
+    craftingTime: 1, requiredWorkshopLevel: 1, unlocked: true, requiredReputation: 30,
+  },
+  {
+    id: 'potion_damage_boost', name: '战斗强化药剂', icon: '⚔️', description: '副本伤害+20%，持续1次副本',
+    rarity: 'rare', effects: [{ type: 'damage_boost', value: 0.2, duration: 1 }], usageContext: 'dungeon',
+    materials: { fire_ash: 4, essence_flame: 2, crystal_pure: 1 }, goldCost: 60, manaCost: 30, sellPrice: 90,
+    craftingTime: 2, requiredWorkshopLevel: 3, unlocked: true, requiredReputation: 150,
+  },
+  {
+    id: 'potion_defense_boost', name: '防御强化药剂', icon: '🛡️', description: '副本防御+20%，减少受伤，持续1次副本',
+    rarity: 'rare', effects: [{ type: 'defense_boost', value: 0.2, duration: 1 }], usageContext: 'dungeon',
+    materials: { earth_shard: 4, essence_stone: 2, crystal_pure: 1 }, goldCost: 60, manaCost: 30, sellPrice: 90,
+    craftingTime: 2, requiredWorkshopLevel: 3, unlocked: true, requiredReputation: 150,
+  },
+  {
+    id: 'potion_dungeon_sweep', name: '扫荡增幅药剂', icon: '🏆', description: '扫荡奖励+30%',
+    rarity: 'epic', effects: [{ type: 'sweep_bonus', value: 0.3 }], usageContext: 'dungeon',
+    materials: { essence_radiance: 1, crystal_fused: 1, star_dust: 1 }, goldCost: 100, manaCost: 50, sellPrice: 160,
+    craftingTime: 3, requiredWorkshopLevel: 5, unlocked: true, requiredReputation: 300,
+  },
+  {
+    id: 'potion_reputation_elixir', name: '声望灵药', icon: '⭐', description: '获得15声望',
+    rarity: 'rare', effects: [{ type: 'reputation_gain', value: 15 }], usageContext: 'any',
+    materials: { light_petal: 3, essence_radiance: 1, crystal_pure: 1 }, goldCost: 50, manaCost: 30, sellPrice: 80,
+    craftingTime: 2, requiredWorkshopLevel: 3, unlocked: true, requiredReputation: 150,
+  },
+  {
+    id: 'potion_gold_dust', name: '黄金粉末', icon: '💰', description: '获得100金币',
+    rarity: 'uncommon', effects: [{ type: 'gold_gain', value: 100 }], usageContext: 'any',
+    materials: { fire_ash: 3, earth_shard: 2, moon_dew: 2 }, goldCost: 20, manaCost: 10, sellPrice: 50,
+    craftingTime: 1, requiredWorkshopLevel: 2, unlocked: true, requiredReputation: 50,
+  },
+];
+
+export const INITIAL_SYNTHESIS_RECIPES: MaterialSynthesisRecipe[] = [
+  {
+    id: 'synth_essence_flame', name: '提炼火焰精华',
+    inputs: { fire_ash: 5, herb_grass: 2 },
+    output: { materialId: 'essence_flame', quantity: 1 },
+    goldCost: 15, requiredWorkshopLevel: 1,
+  },
+  {
+    id: 'synth_essence_tide', name: '提炼潮汐精华',
+    inputs: { moon_dew: 5, herb_grass: 2 },
+    output: { materialId: 'essence_tide', quantity: 1 },
+    goldCost: 15, requiredWorkshopLevel: 1,
+  },
+  {
+    id: 'synth_essence_stone', name: '提炼磐石精华',
+    inputs: { earth_shard: 5, herb_grass: 2 },
+    output: { materialId: 'essence_stone', quantity: 1 },
+    goldCost: 15, requiredWorkshopLevel: 1,
+  },
+  {
+    id: 'synth_essence_gale', name: '提炼疾风精华',
+    inputs: { wind_leaf: 5, herb_grass: 2 },
+    output: { materialId: 'essence_gale', quantity: 1 },
+    goldCost: 15, requiredWorkshopLevel: 1,
+  },
+  {
+    id: 'synth_essence_radiance', name: '提炼光辉精华',
+    inputs: { light_petal: 4, essence_flame: 1, essence_stone: 1 },
+    output: { materialId: 'essence_radiance', quantity: 1 },
+    goldCost: 30, requiredWorkshopLevel: 2,
+  },
+  {
+    id: 'synth_essence_void', name: '提炼虚空精华',
+    inputs: { dark_spore: 4, essence_flame: 1, essence_gale: 1 },
+    output: { materialId: 'essence_void', quantity: 1 },
+    goldCost: 30, requiredWorkshopLevel: 2,
+  },
+  {
+    id: 'synth_crystal_pure', name: '凝结纯净水晶',
+    inputs: { moon_dew: 3, essence_flame: 1, essence_tide: 1 },
+    output: { materialId: 'crystal_pure', quantity: 1 },
+    goldCost: 40, requiredWorkshopLevel: 2,
+  },
+  {
+    id: 'synth_crystal_fused', name: '融合多系水晶',
+    inputs: { crystal_pure: 2, essence_flame: 1, essence_tide: 1, essence_stone: 1, essence_gale: 1 },
+    output: { materialId: 'crystal_fused', quantity: 1 },
+    goldCost: 80, requiredWorkshopLevel: 4,
+  },
+  {
+    id: 'synth_dragon_blood', name: '炼制龙血',
+    inputs: { fire_ash: 8, essence_flame: 3, crystal_pure: 2 },
+    output: { materialId: 'dragon_blood', quantity: 1 },
+    goldCost: 120, requiredWorkshopLevel: 4,
+  },
+  {
+    id: 'synth_star_dust', name: '收集星尘',
+    inputs: { light_petal: 5, moon_dew: 5, crystal_pure: 2 },
+    output: { materialId: 'star_dust', quantity: 1 },
+    goldCost: 100, requiredWorkshopLevel: 4,
+  },
+  {
+    id: 'synth_phoenix_feather', name: '研磨凤羽粉',
+    inputs: { fire_ash: 10, dragon_blood: 2, crystal_fused: 1, star_dust: 1 },
+    output: { materialId: 'phoenix_feather_dust', quantity: 1 },
+    goldCost: 300, requiredWorkshopLevel: 5,
+  },
+];
+
+export const DUNGEON_MATERIAL_DROPS: Record<string, { materialId: AlchemyMaterialId; quantity: number; chance: number }[]> = {
+  dark_forest: [
+    { materialId: 'herb_grass', quantity: 3, chance: 0.9 },
+    { materialId: 'moon_dew', quantity: 2, chance: 0.7 },
+    { materialId: 'fire_ash', quantity: 2, chance: 0.5 },
+    { materialId: 'wind_leaf', quantity: 2, chance: 0.5 },
+    { materialId: 'light_petal', quantity: 1, chance: 0.3 },
+  ],
+  ancient_ruins: [
+    { materialId: 'herb_grass', quantity: 5, chance: 0.9 },
+    { materialId: 'moon_dew', quantity: 3, chance: 0.8 },
+    { materialId: 'earth_shard', quantity: 3, chance: 0.7 },
+    { materialId: 'dark_spore', quantity: 2, chance: 0.5 },
+    { materialId: 'essence_flame', quantity: 1, chance: 0.4 },
+    { materialId: 'essence_tide', quantity: 1, chance: 0.4 },
+    { materialId: 'crystal_pure', quantity: 1, chance: 0.2 },
+  ],
+  dragon_lair: [
+    { materialId: 'fire_ash', quantity: 6, chance: 0.9 },
+    { materialId: 'moon_dew', quantity: 5, chance: 0.8 },
+    { materialId: 'essence_flame', quantity: 2, chance: 0.6 },
+    { materialId: 'essence_stone', quantity: 2, chance: 0.5 },
+    { materialId: 'crystal_pure', quantity: 2, chance: 0.4 },
+    { materialId: 'dragon_blood', quantity: 1, chance: 0.15 },
+    { materialId: 'star_dust', quantity: 1, chance: 0.1 },
+    { materialId: 'crystal_fused', quantity: 1, chance: 0.08 },
+  ],
+};
+
+export const rollDungeonMaterialDrops = (dungeonId: string, stars: number): Record<AlchemyMaterialId, number> => {
+  const drops = DUNGEON_MATERIAL_DROPS[dungeonId] || [];
+  const result: Record<AlchemyMaterialId, number> = {} as Record<AlchemyMaterialId, number>;
+  const starMultiplier = stars === 3 ? 1.5 : stars === 2 ? 1.2 : 1.0;
+  
+  for (const drop of drops) {
+    if (Math.random() < drop.chance * starMultiplier) {
+      const qty = Math.max(1, Math.floor(drop.quantity * starMultiplier));
+      result[drop.materialId] = (result[drop.materialId] || 0) + qty;
+    }
+  }
+  return result;
+};
+
+export const canCraftPotion = (
+  recipe: PotionRecipe,
+  materials: Record<AlchemyMaterialId, number>,
+  gold: number,
+  mana: number,
+  workshopLevel: number,
+  activeCraftings: number,
+  craftingSlots: number,
+  reputation: number
+): { ok: boolean; reason?: string } => {
+  if (activeCraftings >= craftingSlots) return { ok: false, reason: ' crafting队列已满' };
+  if (workshopLevel < recipe.requiredWorkshopLevel) return { ok: false, reason: `工坊等级不足(需要Lv.${recipe.requiredWorkshopLevel})` };
+  if (reputation < recipe.requiredReputation) return { ok: false, reason: `声望不足(需要${recipe.requiredReputation})` };
+  if (gold < recipe.goldCost) return { ok: false, reason: '金币不足' };
+  if (mana < recipe.manaCost) return { ok: false, reason: '魔力不足' };
+  for (const [matId, qty] of Object.entries(recipe.materials)) {
+    if ((materials[matId as AlchemyMaterialId] || 0) < qty) {
+      const matDef = getAlchemyMaterial(matId as AlchemyMaterialId);
+      return { ok: false, reason: `${matDef.name}不足` };
+    }
+  }
+  return { ok: true };
+};
+
+export const canSynthesizeMaterial = (
+  recipe: MaterialSynthesisRecipe,
+  materials: Record<AlchemyMaterialId, number>,
+  gold: number,
+  workshopLevel: number
+): { ok: boolean; reason?: string } => {
+  if (workshopLevel < recipe.requiredWorkshopLevel) return { ok: false, reason: `工坊等级不足(需要Lv.${recipe.requiredWorkshopLevel})` };
+  if (gold < recipe.goldCost) return { ok: false, reason: '金币不足' };
+  for (const [matId, qty] of Object.entries(recipe.inputs)) {
+    if ((materials[matId as AlchemyMaterialId] || 0) < qty) {
+      const matDef = getAlchemyMaterial(matId as AlchemyMaterialId);
+      return { ok: false, reason: `${matDef.name}不足` };
+    }
+  }
+  return { ok: true };
+};
+
+export const getWorkshopUpgradeCost = (currentLevel: number): Resource => {
+  const mult = Math.pow(1.8, currentLevel - 1);
+  return {
+    gold: Math.floor(300 * mult),
+    mana: Math.floor(200 * mult),
+    food: Math.floor(50 * mult),
+    reputation: Math.floor(30 * mult),
+  };
+};
+
+export const getCraftingSlotsForLevel = (level: number): number => {
+  return 1 + Math.floor(level / 2);
+};
+
+export const getWorkshopRequiredReputation = (): number => 60;
+
+export const INITIAL_ALCHEMY_STATE: AlchemyState = {
+  unlocked: false,
+  workshopLevel: 1,
+  maxWorkshopLevel: 10,
+  materials: Object.fromEntries(ALL_MATERIAL_IDS.map(id => [id, 0])) as Record<AlchemyMaterialId, number>,
+  potions: Object.fromEntries(ALL_POTION_IDS.map(id => [id, 0])) as Record<PotionId, number>,
+  recipes: INITIAL_POTION_RECIPES,
+  synthesisRecipes: INITIAL_SYNTHESIS_RECIPES,
+  activeCraftings: [],
+  activeBuffs: [],
+  stats: {
+    totalCrafted: 0,
+    totalSold: 0,
+    totalUsed: 0,
+    totalGoldEarned: 0,
+    totalMaterialsSynthesized: 0,
+    potionsCrafted: Object.fromEntries(ALL_POTION_IDS.map(id => [id, 0])) as Record<PotionId, number>,
+  },
+  craftingSlots: getCraftingSlotsForLevel(1),
+};
+
+export const ALCHEMY_RARITY_COLORS: Record<AlchemyMaterialRarity, string> = {
+  common: '#9e9e9e',
+  uncommon: '#4CAF50',
+  rare: '#2196f3',
+  epic: '#9c27b0',
+  legendary: '#ff9800',
+};
+
+export const ALCHEMY_RARITY_NAMES: Record<AlchemyMaterialRarity, string> = {
+  common: '普通',
+  uncommon: '优良',
+  rare: '稀有',
+  epic: '史诗',
+  legendary: '传说',
 };
