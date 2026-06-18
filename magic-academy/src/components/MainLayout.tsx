@@ -1655,7 +1655,7 @@ interface BattleResultData {
 }
 
 function DungeonBattle({ dungeon, students, courses, onClose, onStudentClick, onComplete }: DungeonBattleProps) {
-  const { calculateBattleStars, calculateDungeonRewards, getMoraleLabel, getStaminaLabel, calculateMoraleEfficiencyMultiplier, calculateStaminaEfficiencyMultiplier } = useGame();
+  const { state, calculateBattleStars, calculateDungeonRewards, getMoraleLabel, getStaminaLabel, calculateMoraleEfficiencyMultiplier, calculateStaminaEfficiencyMultiplier, getBattleRelationshipBonus } = useGame();
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const [battleStarted, setBattleStarted] = React.useState(false);
   const [selectedTeam, setSelectedTeam] = React.useState<string[]>([]);
@@ -1673,6 +1673,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onStudentClick, on
     attackLog: string[];
     turnCount: number;
     teamIds: string[];
+    relationshipBonus: { damageBonus: number; hpBonus: number; description: string };
   }>({
     playerTeam: [],
     enemyTeam: [],
@@ -1685,6 +1686,7 @@ function DungeonBattle({ dungeon, students, courses, onClose, onStudentClick, on
     attackLog: [],
     turnCount: 0,
     teamIds: [],
+    relationshipBonus: { damageBonus: 0, hpBonus: 0, description: '' },
   });
 
   const onCompleteRef = React.useRef(onComplete);
@@ -1806,11 +1808,14 @@ function DungeonBattle({ dungeon, students, courses, onClose, onStudentClick, on
     const validTeam = team.filter(s => canStudentBattle(s).ok);
     if (validTeam.length === 0) return;
 
+    const teamIds = validTeam.map(s => s.id);
+    const relBonus = getBattleRelationshipBonus(state.dormitory.relationships, teamIds);
+
     battleRef.current = {
       playerTeam: validTeam.map(s => ({ 
         ...s, 
-        hp: s.currentHp,
-        maxHp: s.maxHp,
+        hp: s.currentHp * (1 + relBonus.hpBonus / 100),
+        maxHp: s.maxHp * (1 + relBonus.hpBonus / 100),
       })),
       enemyTeam: generateEnemies(1),
       currentWave: 1,
@@ -1821,7 +1826,8 @@ function DungeonBattle({ dungeon, students, courses, onClose, onStudentClick, on
       enemyActionTimer: 0,
       attackLog: [],
       turnCount: 0,
-      teamIds: validTeam.map(s => s.id),
+      teamIds,
+      relationshipBonus: relBonus,
     };
     setBattleStarted(true);
     setBattleResult(null);
@@ -1898,10 +1904,12 @@ function DungeonBattle({ dungeon, students, courses, onClose, onStudentClick, on
         const baseDamage = playerBaseDamage + attacker.level * 3 + skillBonus;
         const moraleMult = calculateMoraleEfficiencyMultiplier(attacker.morale);
         const staminaMult = calculateStaminaEfficiencyMultiplier(attacker.stamina);
-        const damage = Math.floor(baseDamage * moraleMult * staminaMult);
+        const relDamageMult = 1 + battleRef.current.relationshipBonus.damageBonus / 100;
+        const damage = Math.floor(baseDamage * moraleMult * staminaMult * relDamageMult);
         
         target.hp -= damage;
-        attackLog.push(`${attacker.name} 对 ${target.name} 造成 ${damage} 伤害${(moraleMult * staminaMult !== 1) ? ` (×${(moraleMult * staminaMult).toFixed(2)})` : ''}`);
+        const bonusDesc = battleRef.current.relationshipBonus.description ? ` [羁绊加成]` : '';
+        attackLog.push(`${attacker.name} 对 ${target.name} 造成 ${damage} 伤害${(moraleMult * staminaMult * relDamageMult !== 1) ? ` (×${(moraleMult * staminaMult * relDamageMult).toFixed(2)})${bonusDesc}` : ''}`);
         
         if (attackLog.length > 5) attackLog.shift();
         

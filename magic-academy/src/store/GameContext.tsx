@@ -3861,9 +3861,39 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         const hpRecovery = calculateDailyHpRecovery(student, dormitoryLevel);
         const dormMoraleBonus = dormitoryBonus.moraleRegenBonus > 0 ? Math.ceil(dormitoryBonus.moraleRegenBonus) : 0;
         const dormStaminaBonus = dormitoryBonus.staminaRegenBonus > 0 ? Math.ceil(dormitoryBonus.staminaRegenBonus) : 0;
-        const newMorale = clamp(student.morale + moraleChange + dormMoraleBonus, 0, 100);
-        const newStamina = clamp(student.stamina + staminaChange + dormStaminaBonus, 0, 100);
-        const newCurrentHp = student.maxHp > 0 ? Math.min(student.currentHp + hpRecovery, student.maxHp) : student.currentHp;
+
+        let restActivityStaminaBonus = 0;
+        let restActivityMoraleBonus = 0;
+        let restActivityHpBonus = 0;
+        const todaySchedule = state.dormitory.schedules.find(
+          s => s.studentId === student.id && s.day === state.day
+        );
+        if (todaySchedule) {
+          const studentRoom = state.dormitory.rooms.find(r => r.residentIds.includes(student.id));
+          const roomComfort = studentRoom?.comfort || calculateDormitoryComfort(dormitoryLevel, diningHallLevel);
+          const restResult = calculateRestActivityResult(
+            todaySchedule.activity,
+            dormitoryLevel,
+            diningHallLevel,
+            roomComfort
+          );
+          restActivityStaminaBonus = restResult.staminaChange;
+          restActivityMoraleBonus = restResult.moraleChange;
+          restActivityHpBonus = restResult.hpChange;
+          if (restActivityStaminaBonus !== 0 || restActivityMoraleBonus !== 0 || restActivityHpBonus !== 0) {
+            const activityDef = REST_ACTIVITIES.find(a => a.id === todaySchedule.activity);
+            todayEvents.push({
+              type: 'dormitory_rest_activity',
+              message: `${activityDef?.icon || '😴'} ${student.name} 进行「${activityDef?.name || todaySchedule.activity}」`,
+              studentId: student.id,
+              studentName: student.name,
+            });
+          }
+        }
+
+        const newMorale = clamp(student.morale + moraleChange + dormMoraleBonus + restActivityMoraleBonus, 0, 100);
+        const newStamina = clamp(student.stamina + staminaChange + dormStaminaBonus + restActivityStaminaBonus, 0, 100);
+        const newCurrentHp = student.maxHp > 0 ? Math.min(student.currentHp + hpRecovery + restActivityHpBonus, student.maxHp) : student.currentHp;
 
         if (hpRecovery > 0) {
           todayEvents.push({
@@ -3951,7 +3981,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           const moraleMult = calculateMoraleEfficiencyMultiplier(newMorale);
           const staminaMult = calculateStaminaEfficiencyMultiplier(newStamina);
           const hpMult = calculateHpEfficiencyMultiplier(newCurrentHp, student.maxHp);
-          const efficiencyMult = moraleMult * staminaMult * hpMult;
+          const dormCourseBonus = 1 + dormitoryBonus.courseEfficiency / 100;
+          const efficiencyMult = moraleMult * staminaMult * hpMult * dormCourseBonus;
           
           if (hpMult < 1) {
             todayEvents.push({
@@ -4743,9 +4774,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         state.dormitory.lastEventDay
       );
       const newDormRecentEvents = [...state.dormitory.recentEvents];
+      let dormTotalEventsTriggered = state.dormitory.totalEventsTriggered;
       if (dormEventInstance) {
         newDormRecentEvents.push(dormEventInstance);
         if (newDormRecentEvents.length > 20) newDormRecentEvents.shift();
+        dormTotalEventsTriggered++;
         const eventDef = DORMITORY_EVENTS.find(e => e.id === dormEventInstance.eventId);
         if (eventDef) {
           todayEvents.push({
@@ -4756,7 +4789,78 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         }
       }
 
-      const dormUpdatedRelationships = state.dormitory.relationships.map(r => ({
+      let dormTotalSocialInteractions = state.dormitory.totalSocialInteractions;
+      const dormRelationshipsWithExp: StudentRelationship[] = state.dormitory.relationships.map(r => ({ ...r }));
+
+      for (const room of state.dormitory.rooms) {
+        if (room.residentIds.length < 2) continue;
+        for (let i = 0; i < room.residentIds.length; i++) {
+          for (let j = i + 1; j < room.residentIds.length; j++) {
+            const id1 = room.residentIds[i];
+            const id2 = room.residentIds[j];
+            let relIndex = dormRelationshipsWithExp.findIndex(
+              r => (r.studentId1 === id1 && r.studentId2 === id2) ||
+              r.studentId1 === id2 && r.studentId2 === id1
+            );
+            let rel: StudentRelationship;
+            if (relIndex >= 0) {
+              rel = dormRelationshipsWithExp[relIndex];
+            } else {
+              rel = {
+                studentId1: id1,
+                studentId2: id2,
+                exp: 0,
+                level: 'stranger' as const,
+                dailyInteracted: false,
+              };
+              dormRelationshipsWithExp.push(rel);
+              relIndex = dormRelationshipsWithExp.length - 1;
+            }
+
+            const schedule1 = state.dormitory.schedules.find(s => s.studentId === id1 && s.day === state.day);
+            const schedule2 = state.dormitory.schedules.find(s => s.studentId === id2 && s.day === state.day);
+            const socialActivity = schedule1 && schedule2 && schedule1.activity === schedule2.activity &&
+              (schedule1.activity === 'socialize' || schedule1.activity === 'study_leisure' || schedule1.activity === 'cook_together');
+
+            let expGain = 1;
+            if (socialActivity) {
+              expGain = calculateRelationshipExpGain(schedule1!.activity, true, room.comfort);
+              dormTotalSocialInteractions++;
+            }
+
+            if (expGain > 0) {
+              const newExp = rel.exp + expGain;
+              const newLevel = getRelationshipLevel(newExp);
+              dormRelationshipsWithExp[relIndex] = {
+                ...rel,
+                exp: newExp,
+                level: newLevel,
+                dailyInteracted: socialActivity ? true : rel.dailyInteracted,
+              };
+              if (newLevel !== rel.level) {
+                const s1 = state.students.find(s => s.id === id1);
+                const s2 = state.students.find(s => s.id === id2);
+                todayEvents.push({
+                  type: 'relationship_level_up',
+                  message: `💕 ${s1?.name || id1} 和 ${s2?.name || id2} 关系提升为「${getRelationshipInfo(newLevel).name}」！`,
+                  value: 1,
+                });
+              }
+            }
+          }
+        }
+      }
+
+      const dormBestRelationshipLevel = dormRelationshipsWithExp.reduce(
+        (best, rel) => {
+          const relRank = ['stranger', 'acquaintance', 'friend', 'close_friend', 'bonded'].indexOf(rel.level);
+          const bestRank = ['stranger', 'acquaintance', 'friend', 'close_friend', 'bonded'].indexOf(best);
+          return relRank > bestRank ? rel.level : best;
+        },
+        state.dormitory.bestRelationshipLevel
+      );
+
+      const dormUpdatedRelationships = dormRelationshipsWithExp.map(r => ({
         ...r,
         dailyInteracted: false,
       }));
@@ -4771,6 +4875,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         lastEventDay: dormEventInstance ? newDay : state.dormitory.lastEventDay,
         avgMorale: dormAvgMorale,
         avgStamina: dormAvgStamina,
+        totalSocialInteractions: dormTotalSocialInteractions,
+        bestRelationshipLevel: dormBestRelationshipLevel,
+        totalEventsTriggered: dormTotalEventsTriggered,
       };
       const recalculatedDormBonus = calculateDormitoryBonus(updatedDormitoryState, dormitoryLevel, diningHallLevel);
       updatedDormitoryState.dailyBonus = recalculatedDormBonus;
