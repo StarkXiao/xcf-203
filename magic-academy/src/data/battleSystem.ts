@@ -283,6 +283,8 @@ export const generateDungeonWaves = (dungeon: Dungeon): DungeonWaveConfig[] => {
   return waves;
 };
 
+let _enemyIdCounter = 0;
+
 export const createEnemyUnit = (
   template: EnemyTemplate,
   dungeonLevel: number,
@@ -291,9 +293,10 @@ export const createEnemyUnit = (
 ): BattleUnit => {
   const effectiveLevel = Math.floor(dungeonLevel * levelMultiplier);
   const levelBonus = 1 + effectiveLevel * 0.1;
+  _enemyIdCounter++;
   
   return {
-    id: `enemy_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    id: `enemy_${_enemyIdCounter}_${Math.random().toString(36).substring(2, 9)}`,
     name: template.name,
     magicType: template.magicType,
     level: effectiveLevel,
@@ -472,10 +475,20 @@ export const TEAM_COMP_BONUSES: TeamCompBonus[] = [
   {
     id: 'four_element',
     name: '四象俱全',
-    description: '队伍包含4种不同元素，伤害+25%，暴击+10%',
+    description: '队伍包含4种不同元素，伤害+25%',
     icon: '🌟',
     bonusType: 'damage',
     value: 0.25,
+    requiredElements: [],
+    elementCount: 4,
+  },
+  {
+    id: 'four_element_crit',
+    name: '四象俱全·暴击',
+    description: '队伍包含4种不同元素，暴击伤害+10%',
+    icon: '🌟',
+    bonusType: 'crit',
+    value: 0.10,
     requiredElements: [],
     elementCount: 4,
   },
@@ -566,6 +579,7 @@ export const evaluateTeamComposition = (team: Student[]): TeamCompEvaluation => 
   
   if (uniqueElements.length >= 4) {
     bonuses.push(TEAM_COMP_BONUSES.find(b => b.id === 'four_element')!);
+    bonuses.push(TEAM_COMP_BONUSES.find(b => b.id === 'four_element_crit')!);
   } else if (uniqueElements.length >= 3) {
     bonuses.push(TEAM_COMP_BONUSES.find(b => b.id === 'triple_element')!);
   }
@@ -703,10 +717,10 @@ export const startBattle = (state: BattleState): BattleState => {
   return {
     ...state,
     status: 'fighting',
-    turnCount: 1,
+    turnCount: state.turnCount || 1,
     turnOrder,
     currentUnitIndex: 0,
-    isPlayerTurn: state.playerUnits.find(u => u.id === turnOrder[0])?.isPlayer || false,
+    isPlayerTurn: state.playerUnits.find(u => u.id === turnOrder[0])?.isPlayer ?? true,
     playerUnits: state.playerUnits.map(u => ({ ...u, hasActed: false })),
     enemyUnits: state.enemyUnits.map(u => ({ ...u, hasActed: false })),
   };
@@ -826,15 +840,24 @@ export const nextTurn = (state: BattleState): BattleState => {
   }
   
   if (aliveEnemyUnits.length === 0) {
-    if (state.currentWave >= state.totalWaves) {
-      return { ...state, status: 'victory' };
-    }
-    return state;
+    const turnRecord: BattleTurn = {
+      turnNumber: state.turnCount,
+      actions: state.currentTurnActions,
+      playerUnitsRemaining: alivePlayerUnits.length,
+      enemyUnitsRemaining: 0,
+    };
+    return {
+      ...state,
+      status: 'victory',
+      turnHistory: [...state.turnHistory, turnRecord],
+      currentTurnActions: [],
+    };
   }
   
   let nextIndex = state.currentUnitIndex + 1;
   let turnCount = state.turnCount;
   let turnOrder = state.turnOrder;
+  let isNewRound = false;
   
   while (nextIndex < turnOrder.length) {
     const nextUnitId = turnOrder[nextIndex];
@@ -849,6 +872,7 @@ export const nextTurn = (state: BattleState): BattleState => {
     turnCount++;
     nextIndex = 0;
     turnOrder = getTurnOrder(state.playerUnits, state.enemyUnits);
+    isNewRound = true;
     
     if (turnCount > MAX_BATTLE_TURNS) {
       return { ...state, status: 'defeat' };
@@ -862,10 +886,10 @@ export const nextTurn = (state: BattleState): BattleState => {
     turnCount,
     currentUnitIndex: nextIndex,
     turnOrder,
-    isPlayerTurn: nextUnit?.isPlayer || false,
+    isPlayerTurn: nextUnit?.isPlayer ?? true,
   };
   
-  if (nextIndex === 0) {
+  if (isNewRound) {
     const turnRecord: BattleTurn = {
       turnNumber: state.turnCount,
       actions: state.currentTurnActions,
@@ -972,6 +996,8 @@ export const executeAITurn = (
     playerUnits: updatedPlayerUnits,
     enemyUnits: updatedEnemyUnits,
     currentTurnActions: [...state.currentTurnActions, actionResult],
+    selectedSkillId: null,
+    targetableUnitIds: [],
   };
   
   return { newState, result: actionResult };
@@ -980,7 +1006,7 @@ export const executeAITurn = (
 export const calculateBattleSettlement = (
   state: BattleState,
   dungeon: Dungeon,
-  _teamBonuses: TeamCompBonus[],
+  teamBonuses: TeamCompBonus[],
   mentorBonus?: MentorDungeonBonus,
   isFirstClear: boolean = false
 ): BattleSettlement => {
@@ -1038,6 +1064,26 @@ export const calculateBattleSettlement = (
     }
   }
   
+  for (const action of state.currentTurnActions) {
+    const caster = [...state.playerUnits, ...state.enemyUnits].find(u => u.id === action.casterId);
+    if (caster?.isPlayer) {
+      totalDamageDealt += action.totalDamage;
+      elementBreakdown[caster.magicType].damage += action.totalDamage;
+      elementBreakdown[caster.magicType].kills += action.kills.length;
+      
+      if (!playerDamageMap[caster.id]) playerDamageMap[caster.id] = 0;
+      playerDamageMap[caster.id] += action.totalDamage;
+    } else {
+      totalDamageTaken += action.totalDamage;
+    }
+    
+    if (!skillUsage[action.skillId]) {
+      skillUsage[action.skillId] = { uses: 0, totalDamage: 0 };
+    }
+    skillUsage[action.skillId].uses += 1;
+    skillUsage[action.skillId].totalDamage += action.totalDamage;
+  }
+  
   let mvpId: string | null = null;
   let maxDamage = 0;
   for (const [id, damage] of Object.entries(playerDamageMap)) {
@@ -1052,12 +1098,16 @@ export const calculateBattleSettlement = (
   const starMultiplier = stars === 3 ? 1.5 : stars === 2 ? 1.2 : 1.0;
   const rewardMultiplier = starMultiplier * (mentorBonus?.rewardMultiplier ?? 1);
   
+  const defenseBonusCount = teamBonuses.filter(b => b.bonusType === 'defense').length;
+  const teamExpBonus = 1 + defenseBonusCount * 0.05;
+  
   const baseRewards = dungeon.rewards;
   const expPerStudent: Record<string, number> = {};
   let totalExp = 0;
   
   for (const unit of state.playerUnits) {
-    const expGained = Math.floor((15 + dungeon.level * 5 + stars * 10) * (mentorBonus?.expMultiplier ?? 1));
+    const survivedBonus = unit.currentHp > 0 ? 1 : 0.5;
+    const expGained = Math.floor((15 + dungeon.level * 5 + stars * 10) * (mentorBonus?.expMultiplier ?? 1) * teamExpBonus * survivedBonus);
     expPerStudent[unit.id] = expGained;
     totalExp += expGained;
   }

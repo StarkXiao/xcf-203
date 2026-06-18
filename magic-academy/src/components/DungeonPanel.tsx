@@ -175,7 +175,7 @@ export default function DungeonPanel({ onStudentClick, setConfirmDialog }: Dunge
     setBattleState(newState);
     
     if (newState.status === 'victory' || newState.status === 'defeat') {
-      handleBattleEnd(newState);
+      setIsAnimating(false);
       return;
     }
     
@@ -183,7 +183,7 @@ export default function DungeonPanel({ onStudentClick, setConfirmDialog }: Dunge
     if (currentUnit) {
       addLog(`${currentUnit.isPlayer ? '👤' : '👹'} ${currentUnit.name} 准备行动`);
       
-      if (!currentUnit.isPlayer && !newState.isPlayerTurn) {
+      if (!currentUnit.isPlayer) {
         setTimeout(() => {
           executeAI(newState, teamBonuses);
         }, 800);
@@ -195,8 +195,8 @@ export default function DungeonPanel({ onStudentClick, setConfirmDialog }: Dunge
     }
   };
 
-  const executeAI = (state: BattleState, teamBonuses: TeamCompBonus[]) => {
-    const result = executeAITurn(state, teamBonuses);
+  const executeAI = (currentState: BattleState, teamBonuses: TeamCompBonus[]) => {
+    const result = executeAITurn(currentState, teamBonuses);
     
     if (result) {
       setBattleState(result.newState);
@@ -207,7 +207,7 @@ export default function DungeonPanel({ onStudentClick, setConfirmDialog }: Dunge
         handleAfterTurn(afterTurn, teamBonuses);
       }, 500);
     } else {
-      const afterTurn = nextTurn(state);
+      const afterTurn = nextTurn(currentState);
       handleAfterTurn(afterTurn, teamBonuses);
     }
   };
@@ -222,6 +222,7 @@ export default function DungeonPanel({ onStudentClick, setConfirmDialog }: Dunge
     }
     
     const waveConfig = waveConfigs[nextWaveNum - 1];
+    if (!waveConfig) return;
     const newEnemies = generateWaveEnemies(waveConfig, selectedDungeon.level);
     
     const updatedState: BattleState = {
@@ -230,7 +231,6 @@ export default function DungeonPanel({ onStudentClick, setConfirmDialog }: Dunge
       enemyUnits: newEnemies,
       selectedSkillId: null,
       targetableUnitIds: [],
-      turnCount: 0,
       currentUnitIndex: 0,
       isPlayerTurn: true,
     };
@@ -717,7 +717,6 @@ export default function DungeonPanel({ onStudentClick, setConfirmDialog }: Dunge
     if (!battleState || !selectedDungeon) return null;
     
     const currentUnit = getCurrentUnit(battleState);
-    const aliveEnemyUnits = battleState.enemyUnits.filter(u => u.currentHp > 0);
 
     const renderHpBar = (unit: { currentHp: number; maxHp: number }) => {
       const percent = Math.max(0, (unit.currentHp / unit.maxHp) * 100);
@@ -884,7 +883,7 @@ export default function DungeonPanel({ onStudentClick, setConfirmDialog }: Dunge
               </div>
             </div>
 
-            {battleState.status === 'victory' && aliveEnemyUnits.length === 0 && (
+            {battleState.status === 'victory' && (
               <div className="battle-victory">
                 {battleState.currentWave < battleState.totalWaves ? (
                   <button className="next-wave-btn" onClick={handleNextWave}>
@@ -937,7 +936,7 @@ export default function DungeonPanel({ onStudentClick, setConfirmDialog }: Dunge
               </div>
               <div className="stat-item">
                 <span className="stat-label">完成波次</span>
-                <span className="stat-value">{settlement.wavesCompleted}/{settlement.totalMembers > 0 ? battleState?.totalWaves || 0 : 0}</span>
+                <span className="stat-value">{settlement.wavesCompleted}/{battleState?.totalWaves ?? selectedDungeon.waves}</span>
               </div>
               <div className="stat-item">
                 <span className="stat-label">存活成员</span>
