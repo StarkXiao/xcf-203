@@ -6339,7 +6339,7 @@ export const calculateRelationshipExpGain = (
   areRoommates: boolean,
   roomComfort: number
 ): number => {
-  let base = 0;
+  let base: number;
   switch (activity) {
     case 'socialize': base = 8; break;
     case 'study_leisure': base = 3; break;

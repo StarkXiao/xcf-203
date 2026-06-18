@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useGame } from '../store/GameContext';
-import type { CodexCategory, AchievementType, StudentQuality, MagicType } from '../types/game';
+import type { CodexCategory, AchievementType, StudentQuality, MagicType, AchievementRarity } from '../types/game';
 import './CodexAchievementPanel.css';
 
 const QUALITY_COLORS: Record<StudentQuality, string> = {
@@ -408,12 +408,15 @@ export default function CodexAchievementPanel() {
             </div>
             {title.unlocked && (
               <>
-                <div className="title-rarity" style={{ color: ACHIEVEMENT_RARITY_COLORS[title.rarity as keyof typeof ACHIEVEMENT_RARITY_COLORS] }}>
-                  {ACHIEVEMENT_RARITY_NAMES[title.rarity as keyof typeof ACHIEVEMENT_RARITY_NAMES]}
+                <div className="title-rarity" style={{ color: ACHIEVEMENT_RARITY_COLORS[title.rarity as AchievementRarity] }}>
+                  {ACHIEVEMENT_RARITY_NAMES[title.rarity as AchievementRarity]}
                 </div>
                 <div className="title-desc">{title.description}</div>
                 <div className="title-effect">
-                  效果: {title.effect.type.replace(/_/g, ' ')} +{(title.effect.value * 100).toFixed(0)}%
+                  {title.effect.type === 'recruit_quality_bonus' 
+                    ? `效果: ${title.effect.type.replace(/_/g, ' ')} +${title.effect.value}`
+                    : `效果: ${title.effect.type.replace(/_/g, ' ')} +${(title.effect.value * 100).toFixed(0)}%`
+                  }
                 </div>
                 {title.equipped ? (
                   <span className="equipped-tag">已装备</span>

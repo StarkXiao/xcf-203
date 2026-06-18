@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useGame } from '../store/GameContext';
 import type { RestActivity } from '../types/game';
 import './DormitoryPanel.css';
@@ -30,19 +30,25 @@ export default function DormitoryPanel() {
   const comfort = calculateDormitoryComfort(dormitoryLevel, diningHallLevel);
   const roomCapacity = calculateRoomCapacity(dormitoryLevel);
 
+  const unresolvedEvents = useMemo(
+    () => dormitory.recentEvents.filter(e => !e.resolved),
+    [dormitory.recentEvents]
+  );
+
+  const currentPendingEventId = useMemo(() => {
+    if (pendingEventId) {
+      const stillPending = unresolvedEvents.find(e => e.id === pendingEventId);
+      if (stillPending) return pendingEventId;
+    }
+    return unresolvedEvents.length > 0 ? unresolvedEvents[0].id : null;
+  }, [pendingEventId, unresolvedEvents]);
+
   useEffect(() => {
     if (state.students.length > 0 && dormitory.rooms.length === 0) {
       refreshDormitoryRooms();
     }
     updateDormitoryBonuses();
-  }, [state.students.length, dormitory.rooms.length]);
-
-  const unresolvedEvents = dormitory.recentEvents.filter(e => !e.resolved);
-  useEffect(() => {
-    if (unresolvedEvents.length > 0 && !pendingEventId) {
-      setPendingEventId(unresolvedEvents[0].id);
-    }
-  }, [unresolvedEvents.length]);
+  }, [state.students.length, dormitory.rooms.length, refreshDormitoryRooms, updateDormitoryBonuses]);
 
   const getStudentName = (id: string) => state.students.find(s => s.id === id)?.name || '未知学员';
 
@@ -65,7 +71,7 @@ export default function DormitoryPanel() {
     setPendingEventId(null);
   };
 
-  const pendingEvent = dormitory.recentEvents.find(e => e.id === pendingEventId && !e.resolved);
+  const pendingEvent = dormitory.recentEvents.find(e => e.id === currentPendingEventId && !e.resolved);
   const pendingEventDef = pendingEvent ? DORMITORY_EVENTS.find(e => e.id === pendingEvent.eventId) : null;
 
   const friendCount = dormitory.relationships.filter(r =>

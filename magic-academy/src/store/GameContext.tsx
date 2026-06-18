@@ -5847,6 +5847,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         newTitlesList = unlockTitle(newTitlesList, titleId, state.day);
       }
       
+      const totalAchievementPoints = updatedAchievements2.reduce((sum, a) => {
+        return sum + a.stages.filter(s => s.unlocked).length * (a.rarity === 'legendary' ? 100 : a.rarity === 'epic' ? 50 : a.rarity === 'rare' ? 25 : 10);
+      }, 0);
+      
       return {
         ...state,
         codex: newCodex,
@@ -5854,6 +5858,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...state.achievement,
           achievements: updatedAchievements2,
           titles: newTitlesList,
+          totalAchievementPoints,
         },
       };
     }
@@ -5891,6 +5896,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         newTitlesList = unlockTitle(newTitlesList, titleId, state.day);
       }
       
+      const totalAchievementPoints = updatedAchievements.reduce((sum, a) => {
+        return sum + a.stages.filter(s => s.unlocked).length * (a.rarity === 'legendary' ? 100 : a.rarity === 'epic' ? 50 : a.rarity === 'rare' ? 25 : 10);
+      }, 0);
+      
       return {
         ...state,
         codex: newCodex,
@@ -5898,6 +5907,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...state.achievement,
           achievements: updatedAchievements,
           titles: newTitlesList,
+          totalAchievementPoints,
         },
       };
     }
@@ -5935,6 +5945,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         newTitlesList = unlockTitle(newTitlesList, titleId, state.day);
       }
       
+      const totalAchievementPoints = updatedAchievements.reduce((sum, a) => {
+        return sum + a.stages.filter(s => s.unlocked).length * (a.rarity === 'legendary' ? 100 : a.rarity === 'epic' ? 50 : a.rarity === 'rare' ? 25 : 10);
+      }, 0);
+      
       return {
         ...state,
         codex: newCodex,
@@ -5942,6 +5956,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...state.achievement,
           achievements: updatedAchievements,
           titles: newTitlesList,
+          totalAchievementPoints,
         },
       };
     }
@@ -5977,7 +5992,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       );
       
       const threeStarCount = updatedDungeons.filter(d => d.bestStars >= 3).length;
-      const { achievements: updatedAchievements2 } = updateAchievementProgress(
+      const { achievements: updatedAchievements2, newTitles: newTitles2 } = updateAchievementProgress(
         updatedAchievements,
         'dungeon_conqueror',
         threeStarCount
@@ -5987,6 +6002,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       for (const titleId of newTitles) {
         newTitlesList = unlockTitle(newTitlesList, titleId, state.day);
       }
+      for (const titleId of newTitles2) {
+        newTitlesList = unlockTitle(newTitlesList, titleId, state.day);
+      }
+      
+      const totalAchievementPoints = updatedAchievements2.reduce((sum, a) => {
+        return sum + a.stages.filter(s => s.unlocked).length * (a.rarity === 'legendary' ? 100 : a.rarity === 'epic' ? 50 : a.rarity === 'rare' ? 25 : 10);
+      }, 0);
       
       return {
         ...state,
@@ -5995,6 +6017,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...state.achievement,
           achievements: updatedAchievements2,
           titles: newTitlesList,
+          totalAchievementPoints,
         },
       };
     }
@@ -6002,8 +6025,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case 'UPDATE_CODEX_EVENT': {
       const { eventId, choiceId } = action;
       
-      let updatedEvents = [...state.codex.events];
-      let eventIndex = updatedEvents.findIndex(e => e.id === eventId);
+      const updatedEvents = [...state.codex.events];
+      const eventIndex = updatedEvents.findIndex(e => e.id === eventId);
       
       if (eventIndex === -1) {
         const eventDef = ACADEMY_EVENTS.find(e => e.id === eventId);
@@ -6051,6 +6074,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         newTitlesList = unlockTitle(newTitlesList, titleId, state.day);
       }
       
+      const totalAchievementPoints = updatedAchievements.reduce((sum, a) => {
+        return sum + a.stages.filter(s => s.unlocked).length * (a.rarity === 'legendary' ? 100 : a.rarity === 'epic' ? 50 : a.rarity === 'rare' ? 25 : 10);
+      }, 0);
+      
       return {
         ...state,
         codex: newCodex,
@@ -6058,6 +6085,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...state.achievement,
           achievements: updatedAchievements,
           titles: newTitlesList,
+          totalAchievementPoints,
         },
       };
     }
